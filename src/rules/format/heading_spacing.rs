@@ -1,6 +1,23 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Ensures exactly one blank line before each heading.
+///
+/// Spec: [Headings](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections)
+///
+/// Headings are visually distinct elements and benefit from consistent
+/// vertical spacing. This rule inserts one blank line before a heading
+/// when there is none, removes extras when there are more than one, and
+/// skips spacing between consecutive headings (no blank line needed).
+/// The first line of the file is never preceded by a blank line.
+///
+/// Note: Emacs does not auto-format heading spacing. This is an orgfmt
+/// convention that diverges from Emacs behavior.
+///
+/// Rule ID: `F003`
 pub struct HeadingSpacing;
 
 /// Returns true if the line is an org heading (starts with one or more `*` followed by a space).

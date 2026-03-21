@@ -1,12 +1,24 @@
-/// Normalizes list markers to `-` and checkbox case to uppercase `[X]`.
-///
-/// Spec: [§2.7 Plain Lists](https://orgmode.org/manual/Plain-Lists.html),
-/// [§5.6 Checkboxes](https://orgmode.org/manual/Checkboxes.html)
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::list::{parse_list_item, ListMarker};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Normalizes unordered list markers to `-` and checkbox case to uppercase `[X]`.
+///
+/// Spec: [Plain Lists](https://orgmode.org/manual/Plain-Lists.html),
+/// [Checkboxes](https://orgmode.org/manual/Checkboxes.html),
+/// [Plain Lists syntax](https://orgmode.org/worg/org-syntax.html#Plain_Lists_and_Items)
+///
+/// Org-mode allows `+`, `*`, and `-` as unordered list markers. This rule
+/// standardizes them all to `-` for consistency. Lowercase checkbox markers
+/// `[x]` are normalized to uppercase `[X]`. Ordered list items (`1.`, `1)`)
+/// are left unchanged. Content inside [`protected regions`](super::regions)
+/// is skipped.
+///
+/// Rule ID: `F008`
 pub struct ListFormat;
 
 impl FormatRule for ListFormat {

@@ -1,7 +1,18 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Collapses consecutive blank lines to at most one.
+///
+/// Multiple consecutive blank lines add no semantic value in org-mode and
+/// reduce readability. This rule preserves a single blank line as a paragraph
+/// separator but removes any additional ones. Content inside
+/// [`protected regions`](super::regions) is left untouched.
+///
+/// Rule ID: `F002`
 pub struct BlankLines;
 
 impl FormatRule for BlankLines {

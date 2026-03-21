@@ -1,11 +1,23 @@
-/// Normalizes spacing in planning lines (SCHEDULED/DEADLINE/CLOSED).
-///
-/// Spec: [§8.3 Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html)
-///
-/// `SCHEDULED:  <...>` → `SCHEDULED: <...>` (exactly one space after colon).
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Normalizes spacing in planning lines (`SCHEDULED`, `DEADLINE`, `CLOSED`).
+///
+/// Spec: [Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html),
+/// [Planning](https://orgmode.org/worg/org-syntax.html#Planning)
+///
+/// Ensures exactly one space between the planning keyword colon and the
+/// timestamp. Handles lines with multiple planning keywords on the same
+/// line (e.g., `SCHEDULED: <...> DEADLINE: <...>`).
+///
+/// Examples:
+/// - `SCHEDULED:  <2024-01-15 Mon>` becomes `SCHEDULED: <2024-01-15 Mon>`
+/// - `DEADLINE:<2024-02-01 Thu>` becomes `DEADLINE: <2024-02-01 Thu>`
+///
+/// Rule ID: `F009`
 pub struct TimestampSpacing;
 
 const PLANNING_KEYWORDS: &[&str] = &["SCHEDULED:", "DEADLINE:", "CLOSED:"];

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pub mod blank_lines;
 pub mod heading_spacing;
 pub mod keyword_spacing;

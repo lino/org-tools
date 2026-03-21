@@ -1,13 +1,24 @@
-/// Normalizes spacing after `#+KEYWORD:` to exactly one space.
-///
-/// Spec: [Syntax: Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
-///
-/// `#+TITLE:My Title` → `#+TITLE: My Title`
-/// `#+TITLE:  My Title` → `#+TITLE: My Title`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Normalizes spacing after `#+KEYWORD:` to exactly one space.
+///
+/// Spec: [Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
+///
+/// Org keywords follow the pattern `#+KEY: VALUE`. This rule ensures there
+/// is exactly one space between the colon and the value. Block delimiters
+/// (`#+BEGIN_`/`#+END_`), `#+CALL`, and `#+RESULTS` are excluded. Content
+/// inside [`protected regions`](super::regions) is skipped.
+///
+/// Examples:
+/// - `#+TITLE:My Title` becomes `#+TITLE: My Title`
+/// - `#+TITLE:  My Title` becomes `#+TITLE: My Title`
+///
+/// Rule ID: `F006`
 pub struct KeywordSpacing;
 
 impl FormatRule for KeywordSpacing {

@@ -1,6 +1,17 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Removes trailing whitespace (spaces and tabs) from all lines.
+///
+/// Trailing whitespace is universally undesirable in text files and not
+/// meaningful in org-mode syntax. This rule strips it from every line,
+/// including lines inside protected regions (trailing whitespace is never
+/// significant content).
+///
+/// Rule ID: `F001`
 pub struct TrailingWhitespace;
 
 impl FormatRule for TrailingWhitespace {

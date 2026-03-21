@@ -1,6 +1,27 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Fix, Span};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Aligns property values within `:PROPERTIES:` drawers.
+///
+/// Spec: [Property Syntax](https://orgmode.org/worg/org-syntax.html#Property_Drawers),
+/// [§7.1 Property Syntax](https://orgmode.org/manual/Property-Syntax.html)
+///
+/// When a property drawer contains multiple properties, this rule pads
+/// the space after each `:KEY:` so that all values start at the same
+/// column. Drawers with only a single property are left unchanged.
+///
+/// Example:
+/// ```text
+/// :PROPERTIES:
+/// :ID:        abc
+/// :CUSTOM_ID: my-section
+/// :END:
+/// ```
+///
+/// Rule ID: `F005`
 pub struct PropertyDrawerAlign;
 
 impl FormatRule for PropertyDrawerAlign {

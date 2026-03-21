@@ -1,16 +1,24 @@
-/// Aligns heading tags to a target column (default 77).
-///
-/// Spec: [§6.2 Setting Tags](https://orgmode.org/manual/Setting-Tags.html)
-///
-/// Tags are `:tag1:tag2:` at the end of heading lines. Emacs aligns them to
-/// `org-tags-column` (default 77). If the title is longer, tags go one space
-/// after the title.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use unicode_width::UnicodeWidthStr;
 
 use crate::diagnostic::{Fix, Span};
 use crate::rules::heading::parse_heading;
 use crate::rules::{FormatContext, FormatRule};
 
+/// Aligns heading tags to a target column (default 77).
+///
+/// Spec: [Setting Tags](https://orgmode.org/manual/Setting-Tags.html),
+/// [Headlines](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections)
+///
+/// Tags (`:tag1:tag2:`) at the end of heading lines are padded so that the
+/// tag string ends at column 77, matching the Emacs `org-tags-column`
+/// default. If the heading title is too long for the tags to reach column
+/// 77, the tags are placed one space after the title instead. Uses Unicode
+/// display width for correct alignment with CJK and wide characters.
+///
+/// Rule ID: `F007`
 pub struct TagAlignment;
 
 /// Target column for tag alignment (matching Emacs default).

@@ -1,5 +1,10 @@
-/// Identifies "protected regions" in org source where formatting rules
-/// should not modify content (e.g., source blocks, example blocks, fixed-width areas).
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/// Identifies protected regions in org source where formatting rules must not modify content.
+///
+/// Protected regions include `#+BEGIN_SRC`, `#+BEGIN_EXAMPLE`, `#+BEGIN_EXPORT`,
+/// `#+BEGIN_QUOTE`, `#+BEGIN_VERSE`, `#+BEGIN_CENTER`, and `#+BEGIN_COMMENT` blocks.
 ///
 /// Returns a sorted list of (start_line, end_line) pairs (0-based, inclusive).
 pub fn protected_regions(content: &str) -> Vec<(usize, usize)> {

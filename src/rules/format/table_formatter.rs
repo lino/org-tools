@@ -1,8 +1,24 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use unicode_width::UnicodeWidthStr;
 
 use crate::diagnostic::{Fix, Span};
 use crate::rules::{FormatContext, FormatRule};
 
+/// Aligns table columns and normalizes separator rows.
+///
+/// Spec: [Tables](https://orgmode.org/worg/org-syntax.html#Tables),
+/// [§3.6 Tables](https://orgmode.org/manual/Tables.html)
+///
+/// Pads all cells in a column to the same display width (using Unicode
+/// width for correct CJK handling). Numeric columns are right-aligned
+/// to match Emacs `org-table-align` behavior; text columns are
+/// left-aligned. Separator rows (`|---+---|`) are regenerated to match
+/// the computed column widths. Header rows (data rows immediately before
+/// a separator) are excluded from numeric-column detection.
+///
+/// Rule ID: `F004`
 pub struct TableFormatter;
 
 /// A parsed org table ready for formatting.

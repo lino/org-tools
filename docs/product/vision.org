@@ -68,8 +68,8 @@ parse and respect these to avoid false positives and produce correct results.
 |                           |         | rule; mutually exclusive groups; regex members   |
 | =#+PROPERTY:=             | Done    | File-wide default properties; property() method  |
 |                           |         | falls back to defaults when entry lacks property |
-| =#+STARTUP: odd=          | Planned | Only odd heading levels valid; heading-level-gap |
-|                           |         | lint rule must respect this                      |
+| =#+STARTUP: odd=          | Done    | W001 heading-level-gap respects odd mode;        |
+|                           |         | flags even levels and adjusts gap step to 2      |
 | =#+CONSTANTS:=            | Planned | Named constants for table formula validation     |
 | =#+LINK:=                 | Planned | Custom link abbreviations; link syntax lint      |
 |                           |         | should recognise these as valid schemes          |

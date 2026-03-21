@@ -1,0 +1,248 @@
+#+TITLE: Org-Mode Ecosystem: Packages That Extend Syntax
+#+AUTHOR: orgfmt
+#+DATE: 2026-03-21
+
+* Overview
+
+This document catalogs org-mode adjacent packages and the syntax they
+add. A standalone linter/formatter needs to understand these extensions
+to avoid false positives on valid files.
+
+Sources:
+- [[https://orgmode.org/manual/][Org Mode Manual]]
+- [[https://orgmode.org/worg/org-syntax.html][Org Syntax (formal spec)]]
+- [[https://github.com/200ok-ch/org-parser/blob/master/resources/org.ebnf][200ok org-parser EBNF grammar]]
+- [[https://git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/lisp/org-lint.el][org-lint.el source]]
+
+* Packages That Extend Org Syntax
+
+** Built-in Extensions (part of org-mode)
+
+*** org-id — Unique identifiers
+- Spec: [[https://orgmode.org/manual/Handling-Links.html][§4 Handling Links]]
+- Property: ~:ID:~ — globally unique identifier (UUID)
+- Link type: ~id:UUID~ — link to heading by ID
+
+*** org-attach — File attachments
+- Spec: [[https://orgmode.org/manual/Attachments.html][§10.2 Attachments]]
+- Properties: ~:DIR:~, ~:ATTACH_DIR_INHERIT:~
+- Link type: ~attachment:filename~
+
+*** org-crypt — Entry encryption
+- Spec: [[https://orgmode.org/manual/Org-Crypt.html][§21.1 Org-Crypt]]
+- Tag: ~:crypt:~ — marks heading for encryption
+- Property: ~:CRYPTKEY:~ — GPG key ID
+
+*** org-habit — Habit tracking
+- Spec: [[https://orgmode.org/manual/Tracking-your-habits.html][§5.3.3 Tracking your habits]]
+- Property: ~:STYLE: habit~
+- Property: ~:LAST_REPEAT:~ — auto-managed timestamp
+- Scheduling: ~.+Nd/Md~ repeater syntax for min/max intervals
+
+** External Packages — High Popularity
+
+*** org-roam — Zettelkasten/wiki (6k+ stars)
+- Repo: [[https://github.com/org-roam/org-roam]]
+- Properties:
+  - ~:ROAM_ALIASES:~ — alternative node names
+  - ~:ROAM_REFS:~ — reference identifiers (URLs, cite keys)
+  - ~:ROAM_EXCLUDE:~ — exclude from database (value: ~t~)
+- Relies on ~:ID:~ from org-id
+
+*** org-ref — Citations & cross-references (1.4k+ stars)
+- Repo: [[https://github.com/jkitchin/org-ref]]
+- Adds ~50+ citation link types~ (natbib + biblatex):
+  - Natbib: ~cite~, ~citet~, ~citep~, ~citealt~, ~citealp~,
+    ~citenum~, ~citeauthor~, ~citeyear~, ~citeyearpar~
+    (plus starred and capitalized variants)
+  - Biblatex: ~Cite~, ~parencite~, ~footcite~, ~textcite~,
+    ~smartcite~, ~autocite~, ~fullcite~, ~supercite~
+    (plus starred, capitalized, and multi variants)
+  - Cross-ref: ~ref~, ~eqref~, ~pageref~, ~nameref~, ~autoref~, ~label~
+  - Bib: ~bibliography~, ~bibliographystyle~
+- All citation links use ~&~ as key prefix: ~cite:&key~
+
+*** ox-hugo — Hugo export (1.9k+ stars)
+- Repo: [[https://github.com/kaushalmodi/ox-hugo]]
+- Keywords (~#+HUGO_*~):
+  - ~#+hugo_base_dir:~, ~#+hugo_section:~, ~#+hugo_tags:~,
+    ~#+hugo_categories:~, ~#+hugo_draft:~, ~#+hugo_weight:~,
+    ~#+hugo_publishdate:~, ~#+hugo_expirydate:~,
+    ~#+hugo_auto_set_lastmod:~, ~#+hugo_custom_front_matter:~,
+    ~#+hugo_front_matter_key_replace:~, ~#+hugo_aliases:~,
+    ~#+hugo_menu:~, ~#+hugo_outputs:~, ~#+hugo_resources:~,
+    ~#+hugo_bundle:~
+- Properties (~:EXPORT_HUGO_*~):
+  - ~:EXPORT_FILE_NAME:~, ~:EXPORT_HUGO_SECTION:~,
+    ~:EXPORT_HUGO_BUNDLE:~, ~:EXPORT_HUGO_DRAFT:~,
+    ~:EXPORT_HUGO_WEIGHT:~, ~:EXPORT_HUGO_TAGS:~,
+    ~:EXPORT_HUGO_CATEGORIES:~, ~:EXPORT_HUGO_CUSTOM_FRONT_MATTER:~
+
+*** org-reveal — Reveal.js presentations (2.6k+ stars)
+- Repo: [[https://github.com/yjwen/org-reveal]]
+- Keywords (~#+REVEAL_*~):
+  - ~#+REVEAL_ROOT:~, ~#+REVEAL_HLEVEL:~, ~#+REVEAL_THEME:~,
+    ~#+REVEAL_TRANS:~, ~#+REVEAL_SPEED:~, ~#+REVEAL_INIT_OPTIONS:~,
+    ~#+REVEAL_MARGIN:~, ~#+REVEAL_WIDTH:~, ~#+REVEAL_HEIGHT:~,
+    ~#+REVEAL_SLIDE_HEADER:~, ~#+REVEAL_SLIDE_FOOTER:~,
+    ~#+REVEAL_TITLE_SLIDE:~, ~#+REVEAL_DEFAULT_FRAG_STYLE:~,
+    ~#+ATTR_REVEAL:~
+- Properties: ~:reveal_background:~, ~:reveal_background_trans:~
+- Block type: ~#+BEGIN_NOTES~ / ~#+END_NOTES~ — speaker notes
+
+*** org-noter — Document annotation (900+ stars)
+- Repo: [[https://github.com/weirdNox/org-noter]]
+- Properties:
+  - ~:NOTER_DOCUMENT:~ — path to annotated PDF/EPUB
+  - ~:NOTER_PAGE:~ — page/location of annotation
+
+*** denote — Simple note-taking (1.2k+ stars)
+- Repo: [[https://github.com/protesilaos/denote]]
+- Keyword: ~#+identifier:~ — unique note ID (timestamp-based)
+
+*** org-journal — Journaling (800+ stars)
+- Repo: [[https://github.com/bastibe/org-journal]]
+- Property: ~:CREATED:~ — creation timestamp (~YYYYMMDD~)
+
+** External Packages — Medium Popularity
+
+*** org-edna — Task dependencies (GNU ELPA)
+- Repo: [[https://savannah.nongnu.org/projects/org-edna-el/]]
+- Properties with mini-language:
+  - ~:BLOCKER:~ — conditions before task can complete
+  - ~:TRIGGER:~ — actions when task is marked DONE
+- Mini-language finders: ~ids(...)~, ~self~, ~previous-sibling~,
+  ~next-sibling~, ~children~, ~parent~, ~match(...)~, ~file(...)~
+- Mini-language actions: ~todo!(STATE)~, ~scheduled!(TIMESPEC)~,
+  ~deadline!(TIMESPEC)~, ~set-property!(PROP VAL)~, ~tag!(TAG)~
+
+*** org-drill — Flashcards/spaced repetition (org-contrib)
+- Properties (~:DRILL_*~):
+  - ~:DRILL_CARD_TYPE:~ — twosided, multisided, hide1cloze, etc.
+  - ~:DRILL_LAST_INTERVAL:~, ~:DRILL_REPEATS_SINCE_FAIL:~,
+    ~:DRILL_TOTAL_REPEATS:~, ~:DRILL_FAILURE_COUNT:~,
+    ~:DRILL_AVERAGE_QUALITY:~, ~:DRILL_EASE:~,
+    ~:DRILL_LAST_QUALITY:~, ~:DRILL_LAST_REVIEWED:~
+- Inline cloze syntax: ~[hidden text]~, ~[hidden text||hint]~
+- Tag: ~drill~
+
+*** org-fc — Modern flashcards (600+ stars)
+- Repo: [[https://github.com/l3kn/org-fc]]
+- Properties: ~:FC_TYPE:~, ~:FC_CREATED:~, ~:FC_CLOZE_MAX:~, ~:FC_CLOZE_TYPE:~
+- Drawer: ~:REVIEW_DATA:~ — stores scheduling data
+- Inline cloze: ~{{text}}~, ~{{text@id}}~, ~{{text}{hint}}~
+- Tag: ~fc~
+
+*** org-brain — Concept mapping (1k+ stars)
+- Repo: [[https://github.com/Kungsgeten/org-brain]]
+- Properties: ~:BRAIN_PARENTS:~, ~:BRAIN_CHILDREN:~,
+  ~:BRAIN_FRIENDS:~, ~:BRAIN_PINNED:~
+- Drawer: ~:RESOURCES:~
+
+*** org-transclusion — Content transclusion (700+ stars, GNU ELPA)
+- Repo: [[https://github.com/nobiot/org-transclusion]]
+- Keyword: ~#+transclude:~ followed by a link
+- Properties on ~#+transclude:~ line: ~:level~, ~:lines~, ~:src~,
+  ~:only-contents~, ~:exclude-elements~, ~:expand-links~, ~:end~
+
+*** anki-editor — Anki sync (600+ stars)
+- Repo: [[https://github.com/louietan/anki-editor]]
+- Properties: ~:ANKI_DECK:~, ~:ANKI_NOTE_TYPE:~, ~:ANKI_NOTE_ID:~,
+  ~:ANKI_TAGS:~
+
+*** org-gtd — GTD workflow (500+ stars)
+- Repo: [[https://github.com/Trevoke/org-gtd.el]]
+- Properties: ~:ORG_GTD:~, ~:DELEGATED_TO:~,
+  ~:ORG_GTD_PROJECT_IDS:~, ~:ORG_GTD_DEPENDS_ON:~
+- TODO keywords: ~NEXT~, ~WAIT~
+
+*** ox-pandoc — Pandoc export (300+ stars)
+- Repo: [[https://github.com/kawabata/ox-pandoc]]
+- Keywords: ~#+PANDOC_OPTIONS:~, ~#+PANDOC_METADATA:~,
+  ~#+PANDOC_VARIABLES:~, ~#+PANDOC_EXTENSIONS:~
+
+*** org-contacts — Contact management (org-contrib)
+- Properties: ~:EMAIL:~, ~:PHONE:~, ~:ADDRESS:~, ~:BIRTHDAY:~,
+  ~:ALIAS:~, ~:NICKNAME:~
+
+*** toc-org — Auto table of contents (600+ stars)
+- Repo: [[https://github.com/snosov1/toc-org]]
+- Tags: ~:TOC:~, ~:TOC_N:~ (depth), ~:TOC_N_gh:~ (GitHub style)
+
+*** org-caldav — CalDAV sync (700+ stars)
+- Properties (from built-in iCalendar): ~:SUMMARY:~, ~:DESCRIPTION:~,
+  ~:LOCATION:~, ~:TIMEZONE:~, ~:CLASS:~
+
+*** org-download — Image drag-and-drop (800+ stars)
+- Comment line: ~#+DOWNLOADED:~ — tracks download source
+
+** Packages That Do NOT Extend Syntax
+
+| Package | Purpose | Why no syntax change |
+|---------|---------|---------------------|
+| org-super-agenda | Groups/filters agenda display | Pure Elisp config |
+| org-ql | Query language for org files | Query in minibuffer/Elisp |
+| org-modern | Modern visual styling | Display-only (text properties) |
+| org-appear | Show/hide emphasis markers | Display-only |
+| org-superstar | Custom heading bullets | Display-only (font-lock) |
+| org-bullets | Custom heading bullets | Display-only |
+| org-fancy-priorities | Custom priority display | Display-only |
+| org-pomodoro | Pomodoro timer with org-clock | Uses standard org-clock |
+| org-cliplink | Paste URL as org link | Creates standard links |
+| org-sidebar | Side panel display | Read-only display |
+| citar | Citation frontend | Uses built-in org-cite |
+| ox-gfm | GitHub Markdown export | Standard export backend |
+| ox-rst | reStructuredText export | Standard export backend |
+
+* Differences: 200ok org-parser vs Official Spec
+
+Ref: [[https://github.com/200ok-ch/org-parser/blob/master/resources/org.ebnf][org-parser EBNF grammar]]
+
+** Unsupported in org-parser
+- Nested text markup (~*bold /italic/ text*~)
+- LaTeX environments (~\begin{env}...\end{env}~)
+- Most LaTeX fragments (~\(...\)~, ~\[...\]~, ~$$...$$~, ~$...$~)
+- Export snippets (~@@backend:value@@~)
+- Inline babel calls (~call_name(args)~)
+- Inline source blocks (~src_lang{body}~)
+- Statistics cookies (~[50%]~, ~[3/5]~)
+- Citations (~[cite:@key]~)
+- Inlinetasks (15+ star headings)
+- Radio links
+- Numeric priorities (~[#0]~ through ~[#64]~)
+
+** Partial/different in org-parser
+- Lists parsed line-by-line only (no nesting/termination semantics)
+- Block content matched greedily (may not stop at first ~#+END_~)
+- Block name not validated between begin/end
+- Drawer nesting allowed (spec forbids it)
+- Anonymous footnotes cannot contain brackets
+- Src block switches/header args not parsed
+- Link descriptions not parsed for org objects
+- Timestamps accept AM/PM and seconds (beyond spec)
+- TODO keywords restricted to uppercase ASCII only
+
+* Implications for orgfmt
+
+** What orgfmt should NOT flag as errors
+1. Any ~#+KEYWORD:~ starting with a known package prefix (~HUGO_~,
+   ~REVEAL_~, ~PANDOC_~, etc.) — treat as valid
+2. Properties starting with known package prefixes (~ROAM_~, ~DRILL_~,
+   ~FC_~, ~BRAIN_~, ~ANKI_~, ~NOTER_~, ~ORG_GTD~, etc.)
+3. Custom block types (~#+BEGIN_NOTES~, ~#+BEGIN_RESULTS~, etc.)
+4. Custom link types (~cite:~, ~attachment:~, ~id:~, etc.)
+5. Package-specific tags (~:crypt:~, ~:drill:~, ~:fc:~, ~:TOC:~)
+
+** What orgfmt should consider for keyword-validity rule
+The ~keyword-validity~ lint rule should maintain an allowlist of known
+keyword prefixes that covers both core org-mode and popular packages:
+- Core: ~TITLE~, ~AUTHOR~, ~DATE~, ~OPTIONS~, ~STARTUP~, etc.
+- ox-hugo: ~HUGO_*~
+- org-reveal: ~REVEAL_*~
+- ox-pandoc: ~PANDOC_*~
+- org-transclusion: ~TRANSCLUDE~
+- denote: ~IDENTIFIER~
+- General: ~EXPORT_*~, ~ATTR_*~, ~LATEX_*~, ~HTML_*~
+
+Properties are user-defined by nature, so orgfmt should never flag
+unknown property keys — only validate syntax, not semantics.

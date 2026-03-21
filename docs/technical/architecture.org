@@ -1,0 +1,287 @@
+#+TITLE: orgfmt — Architecture Documentation (arc42)
+#+AUTHOR: orgfmt contributors
+#+DATE: 2026-03-21
+#+OPTIONS: toc:3 num:t
+
+* Introduction and Goals
+
+** Requirements Overview
+
+orgfmt is a standalone org-mode linter and formatter written in Rust. It
+operates without requiring Emacs, produces diagnostics in human-readable or
+JSON format, and auto-fixes formatting issues.
+
+Key requirements:
+
+- *Standalone*: no Emacs dependency — runs as a single binary
+- *Fast*: process large org-mode collections in sub-second time
+- *Correct*: rule behaviour matches the org-mode specification and Emacs
+  org-lint where feasible
+- *Safe*: never corrupt user files; protected regions (source blocks, example
+  blocks, etc.) are never modified by format rules
+- *Configurable*: rules can be enabled/disabled via =.orgfmt.toml=; defaults
+  match Emacs org-mode behaviour
+
+** Quality Goals
+
+| Priority | Quality Goal  | Description                                                     |
+|----------+---------------+-----------------------------------------------------------------|
+|        1 | Correctness   | Rules match org-mode spec and Emacs behaviour                   |
+|        2 | Safety        | Never modify content inside protected regions                   |
+|        3 | Performance   | Sub-second for typical org-mode collections (hundreds of files)  |
+|        4 | Extensibility | Adding a new rule requires only a struct + trait impl + tests    |
+|        5 | Usability     | Clear diagnostics with file, line, column, rule ID, and message |
+
+** Stakeholders
+
+| Role             | Expectations                                                |
+|------------------+-------------------------------------------------------------|
+| Org-mode users   | Consistent formatting, catch common mistakes, fast feedback |
+| CI/CD pipelines  | Machine-readable output (JSON), reliable exit codes         |
+| Rule contributors | Simple pattern: implement trait, add tests, register rule  |
+
+* Constraints
+
+** Technical Constraints
+
+| Constraint        | Rationale                                                         |
+|-------------------+-------------------------------------------------------------------|
+| Pure Rust         | Single binary, no runtime dependencies, cross-platform            |
+| Line-based parser | Keeps complexity low; no external org parser dependency            |
+| GPL-3.0-or-later  | Respects the org-mode ecosystem's licensing conventions            |
+| No Emacs dep      | Must run in CI, editors, and environments where Emacs is absent   |
+
+** Conventions
+
+| Convention           | Description                                   |
+|----------------------+-----------------------------------------------|
+| Rule ID scheme       | F=format, E=error, W=warning, I=info + 3 digits |
+| Config format        | TOML (=.orgfmt.toml=)                          |
+| Output formats       | Human-readable (default), JSON                  |
+| Specification source | org-mode manual + formal syntax + Emacs source  |
+
+* Context and Scope
+
+** Business Context
+
+#+begin_src mermaid :file context.png
+graph LR
+    User["org-mode User"] -->|".org files"| orgfmt
+    orgfmt -->|"diagnostics"| User
+    CI["CI/CD Pipeline"] -->|".org files"| orgfmt
+    orgfmt -->|"JSON diagnostics + exit code"| CI
+    Editor["Editor/IDE"] -->|"file path"| orgfmt
+    orgfmt -->|"human diagnostics"| Editor
+#+end_src
+
+orgfmt reads =.org= files from the filesystem, applies format rules to produce
+fixes, runs lint rules to produce diagnostics, and outputs results to stdout.
+It does not communicate with any external services.
+
+** Technical Context
+
+orgfmt is a pure command-line tool. Its only I/O is:
+
+- *Input*: =.org= files from the local filesystem, =.orgfmt.toml= configuration
+- *Output*: diagnostics to stdout/stderr, optionally modified =.org= files
+  (format in-place mode)
+
+No network access, no database, no external APIs.
+
+* Solution Strategy
+
+The core strategy is *line-based text processing with span-based fixes*:
+
+1. Read the file into a =SourceFile= that indexes line starts for efficient
+   line/column lookups
+2. Run *format rules* — each returns a list of =Fix= structs (byte span +
+   replacement text)
+3. Deduplicate and sort fixes, then apply them in a single pass
+4. Run *lint rules* on the (possibly formatted) result — each returns a list
+   of =Diagnostic= structs
+5. Output diagnostics in the requested format
+
+This two-phase approach (format → lint) means lint rules always see
+well-formatted input, reducing false positives.
+
+Protected regions (source blocks, example blocks, etc.) are identified once
+and passed to format rules so they skip content that should not be modified.
+
+* Building Block View
+
+** Level 1: System Overview
+
+#+begin_src mermaid :file building-blocks-l1.png
+graph TD
+    CLI["CLI (main.rs)"] --> Runner
+    Runner --> FormatRules["Format Rules"]
+    Runner --> LintRules["Lint Rules"]
+    Runner --> Formatter["Fix Applicator"]
+    FormatRules --> Regions["Protected Regions"]
+    CLI --> Config["Configuration"]
+    CLI --> Output["Output Renderer"]
+    CLI --> Source["Source File"]
+#+end_src
+
+** Level 2: Module Decomposition
+
+| Module               | Responsibility                                       |
+|----------------------+------------------------------------------------------|
+| =main.rs=            | CLI parsing, file collection, orchestration           |
+| =runner.rs=          | Rule registration, check/format pipeline              |
+| =source.rs=          | File reading, line start indexing, line/col lookups   |
+| =diagnostic.rs=      | Span, Fix, Diagnostic, Severity types                 |
+| =formatter.rs=       | Applies non-overlapping fixes to source text          |
+| =config.rs=          | TOML config loading with ancestor directory search    |
+| =output.rs=          | Renders diagnostics as human-readable or JSON         |
+| =rules/mod.rs=       | FormatRule / LintRule traits, context structs          |
+| =rules/format/=      | Format rule implementations (F-series)                |
+| =rules/lint/=        | Lint rule implementations (E/W/I-series)              |
+| =rules/heading.rs=   | Shared heading parsing utilities                      |
+| =rules/list.rs=      | Shared list parsing utilities                         |
+| =rules/timestamp.rs= | Shared timestamp parsing utilities                    |
+| =rules/format/regions.rs= | Protected region detection                       |
+
+** Level 3: Rule Architecture
+
+Every rule is a struct that implements either =FormatRule= or =LintRule=:
+
+#+begin_src rust
+pub trait FormatRule: Send + Sync {
+    fn id(&self) -> &'static str;          // e.g. "F001"
+    fn name(&self) -> &'static str;        // e.g. "trailing-whitespace"
+    fn description(&self) -> &'static str;
+    fn format(&self, ctx: &FormatContext) -> Vec<Fix>;
+}
+
+pub trait LintRule: Send + Sync {
+    fn id(&self) -> &'static str;          // e.g. "W001"
+    fn name(&self) -> &'static str;        // e.g. "heading-level-gap"
+    fn description(&self) -> &'static str;
+    fn check(&self, ctx: &LintContext) -> Vec<Diagnostic>;
+}
+#+end_src
+
+Rules are independent — no rule depends on another rule's output. The runner
+registers all rules at construction time and invokes them in sequence.
+
+* Runtime View
+
+** Check Command
+
+#+begin_src mermaid :file runtime-check.png
+sequenceDiagram
+    participant User
+    participant CLI
+    participant Runner
+    participant FormatRule
+    participant LintRule
+    participant Output
+
+    User->>CLI: orgfmt check file.org
+    CLI->>CLI: Load config (.orgfmt.toml)
+    CLI->>CLI: Collect .org files
+    loop Each file
+        CLI->>Runner: check(source)
+        Runner->>FormatRule: format(ctx) → fixes
+        Note over Runner: Report fixes as "would reformat" diagnostics
+        Runner->>LintRule: check(ctx) → diagnostics
+        Runner-->>CLI: all diagnostics
+    end
+    CLI->>Output: render(diagnostics, format)
+    CLI-->>User: diagnostics + exit code
+#+end_src
+
+** Format Command
+
+#+begin_src mermaid :file runtime-format.png
+sequenceDiagram
+    participant User
+    participant CLI
+    participant Runner
+    participant FormatRule
+    participant Formatter
+    participant LintRule
+
+    User->>CLI: orgfmt format file.org
+    CLI->>Runner: format(source)
+    Runner->>FormatRule: format(ctx) → fixes
+    Runner->>Runner: Sort + deduplicate fixes
+    Runner->>Formatter: apply_fixes(content, fixes) → formatted
+    Runner->>LintRule: check(formatted_source) → diagnostics
+    Runner-->>CLI: (formatted_content, lint_diagnostics)
+    CLI->>CLI: Write formatted content to file
+    CLI-->>User: "Formatted: file.org" + lint warnings
+#+end_src
+
+* Deployment View
+
+orgfmt is distributed as a single statically-linked binary. No runtime
+dependencies, no configuration files required (defaults are sensible).
+
+Deployment targets:
+
+- *Local development*: installed via =cargo install= or downloaded binary
+- *CI/CD*: run in pipeline steps; use =--format json= for machine parsing
+- *Editor integration*: invoked as an external formatter/linter
+
+* Cross-cutting Concepts
+
+** Protected Regions
+
+Format rules must never modify content inside org-mode blocks where the
+content is literal text (source, example, export, quote, verse, center,
+comment blocks). The =regions.rs= module scans for =#+BEGIN_= / =#+END_=
+pairs and returns line ranges. Format rules call =is_protected()= to skip
+these lines.
+
+Lint rules should also skip protected regions when the syntax being checked
+would be literal text inside blocks.
+
+** Fix Application
+
+Fixes are span-based: each =Fix= specifies a byte range and its replacement.
+The formatter applies fixes in a single left-to-right pass, which requires
+fixes to be sorted by start position and non-overlapping. The runner handles
+deduplication by keeping the first fix when spans overlap.
+
+** Configuration Hierarchy
+
+orgfmt searches for =.orgfmt.toml= starting from the current directory and
+walking up to the filesystem root. The first file found wins. This allows
+per-project and per-directory configuration, similar to how =.editorconfig=
+or =rustfmt.toml= work.
+
+** Rule Independence
+
+Rules are fully independent — no rule reads another rule's output. This
+makes the system easy to reason about, test, and extend. Each rule is a
+self-contained module with its own tests.
+
+* Architecture Decisions
+
+Architecture Decision Records are maintained in [[file:adr/][docs/technical/adr/]].
+
+* Risks and Technical Debt
+
+| Risk / Debt                      | Mitigation                                      |
+|----------------------------------+-------------------------------------------------|
+| Line-based parsing has limits    | Sufficient for ~35 of ~58 org-lint checks;       |
+|                                  | document which checks need a full parser         |
+| Table alignment is left-only     | Track as known divergence from Emacs; future fix |
+| No incremental/cached processing | Acceptable at current scale; revisit if needed   |
+| No parallel file processing      | Single-threaded is fast enough; easy to add later|
+
+* Glossary
+
+| Term             | Definition                                                   |
+|------------------+--------------------------------------------------------------|
+| Format rule      | A rule that produces =Fix= values to auto-correct formatting |
+| Lint rule        | A rule that produces =Diagnostic= values (report-only)       |
+| Protected region | A block (src, example, etc.) whose content must not be       |
+|                  | modified by format rules                                     |
+| Fix              | A byte-span replacement: replace bytes [start, end) with     |
+|                  | new text                                                     |
+| Diagnostic       | A reported issue: file, line, column, severity, rule, message|
+| Runner           | Orchestrates rule execution and fix application              |
+| SourceFile       | In-memory representation of an =.org= file with line index   |

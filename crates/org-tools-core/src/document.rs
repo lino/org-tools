@@ -38,6 +38,13 @@ pub struct OrgDocument {
     pub default_properties: HashMap<String, String>,
     /// Tag specification parsed from `#+TAGS:` keyword lines.
     pub tag_spec: TagSpec,
+    /// Custom link abbreviations from `#+LINK:` keyword lines.
+    ///
+    /// Maps prefix to URL template (e.g., `"github"` → `"https://github.com/"`).
+    /// Multiple `#+LINK:` lines are additive.
+    ///
+    /// Spec: [§4.5 Using Links Outside Org](https://orgmode.org/manual/Using-Links-Outside-Org.html)
+    pub link_abbreviations: HashMap<String, String>,
 }
 
 /// A single heading entry in an org document.
@@ -113,6 +120,7 @@ impl OrgDocument {
         let mut filetags: Vec<String> = Vec::new();
         let mut default_properties: HashMap<String, String> = HashMap::new();
         let mut tags_lines: Vec<String> = Vec::new();
+        let mut link_abbreviations: HashMap<String, String> = HashMap::new();
         // Owned keyword strings for the lifetime of parsing; the &str refs
         // into `kw_refs` are used by `parse_heading_with_keywords`.
         let mut kw_strs: Vec<String> = todo_kw.all().iter().map(|s| s.to_string()).collect();
@@ -139,6 +147,16 @@ impl OrgDocument {
                         // #+TAGS: lines are additive — collect all of them.
                         if key == "TAGS" {
                             tags_lines.push(val.clone());
+                        }
+                        // #+LINK: lines define custom link abbreviations.
+                        if key == "LINK" {
+                            if let Some(space) = val.find(|c: char| c.is_whitespace()) {
+                                let prefix = val[..space].to_string();
+                                let template = val[space..].trim().to_string();
+                                if !prefix.is_empty() && !template.is_empty() {
+                                    link_abbreviations.insert(prefix, template);
+                                }
+                            }
                         }
                         file_keywords.insert(key, val);
                     }
@@ -248,6 +266,7 @@ impl OrgDocument {
             filetags,
             default_properties,
             tag_spec,
+            link_abbreviations,
         }
     }
 
@@ -298,6 +317,17 @@ impl OrgDocument {
             }
         }
         tags
+    }
+
+    /// Returns `true` if `scheme` is a known link scheme (built-in or custom via `#+LINK:`).
+    pub fn is_known_link_scheme(&self, scheme: &str) -> bool {
+        // Built-in org-mode link types.
+        const BUILTIN: &[&str] = &[
+            "file", "id", "http", "https", "mailto", "ftp", "news", "shell", "elisp", "doi",
+            "info", "docview", "bbdb", "gnus", "irc", "mhe", "rmail", "help",
+        ];
+        BUILTIN.iter().any(|b| b.eq_ignore_ascii_case(scheme))
+            || self.link_abbreviations.contains_key(scheme)
     }
 
     /// Look up a property on an entry, falling back to file-wide `#+PROPERTY:` defaults.
@@ -912,5 +942,54 @@ mod tests {
         assert!(doc.tag_spec.matches_tag("laptop"));
         assert_eq!(doc.tag_spec.groups.len(), 1);
         assert!(doc.tag_spec.groups[0].exclusive);
+    }
+
+    // --- Link abbreviations ---
+
+    #[test]
+    fn link_abbreviation_parsed() {
+        let source = make_source("#+LINK: gh https://github.com/\n* Heading\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(
+            doc.link_abbreviations.get("gh"),
+            Some(&"https://github.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn multiple_link_abbreviations() {
+        let source = make_source(
+            "#+LINK: gh https://github.com/\n#+LINK: wp https://en.wikipedia.org/wiki/\n* H\n",
+        );
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.link_abbreviations.len(), 2);
+        assert!(doc.link_abbreviations.contains_key("gh"));
+        assert!(doc.link_abbreviations.contains_key("wp"));
+    }
+
+    #[test]
+    fn no_link_abbreviations() {
+        let source = make_source("* Heading\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.link_abbreviations.is_empty());
+    }
+
+    #[test]
+    fn is_known_link_scheme_builtin() {
+        let source = make_source("* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.is_known_link_scheme("file"));
+        assert!(doc.is_known_link_scheme("https"));
+        assert!(doc.is_known_link_scheme("mailto"));
+        assert!(!doc.is_known_link_scheme("custom"));
+    }
+
+    #[test]
+    fn is_known_link_scheme_custom() {
+        let source = make_source("#+LINK: gh https://github.com/\n* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.is_known_link_scheme("gh"));
+        assert!(doc.is_known_link_scheme("https"));
+        assert!(!doc.is_known_link_scheme("unknown"));
     }
 }

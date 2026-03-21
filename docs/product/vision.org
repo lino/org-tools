@@ -71,8 +71,8 @@ parse and respect these to avoid false positives and produce correct results.
 | =#+STARTUP: odd=          | Done    | W001 heading-level-gap respects odd mode;        |
 |                           |         | flags even levels and adjusts gap step to 2      |
 | =#+CONSTANTS:=            | Planned | Named constants for table formula validation     |
-| =#+LINK:=                 | Planned | Custom link abbreviations; link syntax lint      |
-|                           |         | should recognise these as valid schemes          |
+| =#+LINK:=                 | Done    | Parsed into link_abbreviations map on            |
+|                           |         | OrgDocument; is_known_link_scheme() helper       |
 | =#+SETUPFILE:=            | Planned | Already lint for non-existent files; need to     |
 |                           |         | actually load and apply settings from them       |
 

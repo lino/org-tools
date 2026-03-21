@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orgfmt.dev/schemas/org-query-output.schema.json",
+  "title": "org query JSON output",
+  "description": "Schema for the JSON output of 'org query search --format json'",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["file", "line", "locator", "level", "title", "tags", "clocked_minutes"],
+    "properties": {
+      "file": {
+        "type": "string",
+        "description": "Path to the org file containing this entry."
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "1-based line number of the heading."
+      },
+      "locator": {
+        "type": "string",
+        "description": "OrgLocator string for this entry (id:, file::#, file::*/, or file::line)."
+      },
+      "level": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Heading level (1 = top-level *)."
+      },
+      "keyword": {
+        "type": ["string", "null"],
+        "description": "TODO keyword (e.g., 'TODO', 'DONE', 'NEXT') or null if none."
+      },
+      "priority": {
+        "type": ["string", "null"],
+        "description": "Priority character (e.g., 'A', 'B', 'C') or null if none."
+      },
+      "title": {
+        "type": "string",
+        "description": "Heading title text (keyword, priority, and tags stripped)."
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Local tags on this heading."
+      },
+      "properties": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Properties from the :PROPERTIES: drawer."
+      },
+      "scheduled": {
+        "type": ["string", "null"],
+        "description": "SCHEDULED timestamp in YYYY-MM-DD [HH:MM] format, or null."
+      },
+      "deadline": {
+        "type": ["string", "null"],
+        "description": "DEADLINE timestamp in YYYY-MM-DD [HH:MM] format, or null."
+      },
+      "closed": {
+        "type": ["string", "null"],
+        "description": "CLOSED timestamp in YYYY-MM-DD [HH:MM] format, or null."
+      },
+      "clocked_minutes": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Total clocked time in minutes for this entry."
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -3,12 +3,15 @@
 
 //! Unified CLI for org-mode: lint, format, query, clock, export.
 
+mod query;
+
 use std::path::PathBuf;
 use std::process;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use orgfmt_core::config::Config;
+use orgfmt_core::document::OrgDocument;
 use orgfmt_core::files::collect_org_files;
 use orgfmt_core::output::{render_diagnostics, OutputFormat};
 use orgfmt_core::runner::Runner;
@@ -35,7 +38,59 @@ enum OrgCommand {
         #[arg(long, global = true)]
         config: Option<PathBuf>,
     },
-    // TODO: Query, Clock, Update, Export subcommands (phases 4-7)
+    /// Query org entries.
+    Query {
+        #[command(subcommand)]
+        command: QueryCommand,
+    },
+    // TODO: Clock, Update, Export subcommands (phases 5-7)
+}
+
+/// Subcommands for `org query`.
+#[derive(Subcommand)]
+enum QueryCommand {
+    /// Search for entries matching a query.
+    Search {
+        /// Query expression (e.g., "todo:TODO tags:work").
+        query: String,
+
+        /// Files or directories to search.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+
+        /// Maximum results to return.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Show agenda view (scheduled/deadline timeline).
+    Agenda {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Number of days to show.
+        #[arg(long, default_value = "7")]
+        days: usize,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+    },
+}
+
+/// Output format for query results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum QueryOutputFormat {
+    /// Human-readable output.
+    Human,
+    /// JSON output (validated against schema).
+    Json,
+    /// One OrgLocator string per line.
+    Locator,
 }
 
 /// Subcommands for `org fmt`.
@@ -105,6 +160,7 @@ fn main() {
             let runner = Runner::new(config);
             run_fmt(command, &runner)
         }
+        OrgCommand::Query { command } => run_query(command),
     };
 
     process::exit(exit_code);
@@ -227,4 +283,179 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
             }
         }
     }
+}
+
+/// Runs the `query` subcommand.
+fn run_query(command: QueryCommand) -> i32 {
+    match command {
+        QueryCommand::Search {
+            query: query_str,
+            paths,
+            format,
+            limit,
+        } => {
+            let pred = match query::parser::parse_query(&query_str) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("org: {e}");
+                    return 2;
+                }
+            };
+
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
+
+            let today = current_date();
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
+            for doc in &docs {
+                for (idx, entry) in doc.entries.iter().enumerate() {
+                    if query::predicate::matches(&pred, entry, doc, today) {
+                        matches.push(query::output::MatchedEntry {
+                            doc,
+                            entry_idx: idx,
+                        });
+                    }
+                }
+            }
+
+            if let Some(n) = limit {
+                matches.truncate(n);
+            }
+
+            if matches.is_empty() {
+                return 1;
+            }
+
+            match format {
+                QueryOutputFormat::Human => print!("{}", query::output::render_human(&matches)),
+                QueryOutputFormat::Json => print!("{}", query::output::render_json(&matches)),
+                QueryOutputFormat::Locator => {
+                    print!("{}", query::output::render_locators(&matches))
+                }
+            }
+
+            0
+        }
+        QueryCommand::Agenda {
+            paths,
+            days,
+            format,
+        } => {
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
+
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let today = current_date();
+            let agenda_days = query::agenda::build_agenda(&docs, today, days);
+
+            let has_items = agenda_days.iter().any(|d| !d.items.is_empty());
+
+            match format {
+                QueryOutputFormat::Human => {
+                    print!("{}", query::agenda::render_agenda_human(&agenda_days));
+                }
+                QueryOutputFormat::Json => {
+                    // Agenda JSON: array of day objects.
+                    let json_days: Vec<serde_json::Value> = agenda_days
+                        .iter()
+                        .filter(|d| !d.items.is_empty())
+                        .map(|d| {
+                            let items: Vec<serde_json::Value> = d
+                                .items
+                                .iter()
+                                .map(|item| {
+                                    serde_json::json!({
+                                        "file": item.file.display().to_string(),
+                                        "line": item.entry.heading_line,
+                                        "keyword": item.entry.keyword,
+                                        "priority": item.entry.priority.map(|p| p.to_string()),
+                                        "title": item.entry.title,
+                                        "tags": item.entry.tags,
+                                        "kind": format!("{:?}", item.kind),
+                                        "time": match (item.timestamp.hour, item.timestamp.minute) {
+                                            (Some(h), Some(m)) => Some(format!("{h:02}:{m:02}")),
+                                            _ => None,
+                                        },
+                                    })
+                                })
+                                .collect();
+                            serde_json::json!({
+                                "date": format!("{:04}-{:02}-{:02}", d.year, d.month, d.day),
+                                "items": items,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json_days).unwrap_or_default()
+                    );
+                }
+                QueryOutputFormat::Locator => {
+                    for d in &agenda_days {
+                        for item in &d.items {
+                            // Find entry index in doc to generate locator.
+                            // Since we don't have easy access to the doc ref here,
+                            // output file:line format.
+                            println!(
+                                "{}::{}",
+                                item.file.display(),
+                                item.entry.heading_line
+                            );
+                        }
+                    }
+                }
+            }
+
+            if has_items { 0 } else { 1 }
+        }
+    }
+}
+
+/// Get today's date as (year, month, day).
+fn current_date() -> (u16, u8, u8) {
+    // Use a simple approach without chrono dependency for now.
+    // Parse from system time.
+    let now = std::time::SystemTime::now();
+    let duration = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs() as i64;
+
+    // Days since epoch (1970-01-01).
+    let days = secs / 86400;
+
+    // Civil date from day count (algorithm from Howard Hinnant).
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    (y as u16, m as u8, d as u8)
 }

@@ -35,19 +35,19 @@ compose via Unix pipes.
 
 ** org fmt — Roadmap
 
-| Feature                       | Status  | Notes                                    |
-|-------------------------------+---------+------------------------------------------|
-| Trailing whitespace (F001)    | Done    |                                          |
-| Blank lines (F002)            | Done    |                                          |
-| Heading spacing (F003)        | Done    |                                          |
-| Keyword spacing (F004)        | Done    |                                          |
-| Table formatting (F005)       | Done    | Left-aligns; Emacs right-aligns numbers  |
-| List formatting (F006)        | Done    |                                          |
-| Tag alignment (F007)          | Done    |                                          |
-| Property drawer align (F008)  | Done    |                                          |
-| Timestamp spacing (F009)      | Done    |                                          |
-| Table formulas (=#+TBLFM:=)   | Planned | Preserve lines, validate cell references |
-| Right-align numbers in tables | Planned | Known Emacs divergence                   |
+| Feature                       | Status | Notes                                   |
+|-------------------------------+--------+-----------------------------------------|
+| Trailing whitespace (F001)    | Done   |                                         |
+| Blank lines (F002)            | Done   |                                         |
+| Heading spacing (F003)        | Done   |                                         |
+| Keyword spacing (F004)        | Done   |                                         |
+| Table formatting (F005)       | Done   | Left-aligns; Emacs right-aligns numbers |
+| List formatting (F006)        | Done   |                                         |
+| Tag alignment (F007)          | Done   |                                         |
+| Property drawer align (F008)  | Done   |                                         |
+| Timestamp spacing (F009)      | Done   |                                         |
+| Table formulas (=#+TBLFM:=)   | Done   | Preserved; W020 validates syntax/refs   |
+| Right-align numbers in tables | Done   | Matches Emacs; header rows excluded     |
 
 ** In-buffer Settings — Roadmap
 
@@ -152,7 +152,7 @@ fast and sufficient for most rules, but has inherent limits:
 
 | Area                      | Emacs behaviour            | org-tools behaviour        |
 |---------------------------+----------------------------+----------------------------|
-| Table number alignment    | Right-aligns numbers       | Left-aligns everything     |
+| Table number alignment    | Right-aligns numbers       | Right-aligns numbers       |
 | Heading spacing           | No auto-formatting         | Optional blank-line rules  |
 | Babel language validation | Checks against loaded      | Checks against static list |
 |                           | =org-babel-load-languages= |                            |

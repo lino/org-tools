@@ -31,6 +31,7 @@ use crate::rules::lint::invalid_effort_property::InvalidEffortProperty;
 use crate::rules::lint::invalid_id_property::InvalidIdProperty;
 use crate::rules::lint::invalid_image_alignment::InvalidImageAlignment;
 use crate::rules::lint::invalid_keyword_syntax::InvalidKeywordSyntax;
+use crate::rules::lint::invalid_table_formula::InvalidTableFormula;
 use crate::rules::lint::keyword_validity::KeywordValidity;
 use crate::rules::lint::link_syntax::LinkSyntax;
 use crate::rules::lint::link_to_local_file::LinkToLocalFile;
@@ -155,6 +156,7 @@ impl Runner {
             Box::new(BlockTypeValidity),
             Box::new(AffiliatedKeywordPlacement),
             Box::new(UndeclaredTag),
+            Box::new(InvalidTableFormula),
         ];
 
         Self {

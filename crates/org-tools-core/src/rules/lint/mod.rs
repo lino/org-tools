@@ -19,6 +19,7 @@ pub mod invalid_effort_property;
 pub mod invalid_id_property;
 pub mod invalid_image_alignment;
 pub mod invalid_keyword_syntax;
+pub mod invalid_table_formula;
 pub mod keyword_validity;
 pub mod link_syntax;
 pub mod link_to_local_file;

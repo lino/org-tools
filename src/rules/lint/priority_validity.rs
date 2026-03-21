@@ -1,13 +1,25 @@
-/// Validates `[#X]` priority cookies on headings.
-///
-/// Spec: [§5.4 Priorities](https://orgmode.org/manual/Priorities.html)
-/// org-lint: `priority`
-///
-/// Priority must be a single uppercase letter A-Z.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Validates `[#X]` priority cookies on headings.
+//!
+//! Spec: [§5.4 Priorities](https://orgmode.org/manual/Priorities.html)
+//! org-lint: `priority`
+//!
+//! Priority must be a single uppercase letter A-Z.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::heading::parse_heading;
 use crate::rules::{LintContext, LintRule};
 
+/// Checks that priority cookies on headings use uppercase letters.
+///
+/// Parses each heading line and, if a priority cookie `[#x]` is present,
+/// warns when the letter is lowercase. The org-mode spec requires uppercase
+/// `A`-`Z` for priorities.
+///
+/// Spec: [§5.4 Priorities](https://orgmode.org/manual/Priorities.html)
+/// org-lint: `priority`
 pub struct PriorityValidity;
 
 impl LintRule for PriorityValidity {

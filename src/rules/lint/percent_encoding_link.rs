@@ -1,17 +1,30 @@
-/// Detects obsolete percent-encoding in bracket links.
-///
-/// Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html)
-/// org-lint: `percent-encoding-link-escape`
-///
-/// Only `%25` (`%`), `%5B` (`[`), `%5D` (`]`), and `%20` (space) are valid
-/// percent escapes in org bracket links. Other percent-encoded chars are obsolete.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects obsolete percent-encoding in bracket links.
+//!
+//! Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html)
+//! org-lint: `percent-encoding-link-escape`
+//!
+//! Only `%25` (`%`), `%5B` (`[`), `%5D` (`]`), and `%20` (space) are valid
+//! percent escapes in org bracket links. Other percent-encoded chars are obsolete.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Warns on obsolete percent-encoded characters in org bracket links.
+///
+/// Org-mode bracket links only recognize four percent escapes: `%25` (`%`),
+/// `%5B` (`[`), `%5D` (`]`), and `%20` (space). Any other `%XX` sequence is
+/// flagged as obsolete. Reports at most one diagnostic per link.
+///
+/// Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html)
+/// org-lint: `percent-encoding-link-escape`
 pub struct PercentEncodingLink;
 
-/// Returns true if the percent encoding is one of the allowed ones.
+/// Returns `true` if the two-character hex code is one of the four allowed
+/// percent encodings in org bracket links (`25`, `5B`, `5D`, `20`).
 fn is_allowed_encoding(code: &str) -> bool {
     let upper = code.to_uppercase();
     matches!(upper.as_str(), "25" | "5B" | "5D" | "20")

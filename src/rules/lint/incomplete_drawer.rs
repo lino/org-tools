@@ -1,17 +1,23 @@
-/// Detects drawers without a matching `:END:`.
-///
-/// Spec: [§2.8 Drawers](https://orgmode.org/manual/Drawers.html)
-/// org-lint: `incomplete-drawer`
-///
-/// A drawer opens with `:NAME:` (where NAME is all uppercase letters/digits/hyphens)
-/// and must close with `:END:`. An unclosed drawer is an error.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects drawers without a matching `:END:` line.
+///
+/// Spec: [Manual: Drawers](https://orgmode.org/manual/Drawers.html),
+/// [Syntax: Drawers](https://orgmode.org/worg/org-syntax.html#Drawers)
+///
+/// org-lint: `incomplete-drawer`
+///
+/// A drawer opens with `:NAME:` (where NAME contains only alphanumeric characters,
+/// hyphens, and underscores) and must close with `:END:`. An unclosed drawer is a
+/// structural error. Lines inside protected regions (source blocks, etc.) are skipped.
 pub struct IncompleteDrawer;
 
-/// Returns the drawer name if the line opens a drawer.
+/// Returns the drawer name if the line matches drawer-open syntax (`:NAME:`).
 fn drawer_open_name(line: &str) -> Option<&str> {
     let trimmed = line.trim();
     if !trimmed.starts_with(':') || !trimmed.ends_with(':') || trimmed.len() < 3 {

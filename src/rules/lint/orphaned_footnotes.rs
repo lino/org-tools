@@ -1,9 +1,21 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects footnotes that are defined but never referenced, or referenced but never defined.
+///
+/// Spec: [Manual: Creating Footnotes](https://orgmode.org/manual/Creating-Footnotes.html),
+/// [Syntax: Footnote Definitions](https://orgmode.org/worg/org-syntax.html#Footnote_Definitions)
+///
+/// org-lint: `orphaned-footnote-definitions` / `undefined-footnote-reference`
+///
+/// Inline footnotes (`[fn:label:text]`) are self-contained and count as both
+/// definition and reference. Content inside protected regions is ignored.
 pub struct OrphanedFootnotes;
 
 impl LintRule for OrphanedFootnotes {

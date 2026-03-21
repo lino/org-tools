@@ -1,15 +1,27 @@
-/// Detects unknown items in `#+OPTIONS:` keyword.
-///
-/// Spec: [§17.2 Export Settings](https://orgmode.org/manual/Export-Settings.html)
-/// org-lint: `unknown-options-item`
-///
-/// Options are `key:value` pairs. Known keys are from the org export framework.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects unknown items in `#+OPTIONS:` keyword.
+//!
+//! Spec: [§17.2 Export Settings](https://orgmode.org/manual/Export-Settings.html)
+//! org-lint: `unknown-options-item`
+//!
+//! Options are `key:value` pairs. Known keys are from the org export framework.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Flags unrecognized `key:value` items in `#+OPTIONS:` lines.
+///
+/// Compares each key against the set of [`KNOWN_OPTIONS`] from the org-mode
+/// export framework. Unknown keys are reported at [`Severity::Info`] since
+/// backend-specific options may be valid in certain export contexts.
+///
+/// Spec: [§17.2 Export Settings](https://orgmode.org/manual/Export-Settings.html)
+/// org-lint: `unknown-options-item`
 pub struct UnknownOptionsItem;
 
-/// Known #+OPTIONS keys from org-mode export framework.
+/// Known `#+OPTIONS` keys from the org-mode export framework.
 const KNOWN_OPTIONS: &[&str] = &[
     "'", "*", "-", ":", "<", "\\n", "^", "arch", "author", "broken-links",
     "c", "creator", "d", "date", "e", "email", "expand-links", "f", "h",

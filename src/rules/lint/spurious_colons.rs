@@ -1,14 +1,32 @@
-/// Detects empty tag strings (double colons `::`) on headlines.
-///
-/// Spec: [§6.2 Setting Tags](https://orgmode.org/manual/Setting-Tags.html)
-/// org-lint: `spurious-colons`
-///
-/// Tags should be `:tag1:tag2:` — `::` indicates an empty tag between colons.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects empty tag strings (double colons `::`) on headlines.
+///
+/// Headline tags use the format `:tag1:tag2:`. A `::` in the tag string
+/// indicates an empty tag between colons, which is almost always a typo
+/// (e.g. `:tag1::tag2:` instead of `:tag1:tag2:`).
+///
+/// **Spec:** [Setting Tags](https://orgmode.org/manual/Setting-Tags.html),
+/// [Headlines (syntax)](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections)
+///
+/// **org-lint:** `spurious-colons`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — empty tag
+/// * Heading :tag1::tag2:
+///
+/// ;; Good
+/// * Heading :tag1:tag2:
+/// ```
 pub struct SpuriousColons;
 
+/// Returns `true` if the line is an org-mode heading.
 fn is_heading(line: &str) -> bool {
     let trimmed = line.trim_start();
     if !trimmed.starts_with('*') {

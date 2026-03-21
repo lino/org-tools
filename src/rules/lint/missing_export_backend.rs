@@ -1,10 +1,33 @@
-/// Detects `#+BEGIN_EXPORT` blocks without a backend name.
-///
-/// Spec: [§2.6 Blocks](https://orgmode.org/manual/Blocks.html)
-/// org-lint: `missing-backend-in-export-block`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `#+BEGIN_EXPORT` blocks without a backend name.
+///
+/// Export blocks require a backend argument (e.g. `html`, `latex`) to specify
+/// the output format. A bare `#+BEGIN_EXPORT` without a backend will be ignored
+/// during export.
+///
+/// **Spec:** [Blocks](https://orgmode.org/manual/Blocks.html),
+/// [Export Blocks (syntax)](https://orgmode.org/worg/org-syntax.html#Blocks)
+///
+/// **org-lint:** `missing-backend-in-export-block`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — no backend
+/// #+BEGIN_EXPORT
+/// <div>content</div>
+/// #+END_EXPORT
+///
+/// ;; Good
+/// #+BEGIN_EXPORT html
+/// <div>content</div>
+/// #+END_EXPORT
+/// ```
 pub struct MissingExportBackend;
 
 impl LintRule for MissingExportBackend {

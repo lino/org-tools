@@ -1,15 +1,29 @@
-/// Warns on unrecognized `#+KEYWORD` names.
-///
-/// Spec: [§17.2 Export Settings](https://orgmode.org/manual/Export-Settings.html),
-/// [Syntax: Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
-///
-/// Info severity — custom keywords are valid in some contexts.
-/// Includes known package prefixes (HUGO_, REVEAL_, PANDOC_, etc.) to avoid
-/// false positives.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Warns on unrecognized `#+KEYWORD` names.
+//!
+//! Spec: [§17.2 Export Settings](https://orgmode.org/manual/Export-Settings.html),
+//! [Syntax: Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
+//!
+//! Info severity -- custom keywords are valid in some contexts.
+//! Includes known package prefixes (HUGO_, REVEAL_, PANDOC_, etc.) to avoid
+//! false positives.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Flags `#+KEYWORD:` lines whose keyword name is not in the standard set
+/// or recognized by a known package prefix.
+///
+/// Matches against [`KNOWN_KEYWORDS`] (exact) and [`KNOWN_PREFIXES`]
+/// (prefix). Reports at [`Severity::Info`] since custom keywords are
+/// valid in some org-mode configurations. Skips content inside protected
+/// regions and block delimiters.
+///
+/// Spec: [§17.2 Export Settings](https://orgmode.org/manual/Export-Settings.html),
+/// [Syntax: Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
 pub struct KeywordValidity;
 
 const KNOWN_KEYWORDS: &[&str] = &[
@@ -96,6 +110,7 @@ impl LintRule for KeywordValidity {
     }
 }
 
+/// Returns `true` if the keyword matches a known name or a known package prefix.
 fn is_known_keyword(keyword: &str) -> bool {
     // Check exact matches.
     if KNOWN_KEYWORDS.contains(&keyword) {

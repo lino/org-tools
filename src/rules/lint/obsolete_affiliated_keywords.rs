@@ -1,13 +1,19 @@
-/// Detects obsolete affiliated keywords and suggests replacements.
-///
-/// Spec: [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
-/// org-lint: `obsolete-affiliated-keywords`
-///
-/// Obsolete keywords: DATA, LABEL, RESNAME, SOURCE, SRCNAME, TBLNAME → NAME;
-/// RESULT → RESULTS; HEADERS → HEADER.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects obsolete affiliated keywords and suggests their modern replacements.
+///
+/// Spec: [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
+///
+/// org-lint: `obsolete-affiliated-keywords`
+///
+/// Obsolete keyword mappings:
+/// - `DATA`, `LABEL`, `RESNAME`, `SOURCE`, `SRCNAME`, `TBLNAME` -> `NAME`
+/// - `RESULT` -> `RESULTS`
+/// - `HEADERS` -> `HEADER`
 pub struct ObsoleteAffiliatedKeywords;
 
 /// Returns the replacement for an obsolete keyword, if applicable.

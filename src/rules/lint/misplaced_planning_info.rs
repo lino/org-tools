@@ -1,12 +1,36 @@
-/// Detects planning lines (SCHEDULED/DEADLINE/CLOSED) not immediately after a heading.
-///
-/// Spec: [§8.3 Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html)
-/// org-lint: `misplaced-planning-info`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects planning lines (`SCHEDULED`/`DEADLINE`/`CLOSED`) not immediately after a heading.
+///
+/// Planning information is only recognized by org-mode when it appears on the
+/// line directly below a headline (or directly below another planning line).
+/// A blank line or body text between the heading and the planning keywords
+/// causes org-mode to treat them as plain text.
+///
+/// **Spec:** [Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html),
+/// [Planning (syntax)](https://orgmode.org/worg/org-syntax.html#Planning)
+///
+/// **org-lint:** `misplaced-planning-info`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — blank line separates heading from planning
+/// * TODO Task
+///
+/// SCHEDULED: <2024-01-15 Mon>
+///
+/// ;; Good
+/// * TODO Task
+/// SCHEDULED: <2024-01-15 Mon>
+/// ```
 pub struct MisplacedPlanningInfo;
 
+/// Returns `true` if the line is an org-mode heading.
 fn is_heading(line: &str) -> bool {
     let trimmed = line.trim_start();
     if !trimmed.starts_with('*') {
@@ -16,6 +40,7 @@ fn is_heading(line: &str) -> bool {
     after.starts_with(' ') || after.is_empty()
 }
 
+/// Returns `true` if the line starts with a planning keyword.
 fn is_planning_line(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.starts_with("SCHEDULED:")

@@ -1,11 +1,28 @@
-/// Detects deprecated `QUOTE` prefix in heading titles.
-///
-/// org-lint: `quote-section`
-///
-/// Old syntax: `* QUOTE Heading` — this was removed from org-mode.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects the deprecated `QUOTE` prefix in heading titles.
+///
+/// Older versions of org-mode supported `* QUOTE Heading` to create a quoted
+/// section. This syntax was removed in favour of `#+BEGIN_QUOTE` blocks. The
+/// `QUOTE` keyword as the first word of a heading title is flagged.
+///
+/// **org-lint:** `quote-section`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — deprecated syntax
+/// * QUOTE Some quoted text
+///
+/// ;; Good — use a quote block instead
+/// #+BEGIN_QUOTE
+/// Some quoted text
+/// #+END_QUOTE
+/// ```
 pub struct QuoteSection;
 
 impl LintRule for QuoteSection {

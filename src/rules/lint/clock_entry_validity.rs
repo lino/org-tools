@@ -1,13 +1,25 @@
-/// Validates CLOCK entry format and duration accuracy.
-///
-/// Spec: [§8.4 Clocking Work Time](https://orgmode.org/manual/Clocking-Work-Time.html)
-///
-/// Format: `CLOCK: [ts]--[ts] => HH:MM`
-/// Checks: both timestamps are inactive, end is after start, duration matches.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Validates CLOCK entry format and duration accuracy.
+//!
+//! Spec: [§8.4 Clocking Work Time](https://orgmode.org/manual/Clocking-Work-Time.html)
+//!
+//! Format: `CLOCK: [ts]--[ts] => HH:MM`
+//! Checks: both timestamps are inactive, end is after start, duration matches.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::timestamp::parse_timestamp;
 use crate::rules::{LintContext, LintRule};
 
+/// Validates `CLOCK:` entries for correct timestamp type and duration accuracy.
+///
+/// Checks three things: both start and end timestamps must be inactive
+/// (`[...]` not `<...>`), and when a duration (`=> HH:MM`) is present it
+/// must match the actual time difference between the two timestamps.
+/// Running clocks (no end timestamp) are accepted without diagnostics.
+///
+/// Spec: [§8.4 Clocking Work Time](https://orgmode.org/manual/Clocking-Work-Time.html)
 pub struct ClockEntryValidity;
 
 impl LintRule for ClockEntryValidity {
@@ -111,7 +123,7 @@ impl LintRule for ClockEntryValidity {
     }
 }
 
-/// Parses `HH:MM` into (hours, minutes).
+/// Parses a `HH:MM` duration string into `(hours, minutes)`.
 fn parse_duration(s: &str) -> Option<(u32, u32)> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 2 {
@@ -122,7 +134,10 @@ fn parse_duration(s: &str) -> Option<(u32, u32)> {
     Some((h, m))
 }
 
-/// Computes the difference in minutes between two timestamps (same-day approximation).
+/// Computes the difference in minutes between two [`OrgTimestamp`] values.
+///
+/// Uses a simple day-difference approximation for cross-day entries within
+/// the same month.
 fn compute_duration_mins(
     start: &crate::rules::timestamp::OrgTimestamp,
     end: &crate::rules::timestamp::OrgTimestamp,

@@ -1,13 +1,26 @@
-/// Detects `file:` links pointing to non-existent local files.
-///
-/// Spec: [§4.4 Handling Links](https://orgmode.org/manual/Handling-Links.html)
-/// org-lint: `link-to-local-file`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects `file:` links pointing to non-existent local files.
+//!
+//! Spec: [§4.4 Handling Links](https://orgmode.org/manual/Handling-Links.html)
+//! org-lint: `link-to-local-file`
+
 use std::path::Path;
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Checks that `file:` links in bracket link syntax point to files that exist
+/// on the local filesystem.
+///
+/// Resolves paths relative to the directory containing the source file. Strips
+/// search strings (`::search`) before checking existence. Skips links inside
+/// protected regions (code blocks, example blocks, etc.).
+///
+/// Spec: [§4.4 Handling Links](https://orgmode.org/manual/Handling-Links.html)
+/// org-lint: `link-to-local-file`
 pub struct LinkToLocalFile;
 
 impl LintRule for LinkToLocalFile {

@@ -1,17 +1,36 @@
-/// Detects affiliated keywords not attached to any element.
-///
-/// Spec: [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
-/// org-lint: `orphaned-affiliated-keywords`
-///
-/// `#+CAPTION:`, `#+NAME:`, `#+ATTR_*:` must appear directly above a block,
-/// table, or other attachable element. A blank line between them or plain text
-/// following them means they are orphaned.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects affiliated keywords not attached to any element.
+///
+/// Affiliated keywords (`#+CAPTION:`, `#+NAME:`, `#+ATTR_*:`, `#+HEADER:`,
+/// `#+PLOT:`) must appear directly above a block, table, or other attachable
+/// element. A blank line between the keyword and its target, plain text
+/// following the keyword, or the keyword appearing at end-of-file all
+/// indicate an orphaned keyword.
+///
+/// **Spec:** [Affiliated Keywords (syntax)](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
+///
+/// **org-lint:** `orphaned-affiliated-keywords`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — blank line separates keyword from table
+/// #+CAPTION: My table
+///
+/// | a | b |
+///
+/// ;; Good
+/// #+CAPTION: My table
+/// | a | b |
+/// ```
 pub struct OrphanedAffiliatedKeywords;
 
-/// Returns true if the line is an affiliated keyword.
+/// Returns `true` if the line is an affiliated keyword.
 fn is_affiliated(line: &str) -> bool {
     let upper = line.to_uppercase();
     upper.starts_with("#+CAPTION:")
@@ -22,7 +41,7 @@ fn is_affiliated(line: &str) -> bool {
         || upper.starts_with("#+PLOT:")
 }
 
-/// Returns true if the line is an element that can receive affiliated keywords.
+/// Returns `true` if the line is an element that can receive affiliated keywords.
 fn is_attachable_element(line: &str) -> bool {
     let trimmed = line.trim_start();
     // Tables, blocks, links on their own line, images.

@@ -1,13 +1,34 @@
-/// Detects computed/special properties manually set in PROPERTIES drawers.
-///
-/// Spec: [§7.1 Property Syntax](https://orgmode.org/manual/Property-Syntax.html)
-/// org-lint: `special-property-in-properties-drawer`
-///
-/// These properties are computed by org-mode and setting them manually in a
-/// PROPERTIES drawer has no effect. They should be removed.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects computed/special properties manually set in `PROPERTIES` drawers.
+///
+/// Certain properties (e.g. `CATEGORY`, `TAGS`, `TODO`, `PRIORITY`) are
+/// computed by org-mode at runtime. Setting them manually inside a
+/// `:PROPERTIES:` drawer has no effect and is likely a mistake. See
+/// [`SPECIAL_PROPERTIES`] for the full list.
+///
+/// **Spec:** [Property Syntax](https://orgmode.org/manual/Property-Syntax.html),
+/// [Special Properties](https://orgmode.org/manual/Special-Properties.html)
+///
+/// **org-lint:** `special-property-in-properties-drawer`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — CATEGORY is computed
+/// :PROPERTIES:
+/// :CATEGORY: mycat
+/// :END:
+///
+/// ;; Good — use a user-defined property
+/// :PROPERTIES:
+/// :CUSTOM_ID: mycat
+/// :END:
+/// ```
 pub struct SpecialPropertyInDrawer;
 
 /// Properties that are computed by org-mode and should not be set manually.

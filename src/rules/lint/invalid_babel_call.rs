@@ -1,12 +1,24 @@
-/// Detects malformed `#+CALL:` syntax.
-///
-/// org-lint: `invalid-babel-call-block`
-///
-/// Valid: `#+CALL: name(args)` or `#+CALL: name[header](args)[header]`.
-/// Invalid: missing call name, missing parentheses.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects malformed `#+CALL:` syntax.
+//!
+//! org-lint: `invalid-babel-call-block`
+//!
+//! Valid: `#+CALL: name(args)` or `#+CALL: name[header](args)[header]`.
+//! Invalid: missing call name, missing parentheses.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Validates `#+CALL:` lines for correct org-babel call syntax.
+///
+/// Reports a warning when the function name is missing or when parentheses
+/// are absent. The expected form is `#+CALL: name(args)` with optional
+/// header argument blocks in square brackets.
+///
+/// Spec: [§16.4 Evaluating Code Blocks](https://orgmode.org/manual/Evaluating-Code-Blocks.html)
+/// org-lint: `invalid-babel-call-block`
 pub struct InvalidBabelCall;
 
 impl LintRule for InvalidBabelCall {

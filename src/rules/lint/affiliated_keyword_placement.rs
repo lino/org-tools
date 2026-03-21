@@ -1,19 +1,35 @@
-/// Detects affiliated keywords separated from their element by blank lines.
-///
-/// Spec: [§12.2 Captions](https://orgmode.org/manual/Captions.html),
-/// [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
-///
-/// `#+CAPTION:`, `#+NAME:`, `#+ATTR_*:` must appear directly above their target
-/// with no blank lines between.
-///
-/// Note: this rule specifically checks for blank-line separation. The broader
-/// `orphaned-affiliated-keywords` (W021) also checks for non-attachable elements.
-/// This rule focuses on the common case of a stray blank line.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects affiliated keywords separated from their element by blank lines.
+//!
+//! Spec: [§12.2 Captions](https://orgmode.org/manual/Captions.html),
+//! [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
+//!
+//! `#+CAPTION:`, `#+NAME:`, `#+ATTR_*:` must appear directly above their target
+//! with no blank lines between.
+//!
+//! Note: this rule specifically checks for blank-line separation. The broader
+//! `orphaned-affiliated-keywords` (W021) also checks for non-attachable elements.
+//! This rule focuses on the common case of a stray blank line.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Warns when an affiliated keyword (`#+CAPTION:`, `#+NAME:`, `#+ATTR_*:`,
+/// `#+HEADER:`, `#+PLOT:`) is followed by a blank line before its target element.
+///
+/// Affiliated keywords must appear directly above the element they annotate
+/// with no intervening blank lines. This complements the broader
+/// `orphaned-affiliated-keywords` rule (W021) by focusing specifically on
+/// the blank-line separation case.
+///
+/// Spec: [§12.2 Captions](https://orgmode.org/manual/Captions.html),
+/// [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
 pub struct AffiliatedKeywordPlacement;
 
+/// Returns `true` if the line is an affiliated keyword (`#+CAPTION:`,
+/// `#+NAME:`, `#+ATTR_*:`, `#+HEADER:`, or `#+PLOT:`).
 fn is_affiliated_keyword(line: &str) -> bool {
     let upper = line.to_uppercase();
     upper.starts_with("#+CAPTION:")

@@ -1,10 +1,18 @@
-/// Detects old-style export blocks like `#+BEGIN_HTML` and suggests `#+BEGIN_EXPORT html`.
-///
-/// Spec: [§2.6 Blocks](https://orgmode.org/manual/Blocks.html)
-/// org-lint: `deprecated-export-blocks`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects old-style export blocks like `#+BEGIN_HTML` and suggests `#+BEGIN_EXPORT html`.
+///
+/// Spec: [Manual: Blocks](https://orgmode.org/manual/Blocks.html),
+/// [Syntax: Greater Blocks](https://orgmode.org/worg/org-syntax.html#Greater_Blocks)
+///
+/// org-lint: `deprecated-export-blocks`
+///
+/// Since Org 9.0, backend-specific block types (`#+BEGIN_HTML`, `#+BEGIN_LATEX`, etc.)
+/// are deprecated in favour of the generic `#+BEGIN_EXPORT <backend>` form.
 pub struct DeprecatedExportBlocks;
 
 const DEPRECATED_BACKENDS: &[&str] = &[

@@ -1,15 +1,30 @@
-/// Detects `:EFFORT:` property values that are not valid duration formats.
-///
-/// Spec: [§7.1 Property Syntax](https://orgmode.org/manual/Property-Syntax.html)
-/// org-lint: `invalid-effort-property`
-///
-/// Valid formats: `HH:MM`, `H:MM`, `MM` (minutes only), or `Xd Xh Xm` style.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `:EFFORT:` property values that are not valid duration formats.
+///
+/// The `:EFFORT:` property is used by org-mode's column view and clocking to
+/// estimate task duration. Valid formats include `HH:MM`, `H:MM`, plain minutes,
+/// or unit-based durations like `1d 2h 30m`.
+///
+/// **Spec:** [Property Syntax](https://orgmode.org/manual/Property-Syntax.html),
+/// [Effort Estimates](https://orgmode.org/manual/Effort-Estimates.html)
+///
+/// **org-lint:** `invalid-effort-property`
+///
+/// # Example
+///
+/// ```org
+/// :PROPERTIES:
+/// :EFFORT:   2:30
+/// :END:
+/// ```
 pub struct InvalidEffortProperty;
 
-/// Returns true if the value is a valid effort/duration format.
+/// Returns `true` if `value` is a valid effort/duration format.
 fn is_valid_effort(value: &str) -> bool {
     let trimmed = value.trim();
     if trimmed.is_empty() {

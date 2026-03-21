@@ -1,13 +1,30 @@
-/// Detects `:ID:` property values containing `::` (search string delimiter).
-///
-/// Spec: [§7.1 Property Syntax](https://orgmode.org/manual/Property-Syntax.html)
-/// org-lint: `invalid-id-property`
-///
-/// An ID with `::` would be interpreted as containing a search string,
-/// making it unusable for linking.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `:ID:` property values containing `::` (search string delimiter).
+///
+/// In org-mode links, `::` separates a file path from a search string
+/// (e.g. `file:path::search`). An `:ID:` value containing `::` would be
+/// misinterpreted when used as a link target, making it unusable for
+/// `id:` links.
+///
+/// **Spec:** [Property Syntax](https://orgmode.org/manual/Property-Syntax.html),
+/// [Internal Links](https://orgmode.org/manual/Internal-Links.html)
+///
+/// **org-lint:** `invalid-id-property`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — contains ::
+/// :ID: some::value
+///
+/// ;; Good
+/// :ID: 550e8400-e29b-41d4-a716-446655440000
+/// ```
 pub struct InvalidIdProperty;
 
 impl LintRule for InvalidIdProperty {

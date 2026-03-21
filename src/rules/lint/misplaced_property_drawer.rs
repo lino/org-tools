@@ -1,8 +1,22 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `:PROPERTIES:` drawers that are not directly after a heading or planning line.
+///
+/// Spec: [Manual: Property Syntax](https://orgmode.org/manual/Property-Syntax.html),
+/// [Syntax: Property Drawers](https://orgmode.org/worg/org-syntax.html#Property_Drawers)
+///
+/// org-lint: `misplaced-property-drawer`
+///
+/// A property drawer must immediately follow a heading (or its planning line).
+/// Any intervening content -- including blank lines -- makes the drawer invalid.
+/// File-level property drawers at the very start of the document are accepted.
 pub struct MisplacedPropertyDrawer;
 
+/// Returns `true` if the line is an org heading (one or more leading `*` followed by a space).
 fn is_heading(line: &str) -> bool {
     let trimmed = line.trim_start();
     if !trimmed.starts_with('*') {
@@ -12,6 +26,7 @@ fn is_heading(line: &str) -> bool {
     after.starts_with(' ') || after.is_empty()
 }
 
+/// Returns `true` if the line is a planning line (`SCHEDULED:`, `DEADLINE:`, or `CLOSED:`).
 fn is_planning_line(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.starts_with("SCHEDULED:")

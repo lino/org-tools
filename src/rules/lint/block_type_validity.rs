@@ -1,12 +1,24 @@
-/// Warns on unrecognized `#+BEGIN_TYPE` block types.
-///
-/// Spec: [§2.6 Blocks](https://orgmode.org/manual/Blocks.html)
-///
-/// Known types: SRC, EXAMPLE, QUOTE, VERSE, CENTER, COMMENT, EXPORT.
-/// Custom block types are valid but uncommon; warn at Info severity.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Warns on unrecognized `#+BEGIN_TYPE` block types.
+//!
+//! Spec: [§2.6 Blocks](https://orgmode.org/manual/Blocks.html)
+//!
+//! Known types: SRC, EXAMPLE, QUOTE, VERSE, CENTER, COMMENT, EXPORT.
+//! Custom block types are valid but uncommon; warn at Info severity.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Flags `#+BEGIN_TYPE` lines whose block type is not in the standard set.
+///
+/// Compares against [`KNOWN_BLOCK_TYPES`] (case-insensitive). Reports at
+/// [`Severity::Info`] since custom block types are valid in org-mode. Only
+/// warns once per block type to avoid duplicate diagnostics from the
+/// matching `#+END_TYPE` line.
+///
+/// Spec: [§2.6 Blocks](https://orgmode.org/manual/Blocks.html)
 pub struct BlockTypeValidity;
 
 const KNOWN_BLOCK_TYPES: &[&str] = &[

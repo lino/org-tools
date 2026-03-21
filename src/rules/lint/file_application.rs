@@ -1,13 +1,30 @@
-/// Detects deprecated `file+application:` link types.
-///
-/// Spec: [§4.4 Handling Links](https://orgmode.org/manual/Handling-Links.html)
-/// org-lint: `file-application`
-///
-/// The `file+sys:`, `file+emacs:` link types are deprecated.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects deprecated `file+application:` link types.
+///
+/// The `file+sys:` and `file+emacs:` link prefixes are deprecated in modern
+/// org-mode. They should be replaced with plain `file:` links. This rule skips
+/// content inside protected regions (source blocks, example blocks, etc.).
+///
+/// **Spec:** [Handling Links](https://orgmode.org/manual/Handling-Links.html),
+/// [External Links](https://orgmode.org/manual/External-Links.html)
+///
+/// **org-lint:** `file-application`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — deprecated prefix
+/// [[file+sys:/path/to/file]]
+///
+/// ;; Good
+/// [[file:/path/to/file]]
+/// ```
 pub struct FileApplication;
 
 impl LintRule for FileApplication {

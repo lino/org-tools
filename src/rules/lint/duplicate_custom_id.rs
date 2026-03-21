@@ -1,8 +1,20 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::collections::HashMap;
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects duplicate `:CUSTOM_ID:` property values within a file.
+///
+/// Spec: [Manual: Property Syntax](https://orgmode.org/manual/Property-Syntax.html),
+/// [Syntax: Property Drawers](https://orgmode.org/worg/org-syntax.html#Property_Drawers)
+///
+/// org-lint: `duplicate-custom-id`
+///
+/// Each `:CUSTOM_ID:` must be unique within a document because it serves as
+/// an internal link target. Duplicates cause ambiguous link resolution.
 pub struct DuplicateCustomId;
 
 impl LintRule for DuplicateCustomId {
@@ -55,6 +67,7 @@ impl LintRule for DuplicateCustomId {
     }
 }
 
+/// Extracts the value from a `:CUSTOM_ID: value` property line.
 fn extract_custom_id(line: &str) -> Option<String> {
     if !line.starts_with(":CUSTOM_ID:") {
         return None;

@@ -1,11 +1,29 @@
-/// Detects `#+SETUPFILE:` pointing to a non-existent local file.
-///
-/// org-lint: `non-existent-setupfile-parameter`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::path::Path;
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `#+SETUPFILE:` pointing to a non-existent local file.
+///
+/// The `#+SETUPFILE:` keyword includes configuration from another org file.
+/// If the referenced file does not exist, the include silently fails. This
+/// rule resolves the path relative to the source file's directory. Remote
+/// URLs (`http://`, `https://`) are skipped since their existence cannot be
+/// verified offline.
+///
+/// **Spec:** [Export Settings](https://orgmode.org/manual/Export-Settings.html)
+///
+/// **org-lint:** `non-existent-setupfile-parameter`
+///
+/// # Example
+///
+/// ```org
+/// ;; Will warn if ./setup.org does not exist
+/// #+SETUPFILE: ./setup.org
+/// ```
 pub struct NonExistentSetupfile;
 
 impl LintRule for NonExistentSetupfile {

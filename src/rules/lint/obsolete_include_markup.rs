@@ -1,11 +1,29 @@
-/// Detects old-style `#+INCLUDE:` markup syntax.
-///
-/// org-lint: `obsolete-include-markup`
-///
-/// Old: `#+INCLUDE: "file" HTML` → New: `#+INCLUDE: "file" export html`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects old-style `#+INCLUDE:` markup syntax.
+///
+/// Older versions of org-mode allowed specifying the export backend directly
+/// after the file path (e.g. `#+INCLUDE: "file" HTML`). The current syntax
+/// requires the `export` keyword before the backend name
+/// (e.g. `#+INCLUDE: "file" export html`).
+///
+/// **Spec:** [Include Files](https://orgmode.org/manual/Include-Files.html)
+///
+/// **org-lint:** `obsolete-include-markup`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — old syntax
+/// #+INCLUDE: "file.org" HTML
+///
+/// ;; Good — current syntax
+/// #+INCLUDE: "file.org" export html
+/// ```
 pub struct ObsoleteIncludeMarkup;
 
 const DEPRECATED_BACKENDS: &[&str] = &[

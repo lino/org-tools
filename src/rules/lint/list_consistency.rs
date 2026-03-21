@@ -1,14 +1,26 @@
-/// Detects mixed list markers at the same indentation level within a contiguous list.
-///
-/// Spec: [§2.7 Plain Lists](https://orgmode.org/manual/Plain-Lists.html)
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects mixed list markers at the same indentation level within a contiguous list.
+//!
+//! Spec: [§2.7 Plain Lists](https://orgmode.org/manual/Plain-Lists.html)
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::list::{parse_list_item, ListMarker};
 use crate::rules::{LintContext, LintRule};
 
+/// Warns when unordered list items at the same indentation level use different
+/// marker characters within a single contiguous list.
+///
+/// A blank line resets the list context, so separate lists may use different
+/// markers. Different indentation levels are independent (e.g. `-` at level 0
+/// and `+` at level 2 is fine).
+///
+/// Spec: [§2.7 Plain Lists](https://orgmode.org/manual/Plain-Lists.html)
 pub struct ListConsistency;
 
-/// Returns the specific marker character for unordered markers.
+/// Extracts the marker character for unordered [`ListMarker`] variants.
 fn unordered_char(m: &ListMarker) -> Option<char> {
     match m {
         ListMarker::Dash => Some('-'),

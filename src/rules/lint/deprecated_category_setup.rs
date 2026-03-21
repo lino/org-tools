@@ -1,12 +1,18 @@
-/// Detects multiple `#+CATEGORY:` keywords in a file.
-///
-/// org-lint: `deprecated-category-setup`
-///
-/// Only the first `#+CATEGORY:` is effective; subsequent ones should use
-/// the `:CATEGORY:` property on individual headings.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects multiple `#+CATEGORY:` keywords in a single file.
+///
+/// Spec: [Manual: Categories](https://orgmode.org/manual/Categories.html)
+///
+/// org-lint: `deprecated-category-setup`
+///
+/// Only the first `#+CATEGORY:` keyword is effective at the file level.
+/// Subsequent occurrences should use the `:CATEGORY:` property on individual
+/// headings instead.
 pub struct DeprecatedCategorySetup;
 
 impl LintRule for DeprecatedCategorySetup {

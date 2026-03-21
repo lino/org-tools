@@ -1,12 +1,26 @@
-/// Detects source blocks with unrecognized language identifiers.
-///
-/// Spec: [§16.3 Languages](https://orgmode.org/manual/Languages.html)
-/// org-lint: `suspicious-language-in-src-block`
-///
-/// Warns on languages not in the known Babel language list.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects source blocks with unrecognized language identifiers.
+///
+/// Warns when a `#+BEGIN_SRC` block specifies a language that is not in the
+/// known Babel language list. This is an info-level diagnostic since custom
+/// or less common languages may be valid in specific configurations. The
+/// comparison is case-insensitive.
+///
+/// **Spec:** [Languages](https://orgmode.org/manual/Languages.html),
+/// [Working with Source Code](https://orgmode.org/manual/Working-with-Source-Code.html)
+///
+/// **org-lint:** `suspicious-language-in-src-block`
+///
+/// # Divergence from Emacs
+///
+/// Emacs validates against its runtime Babel language list, which depends on
+/// loaded packages. orgfmt checks against a static list of commonly known
+/// languages.
 pub struct SuspiciousLanguage;
 
 /// Known Babel/org-mode source block languages.

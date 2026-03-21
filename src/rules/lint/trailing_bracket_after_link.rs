@@ -1,10 +1,29 @@
-/// Detects a `]` immediately after a link's closing `]]`, suggesting malformed syntax.
-///
-/// Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html)
-/// org-lint: `trailing-bracket-after-link`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects a `]` immediately after a link's closing `]]`, suggesting malformed syntax.
+///
+/// Org links use the form `[[target][description]]`. A trailing `]` after the
+/// closing `]]` (i.e. `]]]`) usually indicates a copy-paste error or mismatched
+/// brackets.
+///
+/// **Spec:** [Link Format](https://orgmode.org/manual/Link-Format.html),
+/// [Links (syntax)](https://orgmode.org/worg/org-syntax.html#Links)
+///
+/// **org-lint:** `trailing-bracket-after-link`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — extra bracket
+/// [[https://example.com][click]]]
+///
+/// ;; Good
+/// [[https://example.com][click]]
+/// ```
 pub struct TrailingBracketAfterLink;
 
 impl LintRule for TrailingBracketAfterLink {

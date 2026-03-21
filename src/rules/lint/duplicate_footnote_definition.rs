@@ -1,12 +1,20 @@
-/// Detects duplicate footnote definition labels.
-///
-/// Spec: [§12.10 Creating Footnotes](https://orgmode.org/manual/Creating-Footnotes.html)
-/// org-lint: `duplicate-footnote-definition`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::collections::HashMap;
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects duplicate footnote definition labels (`[fn:label]`).
+///
+/// Spec: [Manual: Creating Footnotes](https://orgmode.org/manual/Creating-Footnotes.html),
+/// [Syntax: Footnote Definitions](https://orgmode.org/worg/org-syntax.html#Footnote_Definitions)
+///
+/// org-lint: `duplicate-footnote-definition`
+///
+/// Each footnote label must have exactly one definition. Duplicates are
+/// ambiguous and only the last definition takes effect in Emacs.
 pub struct DuplicateFootnoteDefinition;
 
 impl LintRule for DuplicateFootnoteDefinition {

@@ -1,12 +1,22 @@
-/// Detects invalid `:align` or `:center` values in `#+ATTR_ORG:`.
-///
-/// org-lint: `invalid-image-alignment`
-///
-/// Valid `:align` values: `left`, `center`, `right`.
-/// Valid `:center` value: `t`.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects invalid `:align` or `:center` values in `#+ATTR_ORG:`.
+//!
+//! org-lint: `invalid-image-alignment`
+//!
+//! Valid `:align` values: `left`, `center`, `right`.
+//! Valid `:center` value: `t`.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Validates `:align` and `:center` attribute values on `#+ATTR_ORG:` lines.
+///
+/// The `:align` property accepts `left`, `center`, or `right`. The `:center`
+/// property accepts only `t`. Any other value is reported as a warning.
+///
+/// org-lint: `invalid-image-alignment`
 pub struct InvalidImageAlignment;
 
 impl LintRule for InvalidImageAlignment {

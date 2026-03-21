@@ -1,6 +1,18 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects blocks with mismatched or missing `#+BEGIN_` / `#+END_` delimiters.
+///
+/// Spec: [Manual: Blocks](https://orgmode.org/manual/Blocks.html),
+/// [Syntax: Greater Blocks](https://orgmode.org/worg/org-syntax.html#Greater_Blocks)
+///
+/// org-lint: `unclosed-block`
+///
+/// Reports an error for every `#+BEGIN_<type>` without a corresponding `#+END_<type>`,
+/// and vice versa. Block type matching is case-insensitive.
 pub struct UnclosedBlock;
 
 impl LintRule for UnclosedBlock {

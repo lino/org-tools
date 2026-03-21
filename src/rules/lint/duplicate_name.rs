@@ -1,12 +1,19 @@
-/// Detects duplicate `#+NAME:` values across the document.
-///
-/// Spec: [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
-/// org-lint: `duplicate-name`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::collections::HashMap;
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects duplicate `#+NAME:` values across the document.
+///
+/// Spec: [Syntax: Affiliated Keywords](https://orgmode.org/worg/org-syntax.html#Affiliated_Keywords)
+///
+/// org-lint: `duplicate-name`
+///
+/// `#+NAME:` assigns a referenceable name to an element. Each name must be unique
+/// within a file; duplicates cause ambiguous `#+CALL:` and `noweb` references.
 pub struct DuplicateName;
 
 impl LintRule for DuplicateName {

@@ -1,12 +1,17 @@
-/// Detects `#+KEYWORD` lines missing the colon after the keyword name.
-///
-/// Spec: [Syntax: Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
-/// org-lint: `invalid-keyword-syntax`
-///
-/// Example: `#+TITLE My Title` should be `#+TITLE: My Title`.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `#+KEYWORD` lines missing the required colon after the keyword name.
+///
+/// Spec: [Syntax: Keywords](https://orgmode.org/worg/org-syntax.html#Keywords)
+///
+/// org-lint: `invalid-keyword-syntax`
+///
+/// Example: `#+TITLE My Title` should be `#+TITLE: My Title`. Block delimiters
+/// (`#+BEGIN_`/`#+END_`), `#+CALL`, and `#+RESULTS` lines are excluded.
 pub struct InvalidKeywordSyntax;
 
 impl LintRule for InvalidKeywordSyntax {

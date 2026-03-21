@@ -1,6 +1,18 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects `#+BEGIN_SRC` blocks without a language identifier.
+///
+/// Spec: [Manual: Working with Source Code](https://orgmode.org/manual/Working-with-Source-Code.html),
+/// [Syntax: Blocks](https://orgmode.org/worg/org-syntax.html#Blocks)
+///
+/// org-lint: `missing-language-in-src-block`
+///
+/// A source block without a language cannot be evaluated by Babel and will not
+/// receive syntax highlighting. This is usually a mistake.
 pub struct MissingSrcLanguage;
 
 impl LintRule for MissingSrcLanguage {

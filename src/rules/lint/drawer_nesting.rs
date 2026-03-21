@@ -1,14 +1,26 @@
-/// Detects drawers nested inside other drawers, which is invalid per spec.
-///
-/// Spec: [§2.8 Drawers](https://orgmode.org/manual/Drawers.html)
-/// — "Drawers cannot be nested."
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects drawers nested inside other drawers, which is invalid per spec.
+//!
+//! Spec: [§2.8 Drawers](https://orgmode.org/manual/Drawers.html)
+//! -- "Drawers cannot be nested."
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Reports an error when a drawer is opened inside another drawer.
+///
+/// The org-mode spec explicitly forbids nested drawers. This rule tracks
+/// open/close state via `:NAME:` and `:END:` lines, skipping content inside
+/// protected regions. Property lines inside `:PROPERTIES:` drawers (e.g.
+/// `:ID: value`) are not treated as drawer opens.
+///
+/// Spec: [§2.8 Drawers](https://orgmode.org/manual/Drawers.html)
 pub struct DrawerNesting;
 
-/// Returns true if the line opens a drawer (`:NAME:` pattern).
+/// Returns `true` if the line opens a drawer (`:NAME:` pattern, excluding `:END:`).
 fn is_drawer_open(line: &str) -> bool {
     let trimmed = line.trim();
     if !trimmed.starts_with(':') || !trimmed.ends_with(':') || trimmed.len() < 3 {

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pub mod affiliated_keyword_placement;
 pub mod block_type_validity;
 pub mod clock_entry_validity;

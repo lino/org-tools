@@ -1,12 +1,26 @@
-/// Detects heading-like stars that appear mid-line, suggesting accidentally concatenated lines.
-///
-/// org-lint: `misplaced-heading`
-///
-/// Example: `some text** Heading` where `**` was likely meant to start a new line.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects heading-like stars that appear mid-line, suggesting accidentally concatenated lines.
+///
+/// A heading must start at the beginning of a line. If a `\n*` sequence
+/// followed by a space appears embedded within a single line, it likely means
+/// two lines were accidentally concatenated. This rule skips content inside
+/// protected regions.
+///
+/// **org-lint:** `misplaced-heading`
+///
+/// # Example
+///
+/// ```text
+/// some text\n** Heading
+/// ```
+///
+/// The `**` was probably meant to start a new line.
 pub struct MisplacedHeading;
 
 impl LintRule for MisplacedHeading {

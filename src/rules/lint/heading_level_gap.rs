@@ -1,8 +1,22 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects heading level gaps (e.g., jumping from `*` to `***` without `**`).
+///
+/// Spec: [Manual: Headlines](https://orgmode.org/manual/Headlines.html),
+/// [Syntax: Headlines](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections)
+///
+/// org-lint: N/A (orgfmt-specific rule)
+///
+/// While org-mode allows arbitrary heading levels, skipping levels is usually
+/// unintentional and causes unexpected outline structure. Going back up to a
+/// shallower level is fine.
 pub struct HeadingLevelGap;
 
+/// Returns the heading level (number of leading `*` characters) if the line is a heading.
 fn heading_level(line: &str) -> Option<usize> {
     let trimmed = line.trim_start();
     if !trimmed.starts_with('*') {

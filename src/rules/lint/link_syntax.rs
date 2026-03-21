@@ -1,14 +1,26 @@
-/// Detects malformed bracket link syntax.
-///
-/// Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html),
-/// [Syntax: Regular Links](https://orgmode.org/worg/org-syntax.html#Regular_Links)
-///
-/// Valid: `[[target]]`, `[[target][description]]`.
-/// Invalid: unclosed brackets, empty targets.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Detects malformed bracket link syntax.
+//!
+//! Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html),
+//! [Syntax: Regular Links](https://orgmode.org/worg/org-syntax.html#Regular_Links)
+//!
+//! Valid: `[[target]]`, `[[target][description]]`.
+//! Invalid: unclosed brackets, empty targets.
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::{LintContext, LintRule};
 
+/// Checks bracket links for structural correctness.
+///
+/// Detects two problems: unclosed links (`[[` without a matching `]]`) and
+/// links with an empty target (`[[][description]]`). Skips content inside
+/// protected regions.
+///
+/// Spec: [§4.1 Link Format](https://orgmode.org/manual/Link-Format.html),
+/// [Syntax: Regular Links](https://orgmode.org/worg/org-syntax.html#Regular_Links)
 pub struct LinkSyntax;
 
 impl LintRule for LinkSyntax {

@@ -1,13 +1,30 @@
-/// Detects inactive timestamps in SCHEDULED/DEADLINE planning lines.
-///
-/// Spec: [§8.3 Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html)
-/// org-lint: `planning-inactive`
-///
-/// SCHEDULED and DEADLINE must use active timestamps `<...>` to appear in the
-/// agenda. Inactive timestamps `[...]` will not trigger agenda entries.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects inactive timestamps in `SCHEDULED`/`DEADLINE` planning lines.
+///
+/// `SCHEDULED` and `DEADLINE` must use active timestamps (`<...>`) to appear
+/// in the agenda. Inactive timestamps (`[...]`) will not trigger agenda
+/// entries, which is almost always unintentional. Note that `CLOSED` correctly
+/// uses inactive timestamps by design and is not flagged.
+///
+/// **Spec:** [Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html),
+/// [Timestamps](https://orgmode.org/manual/Timestamps.html)
+///
+/// **org-lint:** `planning-inactive`
+///
+/// # Example
+///
+/// ```org
+/// ;; Bad — inactive timestamp
+/// SCHEDULED: [2024-01-15 Mon]
+///
+/// ;; Good
+/// SCHEDULED: <2024-01-15 Mon>
+/// ```
 pub struct PlanningInactive;
 
 impl LintRule for PlanningInactive {

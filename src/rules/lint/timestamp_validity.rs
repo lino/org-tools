@@ -1,11 +1,24 @@
-/// Validates org timestamps: date validity, repeater format, warning delay format.
-///
-/// Spec: [§8.1 Timestamps](https://orgmode.org/manual/Timestamps.html)
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Validates org timestamps: date validity, repeater format, warning delay format.
+//!
+//! Spec: [§8.1 Timestamps](https://orgmode.org/manual/Timestamps.html)
+
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::timestamp::{find_timestamps, is_valid_date, is_valid_repeater, is_valid_warning};
 use crate::rules::{LintContext, LintRule};
 
+/// Checks org-mode timestamps for valid dates, repeater intervals, and
+/// warning delay specifiers.
+///
+/// Reports invalid calendar dates (e.g. February 30), malformed repeater
+/// strings (e.g. `+1x`), and malformed warning delays. Handles both active
+/// (`<...>`) and inactive (`[...]`) timestamps. Skips content inside
+/// protected regions.
+///
+/// Spec: [§8.1 Timestamps](https://orgmode.org/manual/Timestamps.html)
 pub struct TimestampValidity;
 
 impl LintRule for TimestampValidity {

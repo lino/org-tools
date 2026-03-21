@@ -1,12 +1,20 @@
-/// Detects duplicate `<<target>>` definitions.
-///
-/// Spec: [§4.2 Internal Links](https://orgmode.org/manual/Internal-Links.html)
-/// org-lint: `duplicate-target`
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::collections::HashMap;
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::{LintContext, LintRule};
 
+/// Detects duplicate `<<target>>` dedicated target definitions.
+///
+/// Spec: [Manual: Internal Links](https://orgmode.org/manual/Internal-Links.html),
+/// [Syntax: Targets and Radio Targets](https://orgmode.org/worg/org-syntax.html#Targets_and_Radio_Targets)
+///
+/// org-lint: `duplicate-target`
+///
+/// Dedicated targets (`<<target>>`) serve as internal link anchors. Duplicates
+/// cause ambiguous link resolution. Radio targets (`<<<target>>>`) are excluded.
 pub struct DuplicateTarget;
 
 impl LintRule for DuplicateTarget {

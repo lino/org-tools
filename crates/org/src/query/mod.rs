@@ -1,4 +1,4 @@
-// Copyright (C) 2026 orgfmt contributors
+// Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Query engine for org-mode entries.

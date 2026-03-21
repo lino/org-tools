@@ -1,23 +1,17 @@
 [package]
-name = "org"
+name = "org-tools-core"
 version.workspace = true
 edition.workspace = true
-description = "Unified CLI for org-mode: lint, format, query, clock, export"
+description = "Core library for the org CLI suite — org-mode linting, formatting, document model"
 license.workspace = true
 
-[[bin]]
-name = "org"
-path = "src/main.rs"
-
 [dependencies]
-org-tools-core = { path = "../org-tools-core" }
 clap = { workspace = true }
 ignore = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+unicode-width = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = { workspace = true }
-predicates = { workspace = true }
 tempfile = { workspace = true }

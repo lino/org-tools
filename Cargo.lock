@@ -382,7 +382,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "ignore",
- "orgfmt-core",
+ "org-tools-core",
  "predicates",
  "serde",
  "serde_json",
@@ -391,7 +391,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "orgfmt-core"
+name = "org-tools-core"
 version = "0.1.0"
 dependencies = [
  "clap",

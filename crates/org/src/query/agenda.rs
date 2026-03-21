@@ -1,10 +1,10 @@
-// Copyright (C) 2026 orgfmt contributors
+// Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Agenda view — shows scheduled/deadline items grouped by day.
 
-use orgfmt_core::document::{OrgDocument, OrgEntry};
-use orgfmt_core::rules::timestamp::OrgTimestamp;
+use org_tools_core::document::{OrgDocument, OrgEntry};
+use org_tools_core::rules::timestamp::OrgTimestamp;
 
 /// An agenda item with its source context.
 #[derive(Debug)]
@@ -229,8 +229,8 @@ mod tests {
 
     #[test]
     fn build_agenda_basic() {
-        use orgfmt_core::document::OrgDocument;
-        use orgfmt_core::source::SourceFile;
+        use org_tools_core::document::OrgDocument;
+        use org_tools_core::source::SourceFile;
 
         let source = SourceFile::new(
             "test.org",

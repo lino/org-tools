@@ -1,10 +1,10 @@
-// Copyright (C) 2026 orgfmt contributors
+// Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Predicate evaluation against [`OrgEntry`] values.
 
-use orgfmt_core::document::{OrgDocument, OrgEntry};
-use orgfmt_core::rules::timestamp::OrgTimestamp;
+use org_tools_core::document::{OrgDocument, OrgEntry};
+use org_tools_core::rules::timestamp::OrgTimestamp;
 
 use super::parser::{CmpOp, Comparison, DateMatch, DateRef, DateUnit, Predicate, PriorityMatch};
 
@@ -140,7 +140,7 @@ fn date_ref_to_days(date_ref: &DateRef, today_days: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orgfmt_core::source::SourceFile;
+    use org_tools_core::source::SourceFile;
 
     fn today() -> (u16, u8, u8) {
         (2024, 6, 15)

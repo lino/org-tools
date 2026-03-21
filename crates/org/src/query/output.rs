@@ -1,10 +1,10 @@
-// Copyright (C) 2026 orgfmt contributors
+// Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Output rendering for query results.
 
-use orgfmt_core::document::{OrgDocument, OrgEntry};
-use orgfmt_core::locator::locator_for_entry;
+use org_tools_core::document::{OrgDocument, OrgEntry};
+use org_tools_core::locator::locator_for_entry;
 use serde::Serialize;
 
 /// A matched entry with its document context.
@@ -114,7 +114,7 @@ pub fn render_locators(matches: &[MatchedEntry<'_>]) -> String {
 }
 
 /// Format a timestamp for display.
-fn format_ts(ts: &orgfmt_core::rules::timestamp::OrgTimestamp) -> String {
+fn format_ts(ts: &org_tools_core::rules::timestamp::OrgTimestamp) -> String {
     let time = match (ts.hour, ts.minute) {
         (Some(h), Some(m)) => format!(" {h:02}:{m:02}"),
         _ => String::new(),

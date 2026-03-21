@@ -1,4 +1,4 @@
-// Copyright (C) 2026 orgfmt contributors
+// Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Unified CLI for org-mode: lint, format, query, clock, export.
@@ -10,12 +10,12 @@ use std::process;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use orgfmt_core::config::Config;
-use orgfmt_core::document::OrgDocument;
-use orgfmt_core::files::collect_org_files;
-use orgfmt_core::output::{render_diagnostics, OutputFormat};
-use orgfmt_core::runner::Runner;
-use orgfmt_core::source::SourceFile;
+use org_tools_core::config::Config;
+use org_tools_core::document::OrgDocument;
+use org_tools_core::files::collect_org_files;
+use org_tools_core::output::{render_diagnostics, OutputFormat};
+use org_tools_core::runner::Runner;
+use org_tools_core::source::SourceFile;
 
 /// Unified CLI for org-mode files.
 #[derive(Parser)]

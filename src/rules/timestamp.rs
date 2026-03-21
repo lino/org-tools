@@ -1,23 +1,36 @@
-/// Shared timestamp parser for org-mode timestamps.
-///
-/// Spec: [§8.1 Timestamps](https://orgmode.org/manual/Timestamps.html),
-/// [Syntax: Timestamps](https://orgmode.org/worg/org-syntax.html#Timestamps)
-///
-/// Active: `<YYYY-MM-DD DAY>` or `<YYYY-MM-DD DAY HH:MM>`
-/// Inactive: `[YYYY-MM-DD DAY]` or `[YYYY-MM-DD DAY HH:MM]`
-/// Repeaters: `+Ny`, `+Nm`, `+Nw`, `+Nd`, `+Nh`, `++N_`, `.+N_`
-/// Warning: `-Nd` etc.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Shared timestamp parser for org-mode timestamps.
+//!
+//! Spec: [§8.1 Timestamps](https://orgmode.org/manual/Timestamps.html),
+//! [Syntax: Timestamps](https://orgmode.org/worg/org-syntax.html#Timestamps)
+//!
+//! Active: `<YYYY-MM-DD DAY>` or `<YYYY-MM-DD DAY HH:MM>`
+//! Inactive: `[YYYY-MM-DD DAY]` or `[YYYY-MM-DD DAY HH:MM]`
+//! Repeaters: `+Ny`, `+Nm`, `+Nw`, `+Nd`, `+Nh`, `++N_`, `.+N_`
+//! Warning: `-Nd` etc.
+
+/// Parsed representation of an org-mode timestamp.
 #[derive(Debug, PartialEq)]
 pub struct OrgTimestamp {
+    /// Four-digit year.
     pub year: u16,
+    /// Month (1–12).
     pub month: u8,
+    /// Day of month (1–31).
     pub day: u8,
+    /// Optional day-of-week abbreviation (e.g., `"Mon"`).
     pub dayname: Option<String>,
+    /// Optional hour (0–23).
     pub hour: Option<u8>,
+    /// Optional minute (0–59).
     pub minute: Option<u8>,
+    /// Optional repeater string (e.g., `"+1w"`, `"++2m"`, `".+3d"`).
     pub repeater: Option<String>,
+    /// Optional warning delay string (e.g., `"-3d"`, `"--2w"`).
     pub warning: Option<String>,
+    /// `true` for active timestamps (`<…>`), `false` for inactive (`[…]`).
     pub active: bool,
 }
 

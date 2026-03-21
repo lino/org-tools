@@ -1,26 +1,40 @@
-/// Shared list item parser for org-mode plain lists.
-///
-/// Spec: [§2.7 Plain Lists](https://orgmode.org/manual/Plain-Lists.html),
-/// [Syntax: Plain Lists](https://orgmode.org/worg/org-syntax.html#Plain_Lists_and_Items)
-///
-/// Unordered: `-`, `+`, or `*` (only when indented) followed by space.
-/// Ordered: `NUMBER.` or `NUMBER)` followed by space.
-/// Checkboxes: `[ ]`, `[X]`, `[-]` immediately after the bullet.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Shared list item parser for org-mode plain lists.
+//!
+//! Spec: [§2.7 Plain Lists](https://orgmode.org/manual/Plain-Lists.html),
+//! [Syntax: Plain Lists](https://orgmode.org/worg/org-syntax.html#Plain_Lists_and_Items)
+//!
+//! Unordered: `-`, `+`, or `*` (only when indented) followed by space.
+//! Ordered: `NUMBER.` or `NUMBER)` followed by space.
+//! Checkboxes: `[ ]`, `[X]`, `[-]` immediately after the bullet.
+
+/// The marker/bullet type of a list item.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListMarker {
+    /// Unordered marker: `-`.
     Dash,
+    /// Unordered marker: `+`.
     Plus,
+    /// Unordered marker: `*` (only valid when indented, otherwise a heading).
     Star,
+    /// Ordered marker with dot: `1.`, `2.`, `a.`.
     OrderedDot(String),
+    /// Ordered marker with paren: `1)`, `2)`, `a)`.
     OrderedParen(String),
 }
 
+/// Parsed components of an org-mode list item line.
 #[derive(Debug, PartialEq)]
 pub struct ListItem<'a> {
+    /// Number of leading whitespace characters before the marker.
     pub indent: usize,
+    /// The bullet/marker type.
     pub marker: ListMarker,
+    /// Checkbox state if present: `' '`, `'X'`, `'x'`, or `'-'`.
     pub checkbox: Option<char>,
+    /// Text content after the marker and optional checkbox.
     pub content: &'a str,
 }
 

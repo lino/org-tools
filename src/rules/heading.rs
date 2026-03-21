@@ -1,4 +1,7 @@
-/// Shared heading parser for extracting structured parts from org heading lines.
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/// Parsed components of an org heading line.
 ///
 /// Spec: [§2.2 Headlines](https://orgmode.org/manual/Headlines.html),
 /// [Syntax: Headlines](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections)
@@ -7,14 +10,17 @@
 /// `STARS KEYWORD PRIORITY TITLE TAGS`
 /// where STARS is `*+` at column 0, KEYWORD is an optional TODO state,
 /// PRIORITY is `[#X]`, TITLE is the text, and TAGS is `:tag1:tag2:` at EOL.
-///
-/// Parsed components of an org heading line.
 #[derive(Debug, PartialEq)]
 pub struct HeadingParts<'a> {
+    /// Number of leading stars (1 = top-level).
     pub level: usize,
+    /// TODO keyword if present (e.g., `"TODO"`, `"DONE"`).
     pub keyword: Option<&'a str>,
+    /// Priority cookie character if present (e.g., `'A'`).
     pub priority: Option<char>,
+    /// Heading title text with keyword, priority, and tags stripped.
     pub title: &'a str,
+    /// Tag strings without the surrounding colons (e.g., `["work", "urgent"]`).
     pub tags: Vec<&'a str>,
 }
 

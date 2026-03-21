@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::rules::heading::{
-    parse_heading, parse_heading_with_keywords, priority_range_from_file, todo_keywords_from_file,
-    PriorityRange, TodoKeywords,
+    parse_heading, parse_heading_with_keywords, priority_range_from_file, tag_spec_from_values,
+    todo_keywords_from_file, PriorityRange, TagSpec, TodoKeywords,
 };
 use crate::rules::timestamp::{parse_timestamp, OrgTimestamp};
 use crate::source::SourceFile;
@@ -36,6 +36,8 @@ pub struct OrgDocument {
     pub filetags: Vec<String>,
     /// File-wide default properties from `#+PROPERTY:` keyword lines.
     pub default_properties: HashMap<String, String>,
+    /// Tag specification parsed from `#+TAGS:` keyword lines.
+    pub tag_spec: TagSpec,
 }
 
 /// A single heading entry in an org document.
@@ -110,6 +112,7 @@ impl OrgDocument {
         let mut pri_range = PriorityRange::default();
         let mut filetags: Vec<String> = Vec::new();
         let mut default_properties: HashMap<String, String> = HashMap::new();
+        let mut tags_lines: Vec<String> = Vec::new();
         // Owned keyword strings for the lifetime of parsing; the &str refs
         // into `kw_refs` are used by `parse_heading_with_keywords`.
         let mut kw_strs: Vec<String> = todo_kw.all().iter().map(|s| s.to_string()).collect();
@@ -130,8 +133,13 @@ impl OrgDocument {
                     filetags = parse_filetags(file_keywords.get("FILETAGS"));
                     default_properties = parse_default_properties(&file_keywords);
                     // Fall through to heading processing below.
+                    // (tag_spec is built after the loop from tags_lines)
                 } else {
                     if let Some((key, val)) = parse_keyword_line(line) {
+                        // #+TAGS: lines are additive — collect all of them.
+                        if key == "TAGS" {
+                            tags_lines.push(val.clone());
+                        }
                         file_keywords.insert(key, val);
                     }
                     // Check for file-level property drawer.
@@ -228,6 +236,8 @@ impl OrgDocument {
             entries[idx].content_end_line = end;
         }
 
+        let tag_spec = tag_spec_from_values(&tags_lines);
+
         Self {
             file: source.path.clone(),
             entries,
@@ -237,6 +247,7 @@ impl OrgDocument {
             priority_range: pri_range,
             filetags,
             default_properties,
+            tag_spec,
         }
     }
 
@@ -863,5 +874,43 @@ mod tests {
         let source = make_source("* Task\n");
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.property(0, "CATEGORY"), None);
+    }
+
+    // --- Tag spec ---
+
+    #[test]
+    fn tag_spec_from_tags_keyword() {
+        let source = make_source("#+TAGS: @work @home laptop\n* Task :@work:\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(!doc.tag_spec.allow_any);
+        assert!(doc.tag_spec.matches_tag("@work"));
+        assert!(doc.tag_spec.matches_tag("laptop"));
+        assert!(!doc.tag_spec.matches_tag("unknown"));
+    }
+
+    #[test]
+    fn tag_spec_multiple_tags_lines() {
+        let source = make_source("#+TAGS: @work @home\n#+TAGS: laptop pc\n* Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.tag_spec.matches_tag("@work"));
+        assert!(doc.tag_spec.matches_tag("laptop"));
+        assert!(doc.tag_spec.matches_tag("pc"));
+    }
+
+    #[test]
+    fn tag_spec_allow_any_when_no_tags() {
+        let source = make_source("* Task :anything:\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.tag_spec.allow_any);
+    }
+
+    #[test]
+    fn tag_spec_with_groups() {
+        let source = make_source("#+TAGS: { @work @home } laptop\n* Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.tag_spec.matches_tag("@work"));
+        assert!(doc.tag_spec.matches_tag("laptop"));
+        assert_eq!(doc.tag_spec.groups.len(), 1);
+        assert!(doc.tag_spec.groups[0].exclusive);
     }
 }

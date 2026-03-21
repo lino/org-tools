@@ -13,6 +13,7 @@ ignore = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+regex = "1"
 unicode-width = "0.2"
 uuid = { version = "1", features = ["v4"] }
 assert_cmd = "2"

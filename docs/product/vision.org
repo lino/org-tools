@@ -64,8 +64,8 @@ parse and respect these to avoid false positives and produce correct results.
 |                           |         | OrgDocument; ready for lint + query use          |
 | =#+FILETAGS:=             | Done    | Parsed into filetags; included in inherited_tags |
 |                           |         | for query tag matching                           |
-| =#+TAGS:=                 | Planned | Tag validation lint rule; mutually exclusive     |
-|                           |         | groups (not yet parsed)                          |
+| =#+TAGS:=                 | Done    | Parsed into TagSpec; W019 undeclared-tag lint    |
+|                           |         | rule; mutually exclusive groups; regex members   |
 | =#+PROPERTY:=             | Done    | File-wide default properties; property() method  |
 |                           |         | falls back to defaults when entry lacks property |
 | =#+STARTUP: odd=          | Planned | Only odd heading levels valid; heading-level-gap |
@@ -158,8 +158,7 @@ fast and sufficient for most rules, but has inherent limits:
 |                           | =org-babel-load-languages= |                            |
 | TODO keyword recognition  | Reads =#+TODO:= settings   | Reads =#+TODO:= settings   |
 | Priority range validation | Reads =#+PRIORITIES:=      | Reads =#+PRIORITIES:=      |
-| Tag validation            | Reads =#+TAGS:= settings   | Filetags inherited; no     |
-|                           |                            | validation of tag names    |
+| Tag validation            | Reads =#+TAGS:= settings   | Reads =#+TAGS:= settings   |
 
 These divergences are tracked and will be addressed as in-buffer settings
 support is implemented (see roadmap above).

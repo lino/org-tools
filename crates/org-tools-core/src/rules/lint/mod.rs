@@ -43,4 +43,5 @@ pub mod suspicious_language;
 pub mod timestamp_validity;
 pub mod trailing_bracket_after_link;
 pub mod unclosed_block;
+pub mod undeclared_tag;
 pub mod unknown_options_item;

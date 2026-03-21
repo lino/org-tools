@@ -55,6 +55,7 @@ use crate::rules::lint::suspicious_language::SuspiciousLanguage;
 use crate::rules::lint::timestamp_validity::TimestampValidity;
 use crate::rules::lint::trailing_bracket_after_link::TrailingBracketAfterLink;
 use crate::rules::lint::unclosed_block::UnclosedBlock;
+use crate::rules::lint::undeclared_tag::UndeclaredTag;
 use crate::rules::lint::unknown_options_item::UnknownOptionsItem;
 use crate::rules::{FormatContext, FormatRule, LintContext, LintRule};
 use crate::source::SourceFile;
@@ -153,6 +154,7 @@ impl Runner {
             Box::new(KeywordValidity),
             Box::new(BlockTypeValidity),
             Box::new(AffiliatedKeywordPlacement),
+            Box::new(UndeclaredTag),
         ];
 
         Self {

@@ -6,7 +6,9 @@
 #+OPTIONS: toc:2 num:t
 #+STARTUP: overview
 #+FILETAGS: :project:test:
-#+TAGS: urgent important
+#+TAGS: urgent(u) important(i) project test
+#+TAGS: { @work(w) @home(h) }
+#+TAGS: [ Context : @Office @Remote ]
 #+TODO: TODO WAITING | DONE CANCELLED
 #+SEQ_TODO: DRAFT REVIEW | PUBLISHED
 #+PRIORITIES: A C B

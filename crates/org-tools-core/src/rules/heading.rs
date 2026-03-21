@@ -241,6 +241,267 @@ pub fn priority_range_from_file(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tag specification (#+TAGS:)
+// ---------------------------------------------------------------------------
+
+/// A single tag definition from `#+TAGS:`.
+///
+/// Spec: [§6.2 Setting Tags](https://orgmode.org/manual/Setting-Tags.html)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagDef {
+    /// Tag name (e.g., `"@work"`, `"laptop"`).
+    pub name: String,
+    /// Optional single-character fast-access key (e.g., `'w'` from `@work(w)`).
+    pub fast_key: Option<char>,
+}
+
+/// A member of a tag group — either a literal tag or a regex pattern.
+///
+/// Regex members use `{PATTERN}` syntax inside group brackets and match any
+/// tag whose name satisfies the pattern.
+#[derive(Debug, Clone)]
+pub enum TagMember {
+    /// A literal tag definition with optional fast-access key.
+    Literal(TagDef),
+    /// A regex pattern matching multiple tags (e.g., `{P@.+}`).
+    Pattern(regex::Regex),
+}
+
+/// A group of tags, optionally mutually exclusive.
+///
+/// Curly braces `{ ... }` define mutually exclusive groups; square brackets
+/// `[ Group : member1 member2 ]` define hierarchical groups (group tags).
+///
+/// Spec: [§6.2 Setting Tags](https://orgmode.org/manual/Setting-Tags.html)
+#[derive(Debug, Clone)]
+pub struct TagGroup {
+    /// Group tag name (for hierarchy groups `[ Group : ... ]`). `None` for
+    /// plain mutually exclusive groups `{ ... }`.
+    pub group_tag: Option<TagDef>,
+    /// Member tags or patterns within the group.
+    pub members: Vec<TagMember>,
+    /// `true` for `{ }` (mutually exclusive), `false` for `[ ]` (hierarchy).
+    pub exclusive: bool,
+}
+
+/// Parsed `#+TAGS:` configuration for a file.
+///
+/// Built from one or more `#+TAGS:` lines (additive). When no `#+TAGS:` lines
+/// are present, `allow_any` is `true` and no validation is performed.
+///
+/// Spec: [§6.2 Setting Tags](https://orgmode.org/manual/Setting-Tags.html)
+#[derive(Debug, Clone)]
+pub struct TagSpec {
+    /// Tag groups (mutually exclusive or hierarchical).
+    pub groups: Vec<TagGroup>,
+    /// Standalone tags not belonging to any group.
+    pub standalone: Vec<TagDef>,
+    /// When `true`, any tag is valid (no `#+TAGS:` declared or value is empty).
+    pub allow_any: bool,
+}
+
+impl Default for TagSpec {
+    fn default() -> Self {
+        Self {
+            groups: Vec::new(),
+            standalone: Vec::new(),
+            allow_any: true,
+        }
+    }
+}
+
+impl TagSpec {
+    /// Returns `true` if `tag` is declared (matches a literal name or a regex pattern).
+    pub fn matches_tag(&self, tag: &str) -> bool {
+        if self.allow_any {
+            return true;
+        }
+        // Check standalone tags.
+        if self.standalone.iter().any(|t| t.name == tag) {
+            return true;
+        }
+        // Check group tags and members.
+        for group in &self.groups {
+            if let Some(ref gt) = group.group_tag {
+                if gt.name == tag {
+                    return true;
+                }
+            }
+            for member in &group.members {
+                match member {
+                    TagMember::Literal(def) => {
+                        if def.name == tag {
+                            return true;
+                        }
+                    }
+                    TagMember::Pattern(re) => {
+                        if re.is_match(tag) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+/// Parse a tag token, stripping optional fast-access key suffix `(x)`.
+fn parse_tag_def(token: &str) -> TagDef {
+    if let Some(paren) = token.find('(') {
+        let name = token[..paren].to_string();
+        let fast_key = token[paren + 1..].chars().next().filter(|c| *c != ')');
+        TagDef { name, fast_key }
+    } else {
+        TagDef {
+            name: token.to_string(),
+            fast_key: None,
+        }
+    }
+}
+
+/// Parse a member token inside a group. Tokens wrapped in `{...}` are regex
+/// patterns; everything else is a literal tag.
+fn parse_group_member(token: &str) -> TagMember {
+    if token.starts_with('{') && token.ends_with('}') && token.len() > 2 {
+        let pattern = &token[1..token.len() - 1];
+        // Anchor the pattern to match the full tag name.
+        let anchored = format!("^(?:{pattern})$");
+        match regex::Regex::new(&anchored) {
+            Ok(re) => TagMember::Pattern(re),
+            // Fall back to literal if regex is invalid.
+            Err(_) => TagMember::Literal(parse_tag_def(token)),
+        }
+    } else {
+        TagMember::Literal(parse_tag_def(token))
+    }
+}
+
+/// Parse one or more `#+TAGS:` values into a [`TagSpec`].
+///
+/// Multiple values are combined additively. An empty slice or a single empty
+/// string results in `allow_any = true`.
+///
+/// Supported syntax:
+/// - Simple tags: `@work @home laptop`
+/// - Fast-access keys: `@work(w) @home(h)`
+/// - Mutually exclusive groups: `{ @work @home }`
+/// - Hierarchy groups: `[ Project : SubA SubB ]`
+/// - Regex members: `[ Project : {P@.+} ]`
+/// - Line-break markers `\\n` (ignored)
+///
+/// Spec: [§6.2 Setting Tags](https://orgmode.org/manual/Setting-Tags.html)
+pub fn parse_tags_spec(values: &[&str]) -> TagSpec {
+    if values.is_empty() {
+        return TagSpec::default();
+    }
+
+    // If all values are empty/whitespace, allow any tag.
+    let all_empty = values.iter().all(|v| v.trim().is_empty());
+    if all_empty {
+        return TagSpec {
+            allow_any: true,
+            ..TagSpec::default()
+        };
+    }
+
+    // Concatenate all values into a single token stream.
+    let combined: String = values.join(" ");
+    let tokens: Vec<&str> = combined.split_whitespace().collect();
+
+    let mut groups = Vec::new();
+    let mut standalone = Vec::new();
+    let mut i = 0;
+
+    while i < tokens.len() {
+        let token = tokens[i];
+
+        // Skip line-break markers.
+        if token == "\\n" {
+            i += 1;
+            continue;
+        }
+
+        // Mutually exclusive group: { tag1 tag2 ... }
+        if token == "{" {
+            i += 1;
+            let mut members = Vec::new();
+            while i < tokens.len() && tokens[i] != "}" {
+                if tokens[i] == ":" || tokens[i] == "\\n" {
+                    i += 1;
+                    continue;
+                }
+                members.push(parse_group_member(tokens[i]));
+                i += 1;
+            }
+            if i < tokens.len() {
+                i += 1; // skip "}"
+            }
+            groups.push(TagGroup {
+                group_tag: None,
+                members,
+                exclusive: true,
+            });
+            continue;
+        }
+
+        // Hierarchy group: [ GroupTag : member1 member2 ... ]
+        if token == "[" {
+            i += 1;
+            // First token after "[" is the group tag.
+            let group_tag = if i < tokens.len() && tokens[i] != ":" && tokens[i] != "]" {
+                let gt = parse_tag_def(tokens[i]);
+                i += 1;
+                Some(gt)
+            } else {
+                None
+            };
+            // Skip the colon separator.
+            if i < tokens.len() && tokens[i] == ":" {
+                i += 1;
+            }
+            let mut members = Vec::new();
+            while i < tokens.len() && tokens[i] != "]" {
+                if tokens[i] == "\\n" {
+                    i += 1;
+                    continue;
+                }
+                members.push(parse_group_member(tokens[i]));
+                i += 1;
+            }
+            if i < tokens.len() {
+                i += 1; // skip "]"
+            }
+            groups.push(TagGroup {
+                group_tag,
+                members,
+                exclusive: false,
+            });
+            continue;
+        }
+
+        // Standalone tag.
+        standalone.push(parse_tag_def(token));
+        i += 1;
+    }
+
+    TagSpec {
+        groups,
+        standalone,
+        allow_any: false,
+    }
+}
+
+/// Build a [`TagSpec`] from collected `#+TAGS:` values.
+pub fn tag_spec_from_values(values: &[String]) -> TagSpec {
+    if values.is_empty() {
+        return TagSpec::default();
+    }
+    let refs: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
+    parse_tags_spec(&refs)
+}
+
 /// Returns the heading level (number of stars) if the line is a heading.
 pub fn heading_level(line: &str) -> Option<usize> {
     if !line.starts_with('*') {
@@ -566,5 +827,135 @@ mod tests {
         assert_eq!(pr.highest, 'A');
         assert_eq!(pr.lowest, 'F');
         assert_eq!(pr.default, 'C');
+    }
+
+    // --- parse_tags_spec ---
+
+    #[test]
+    fn tags_spec_empty() {
+        let spec = parse_tags_spec(&[]);
+        assert!(spec.allow_any);
+    }
+
+    #[test]
+    fn tags_spec_empty_value() {
+        let spec = parse_tags_spec(&[""]);
+        assert!(spec.allow_any);
+    }
+
+    #[test]
+    fn tags_spec_simple_list() {
+        let spec = parse_tags_spec(&["@work @home laptop"]);
+        assert!(!spec.allow_any);
+        assert_eq!(spec.standalone.len(), 3);
+        assert_eq!(spec.standalone[0].name, "@work");
+        assert_eq!(spec.standalone[1].name, "@home");
+        assert_eq!(spec.standalone[2].name, "laptop");
+    }
+
+    #[test]
+    fn tags_spec_fast_access_keys() {
+        let spec = parse_tags_spec(&["@work(w) @home(h) laptop(l)"]);
+        assert_eq!(spec.standalone[0].name, "@work");
+        assert_eq!(spec.standalone[0].fast_key, Some('w'));
+        assert_eq!(spec.standalone[1].fast_key, Some('h'));
+        assert_eq!(spec.standalone[2].fast_key, Some('l'));
+    }
+
+    #[test]
+    fn tags_spec_mutually_exclusive() {
+        let spec = parse_tags_spec(&["{ @work @home } laptop"]);
+        assert_eq!(spec.groups.len(), 1);
+        assert!(spec.groups[0].exclusive);
+        assert!(spec.groups[0].group_tag.is_none());
+        assert_eq!(spec.groups[0].members.len(), 2);
+        assert_eq!(spec.standalone.len(), 1);
+        assert_eq!(spec.standalone[0].name, "laptop");
+    }
+
+    #[test]
+    fn tags_spec_hierarchy_group() {
+        let spec = parse_tags_spec(&["[ Project : SubA SubB ]"]);
+        assert_eq!(spec.groups.len(), 1);
+        assert!(!spec.groups[0].exclusive);
+        let gt = spec.groups[0].group_tag.as_ref().unwrap();
+        assert_eq!(gt.name, "Project");
+        assert_eq!(spec.groups[0].members.len(), 2);
+    }
+
+    #[test]
+    fn tags_spec_regex_member() {
+        let spec = parse_tags_spec(&["[ Project : {P@.+} ]"]);
+        assert_eq!(spec.groups.len(), 1);
+        assert!(spec.matches_tag("Project"));
+        assert!(spec.matches_tag("P@frontend"));
+        assert!(spec.matches_tag("P@backend"));
+        assert!(!spec.matches_tag("frontend"));
+    }
+
+    #[test]
+    fn tags_spec_multiple_lines() {
+        let spec = parse_tags_spec(&["@work(w) @home(h)", "laptop(l) pc(p)"]);
+        assert_eq!(spec.standalone.len(), 4);
+        assert!(spec.matches_tag("@work"));
+        assert!(spec.matches_tag("pc"));
+    }
+
+    #[test]
+    fn tags_spec_line_break_marker() {
+        let spec = parse_tags_spec(&["@work \\n laptop"]);
+        assert_eq!(spec.standalone.len(), 2);
+        assert!(spec.matches_tag("@work"));
+        assert!(spec.matches_tag("laptop"));
+    }
+
+    #[test]
+    fn tags_spec_matches_standalone() {
+        let spec = parse_tags_spec(&["@work @home laptop"]);
+        assert!(spec.matches_tag("@work"));
+        assert!(spec.matches_tag("laptop"));
+        assert!(!spec.matches_tag("unknown"));
+    }
+
+    #[test]
+    fn tags_spec_matches_group_members() {
+        let spec = parse_tags_spec(&["{ @work @home } laptop"]);
+        assert!(spec.matches_tag("@work"));
+        assert!(spec.matches_tag("@home"));
+        assert!(spec.matches_tag("laptop"));
+        assert!(!spec.matches_tag("phone"));
+    }
+
+    #[test]
+    fn tags_spec_matches_group_tag() {
+        let spec = parse_tags_spec(&["[ Context : @Office @Remote ]"]);
+        assert!(spec.matches_tag("Context"));
+        assert!(spec.matches_tag("@Office"));
+        assert!(spec.matches_tag("@Remote"));
+        assert!(!spec.matches_tag("@Home"));
+    }
+
+    #[test]
+    fn tags_spec_allow_any_matches_everything() {
+        let spec = TagSpec::default();
+        assert!(spec.matches_tag("anything"));
+        assert!(spec.matches_tag("@work"));
+    }
+
+    #[test]
+    fn tags_spec_case_sensitive() {
+        let spec = parse_tags_spec(&["Work"]);
+        assert!(spec.matches_tag("Work"));
+        assert!(!spec.matches_tag("work"));
+        assert!(!spec.matches_tag("WORK"));
+    }
+
+    #[test]
+    fn tag_spec_from_values_helper() {
+        let vals = vec!["@work @home".to_string(), "laptop".to_string()];
+        let spec = tag_spec_from_values(&vals);
+        assert!(!spec.allow_any);
+        assert!(spec.matches_tag("@work"));
+        assert!(spec.matches_tag("laptop"));
     }
 }

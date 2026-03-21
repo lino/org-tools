@@ -11,6 +11,7 @@ ignore = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+regex = { workspace = true }
 unicode-width = { workspace = true }
 uuid = { workspace = true }
 

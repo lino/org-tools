@@ -1,39 +1,46 @@
 // Copyright (C) 2026 orgfmt contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! CLI entrypoint for orgfmt.
-//!
-//! Provides two subcommands:
-//! - `check` — lint org files and report diagnostics
-//! - `format` — auto-fix formatting issues
+//! Unified CLI for org-mode: lint, format, query, clock, export.
 
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Parser, Subcommand};
-use ignore::WalkBuilder;
 
-use orgfmt::config::Config;
-use orgfmt::output::{render_diagnostics, OutputFormat};
-use orgfmt::runner::Runner;
-use orgfmt::source::SourceFile;
+use orgfmt_core::config::Config;
+use orgfmt_core::files::collect_org_files;
+use orgfmt_core::output::{render_diagnostics, OutputFormat};
+use orgfmt_core::runner::Runner;
+use orgfmt_core::source::SourceFile;
 
-/// Top-level CLI arguments parsed by clap.
+/// Unified CLI for org-mode files.
 #[derive(Parser)]
-#[command(name = "orgfmt", about = "Opinionated org-mode linter and formatter")]
+#[command(name = "org", about = "Unified CLI for org-mode: lint, format, query, clock, export")]
 struct Cli {
-    /// Subcommand to run (`check` or `format`).
+    /// Subcommand to run.
     #[command(subcommand)]
-    command: Command,
-
-    /// Path to config file (default: search for `.orgfmt.toml` in current and parent dirs).
-    #[arg(long, global = true)]
-    config: Option<PathBuf>,
+    command: OrgCommand,
 }
 
-/// Available subcommands.
+/// Top-level subcommands.
 #[derive(Subcommand)]
-enum Command {
+enum OrgCommand {
+    /// Lint and format org files.
+    Fmt {
+        #[command(subcommand)]
+        command: FmtCommand,
+
+        /// Path to config file.
+        #[arg(long, global = true)]
+        config: Option<PathBuf>,
+    },
+    // TODO: Query, Clock, Update, Export subcommands (phases 4-7)
+}
+
+/// Subcommands for `org fmt`.
+#[derive(Subcommand)]
+enum FmtCommand {
     /// Lint org files and report diagnostics.
     Check {
         /// Files or directories to check.
@@ -62,29 +69,6 @@ enum Command {
     },
 }
 
-/// Collects all `.org` files from the given paths, recursing into directories.
-fn collect_org_files(paths: &[PathBuf]) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-
-    for path in paths {
-        if path.is_file() {
-            files.push(path.clone());
-        } else if path.is_dir() {
-            for entry in WalkBuilder::new(path).build().flatten() {
-                let p = entry.path();
-                if p.is_file() && p.extension().is_some_and(|ext| ext == "org") {
-                    files.push(p.to_path_buf());
-                }
-            }
-        } else {
-            eprintln!("orgfmt: path not found: {}", path.display());
-        }
-    }
-
-    files.sort();
-    files
-}
-
 /// Loads configuration from an explicit path or by searching ancestor directories.
 fn load_config(cli_config: &Option<PathBuf>) -> Config {
     if let Some(path) = cli_config {
@@ -93,41 +77,50 @@ fn load_config(cli_config: &Option<PathBuf>) -> Config {
                 Ok(contents) => match toml::from_str::<Config>(&contents) {
                     Ok(config) => return config,
                     Err(e) => {
-                        eprintln!("orgfmt: error parsing {}: {}", path.display(), e);
+                        eprintln!("org: error parsing {}: {}", path.display(), e);
                         process::exit(2);
                     }
                 },
                 Err(e) => {
-                    eprintln!("orgfmt: error reading {}: {}", path.display(), e);
+                    eprintln!("org: error reading {}: {}", path.display(), e);
                     process::exit(2);
                 }
             }
         } else {
-            eprintln!("orgfmt: config file not found: {}", path.display());
+            eprintln!("org: config file not found: {}", path.display());
             process::exit(2);
         }
     }
 
-    // Search for .orgfmt.toml from current directory upward.
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     Config::load(&cwd)
 }
 
 fn main() {
     let cli = Cli::parse();
-    let config = load_config(&cli.config);
-    let runner = Runner::new(config);
 
     let exit_code = match cli.command {
-        Command::Check { paths, format, fix } => {
+        OrgCommand::Fmt { command, config } => {
+            let config = load_config(&config);
+            let runner = Runner::new(config);
+            run_fmt(command, &runner)
+        }
+    };
+
+    process::exit(exit_code);
+}
+
+/// Runs the `fmt` subcommand (check or format).
+fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
+    match command {
+        FmtCommand::Check { paths, format, fix } => {
             let files = collect_org_files(&paths);
             if files.is_empty() {
-                eprintln!("orgfmt: no .org files found");
-                process::exit(2);
+                eprintln!("org: no .org files found");
+                return 2;
             }
 
             if fix {
-                // --fix mode: apply format fixes, then report remaining lint issues.
                 let mut has_issues = false;
                 for file in &files {
                     match SourceFile::from_path(file) {
@@ -137,11 +130,7 @@ fn main() {
 
                             if changed {
                                 if let Err(e) = std::fs::write(file, &formatted) {
-                                    eprintln!(
-                                        "orgfmt: error writing {}: {}",
-                                        file.display(),
-                                        e
-                                    );
+                                    eprintln!("org: error writing {}: {}", file.display(), e);
                                 } else {
                                     println!("Fixed: {}", file.display());
                                 }
@@ -149,20 +138,16 @@ fn main() {
 
                             if !lint_diags.is_empty() {
                                 has_issues = true;
-                                print!(
-                                    "{}",
-                                    render_diagnostics(&lint_diags, format)
-                                );
+                                print!("{}", render_diagnostics(&lint_diags, format));
                             }
                         }
                         Err(e) => {
-                            eprintln!("orgfmt: error reading {}: {}", file.display(), e);
+                            eprintln!("org: error reading {}: {}", file.display(), e);
                         }
                     }
                 }
                 if has_issues { 1 } else { 0 }
             } else {
-                // Normal check mode: report all diagnostics.
                 let mut all_diagnostics = Vec::new();
                 for file in &files {
                     match SourceFile::from_path(file) {
@@ -170,7 +155,7 @@ fn main() {
                             all_diagnostics.extend(runner.check(&source));
                         }
                         Err(e) => {
-                            eprintln!("orgfmt: error reading {}: {}", file.display(), e);
+                            eprintln!("org: error reading {}: {}", file.display(), e);
                         }
                     }
                 }
@@ -183,15 +168,15 @@ fn main() {
                 }
             }
         }
-        Command::Format {
+        FmtCommand::Format {
             paths,
             check,
             stdout,
         } => {
             let files = collect_org_files(&paths);
             if files.is_empty() {
-                eprintln!("orgfmt: no .org files found");
-                process::exit(2);
+                eprintln!("org: no .org files found");
+                return 2;
             }
 
             let mut has_changes = false;
@@ -209,7 +194,10 @@ fn main() {
 
                         if !lint_diags.is_empty() {
                             has_lint_issues = true;
-                            print!("{}", render_diagnostics(&lint_diags, OutputFormat::Human));
+                            print!(
+                                "{}",
+                                render_diagnostics(&lint_diags, OutputFormat::Human)
+                            );
                         }
 
                         if check {
@@ -220,14 +208,14 @@ fn main() {
                             print!("{}", formatted);
                         } else if changed {
                             if let Err(e) = std::fs::write(file, &formatted) {
-                                eprintln!("orgfmt: error writing {}: {}", file.display(), e);
+                                eprintln!("org: error writing {}: {}", file.display(), e);
                             } else {
                                 println!("Formatted: {}", file.display());
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("orgfmt: error reading {}: {}", file.display(), e);
+                        eprintln!("org: error reading {}: {}", file.display(), e);
                     }
                 }
             }
@@ -238,7 +226,5 @@ fn main() {
                 0
             }
         }
-    };
-
-    process::exit(exit_code);
+    }
 }

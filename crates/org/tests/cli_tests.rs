@@ -3,8 +3,8 @@ use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
-fn orgfmt() -> Command {
-    Command::cargo_bin("orgfmt").unwrap()
+fn org() -> Command {
+    Command::cargo_bin("org").unwrap()
 }
 
 #[test]
@@ -13,8 +13,8 @@ fn check_clean_file() {
     let file = dir.path().join("clean.org");
     fs::write(&file, "* Heading\n\nSome text.\n").unwrap();
 
-    orgfmt()
-        .arg("check")
+    org()
+        .args(["fmt", "check"])
         .arg(file.to_str().unwrap())
         .assert()
         .success();
@@ -26,8 +26,8 @@ fn check_dirty_file_exits_1() {
     let file = dir.path().join("dirty.org");
     fs::write(&file, "* Heading   \nSome text  \n").unwrap();
 
-    orgfmt()
-        .arg("check")
+    org()
+        .args(["fmt", "check"])
         .arg(file.to_str().unwrap())
         .assert()
         .code(1)
@@ -40,8 +40,8 @@ fn format_in_place() {
     let file = dir.path().join("format_me.org");
     fs::write(&file, "* Heading   \ntext  \n").unwrap();
 
-    orgfmt()
-        .arg("format")
+    org()
+        .args(["fmt", "format"])
         .arg(file.to_str().unwrap())
         .assert()
         .success()
@@ -57,9 +57,8 @@ fn format_check_mode() {
     let file = dir.path().join("check_format.org");
     fs::write(&file, "* Heading   \n").unwrap();
 
-    orgfmt()
-        .arg("format")
-        .arg("--check")
+    org()
+        .args(["fmt", "format", "--check"])
         .arg(file.to_str().unwrap())
         .assert()
         .code(1)
@@ -76,9 +75,8 @@ fn format_stdout_mode() {
     let file = dir.path().join("stdout.org");
     fs::write(&file, "text   \n").unwrap();
 
-    orgfmt()
-        .arg("format")
-        .arg("--stdout")
+    org()
+        .args(["fmt", "format", "--stdout"])
         .arg(file.to_str().unwrap())
         .assert()
         .success()
@@ -95,10 +93,8 @@ fn check_json_output() {
     let file = dir.path().join("json.org");
     fs::write(&file, "text   \n").unwrap();
 
-    let output = orgfmt()
-        .arg("check")
-        .arg("--format")
-        .arg("json")
+    let output = org()
+        .args(["fmt", "check", "--format", "json"])
         .arg(file.to_str().unwrap())
         .assert()
         .code(1)
@@ -120,8 +116,8 @@ fn check_recursive_directory() {
     fs::write(sub.join("b.org"), "clean\n").unwrap();
     fs::write(sub.join("not_org.txt"), "text   \n").unwrap();
 
-    orgfmt()
-        .arg("check")
+    org()
+        .args(["fmt", "check"])
         .arg(dir.path().to_str().unwrap())
         .assert()
         .code(1)
@@ -134,8 +130,8 @@ fn no_files_found_exits_2() {
     let dir = TempDir::new().unwrap();
     fs::write(dir.path().join("not_org.txt"), "text\n").unwrap();
 
-    orgfmt()
-        .arg("check")
+    org()
+        .args(["fmt", "check"])
         .arg(dir.path().to_str().unwrap())
         .assert()
         .code(2);
@@ -143,9 +139,8 @@ fn no_files_found_exits_2() {
 
 #[test]
 fn check_sample_fixture() {
-    orgfmt()
-        .arg("check")
-        .arg("tests/fixtures/sample.org")
+    org()
+        .args(["fmt", "check", "../../tests/fixtures/sample.org"])
         .assert()
         .code(1)
         .stdout(predicate::str::contains("heading-level-gap"))
@@ -163,9 +158,8 @@ fn format_table_alignment() {
     )
     .unwrap();
 
-    orgfmt()
-        .arg("format")
-        .arg("--stdout")
+    org()
+        .args(["fmt", "format", "--stdout"])
         .arg(file.to_str().unwrap())
         .assert()
         .success()
@@ -178,9 +172,8 @@ fn check_fix_mode() {
     let file = dir.path().join("fix_me.org");
     fs::write(&file, "* Heading   \ntext  \n").unwrap();
 
-    orgfmt()
-        .arg("check")
-        .arg("--fix")
+    org()
+        .args(["fmt", "check", "--fix"])
         .arg(file.to_str().unwrap())
         .assert()
         .success()

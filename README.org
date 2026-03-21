@@ -1,7 +1,7 @@
-#+TITLE: orgfmt
+#+TITLE: org-tools
 #+OPTIONS: toc:2
 
-Opinionated org-mode linter and formatter. Runs without Emacs.
+Unified org-mode CLI: lint, format, query, clock, export. Runs without Emacs.
 
 * Why
 
@@ -10,7 +10,7 @@ Emacs Lisp hacks to keep my org files consistent. It worked — mostly — until
 it didn't: scripts broke on edge cases, elisp ran only inside Emacs, and
 nothing could run in CI without pulling in a full Emacs installation.
 
-orgfmt replaces all of that with a single Rust binary. It is fast, correct
+org-tools replaces all of that with a single Rust binary. It is fast, correct
 (rules are validated against the org-mode specification and Emacs source),
 and designed to run anywhere — locally, in CI, or from any editor.
 
@@ -18,6 +18,8 @@ This project was built with the help of AI tooling (Claude Code). The rule
 set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/lisp/org-lint.el][org-lint.el]] and the [[https://orgmode.org/worg/org-syntax.html][org-mode specification]].
 
 * Features
+
+** Lint & Format (=org fmt=)
 
 - *9 format rules* (auto-fixable): trailing whitespace, blank lines, heading
   spacing, table alignment, property drawer alignment, keyword spacing, tag
@@ -27,35 +29,64 @@ set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.
   ~58 checks
 - *Protected regions*: source, example, export, quote, verse, center, and
   comment blocks are never modified by format rules
-- *Configurable* via =.orgfmt.toml= with sensible defaults matching Emacs
-- *Multiple output formats*: human-readable (default) and JSON for tooling
-- *Recursive directory scanning* respecting =.gitignore=
+- *Configurable* via =.org-tools.toml= with sensible defaults matching Emacs
+
+** Query & Agenda (=org query=)
+
+- *Query language* with predicates: =todo=, =done=, =tags=, =heading=,
+  =property=, =priority=, =level=, =scheduled=, =deadline=, =closed=, =clocked=
+- *Boolean operators*: =and=, =or=, =not=, parentheses, implicit AND
+- *Agenda view*: scheduled/deadline items grouped by day
+- *Tag inheritance*: child entries inherit parent tags in queries
+- *Output formats*: human, JSON (with [[file:schemas/org-query-output.schema.json][JSON schema]]), locator (for piping)
+
+** Org Item Locator
+
+A unique identifier for any heading across a tree of org files:
+
+| Pattern | Example | Stability |
+|---------+---------+-----------|
+| =id:<uuid>= | =id:550e8400-e29b-...= | Survives moves |
+| =<file>::#<custom-id>= | =notes.org::#project-x= | File-scoped |
+| =<file>::*/<path>= | =todo.org::*/Work/Meeting= | Fragile on rename |
+| =<file>::<line>= | =inbox.org::42= | Fragile on edit |
+
+When an entry has an =:ID:= property, that is always preferred.
+
+** Upcoming
+
+- =org clock= — clock in/out, status, reports (Phase 5)
+- =org update= — statistic cookies, clocktables (Phase 6)
+- =org export= — iCalendar, JSCalendar with configurable mapping (Phase 7)
 
 * Quick Start
 
 #+begin_src sh
 # Install
-cargo install --path .
+cargo install --path crates/org
 
-# Check files for issues
-orgfmt check file.org
+# Lint
+org fmt check file.org
 
 # Format in place
-orgfmt format file.org
+org fmt format file.org
 
-# Preview formatting without modifying
-orgfmt format --stdout file.org
+# Query entries
+org query search 'todo:TODO tags:work' ~/org/
 
-# Check formatting in CI (exit 1 if changes needed)
-orgfmt format --check .
+# Agenda view (next 7 days)
+org query agenda ~/org/
 
 # JSON output for tooling
-orgfmt check --format json .
+org query search 'deadline:past' --format json ~/org/
+
+# Pipe query results
+org query search 'clocked' --format locator ~/org/
 #+end_src
 
 * Configuration
 
-Copy =.orgfmt.toml.example= to =.orgfmt.toml= in your project root:
+Copy =.org-tools.toml.example= to =.org-tools.toml= in your project root:
 
 #+begin_src toml
 [format]
@@ -69,7 +100,7 @@ property_drawer_align = true
 disabled_rules = []
 #+end_src
 
-orgfmt searches for =.orgfmt.toml= starting from the current directory and
+org-tools searches for =.org-tools.toml= starting from the current directory and
 walking up to the filesystem root.
 
 See [[file:docs/user/usage.org][docs/user/usage.org]] for the full usage guide and rule reference.
@@ -85,6 +116,15 @@ mise run test      # cargo test
 mise run lint      # clippy + rustfmt check
 #+end_src
 
+* Project Structure
+
+org-tools is a Cargo workspace with two crates:
+
+| Crate | Purpose |
+|-------+---------|
+| =org-tools-core= | Shared library: rules, runner, config, OrgDocument, OrgLocator |
+| =org= | Umbrella binary: =org fmt=, =org query=, (future) =org clock=, =org update=, =org export= |
+
 * Documentation
 
 | Path                   | Contents                                    |
@@ -94,10 +134,11 @@ mise run lint      # clippy + rustfmt check
 | [[file:docs/product/vision.org][docs/product/]]          | Product vision and design principles        |
 | [[file:docs/user/usage.org][docs/user/]]             | Usage guide and rule reference              |
 | [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]] | Org-mode ecosystem and extension reference  |
+| [[file:schemas/][schemas/]]               | JSON schemas for output formats             |
 
 * License
 
 GPL-3.0-or-later. See [[file:LICENSE][LICENSE]].
 
-orgfmt's rule set was designed by studying org-lint.el and the org-mode
+org-tools's rule set was designed by studying org-lint.el and the org-mode
 specification. We chose GPL to respect the ecosystem that made this possible.

@@ -1,37 +1,56 @@
-#+TITLE: orgfmt — Product Vision
+#+TITLE: org-tools — Product Vision
 #+DATE: 2026-03-21
 
 * Problem Statement
 
-Org-mode users who want consistent formatting and early error detection
-currently rely on Emacs-based tooling (=org-lint=, custom elisp). This creates
-friction:
+Org-mode users who want consistent formatting, early error detection, and
+command-line access to their org data currently rely on Emacs-based tooling
+(=org-lint=, =org-ql=, =org-clock=, custom elisp). This creates friction:
 
 - CI pipelines cannot easily run org-lint without a full Emacs installation
 - Non-Emacs editors (VS Code, Neovim, Helix) have no org-mode linting
 - Custom formatting scripts (shell, Python, elisp) are fragile and hard to
   maintain
+- Querying, clocking, and exporting require Emacs to be running
+- There is no standard way to address a specific heading from the command line
 
 * Vision
 
-orgfmt is the =ruff= / =prettier= of the org-mode world: a fast, standalone
-tool that formats and lints org files without requiring Emacs.
+org-tools is the =ruff= / =prettier= of the org-mode world: a fast, standalone
+tool that formats, lints, queries, clocks, and exports org files without
+requiring Emacs.
+
+A single =org= binary provides all capabilities through subcommands that
+compose via Unix pipes.
+
+* Capabilities
+
+| Subcommand | Purpose | Status |
+|------------+---------+--------|
+| =org fmt= | Lint and format org files | Done |
+| =org query= | Search entries, agenda view | Done |
+| =org clock= | Clock in/out, reports | Planned |
+| =org update= | Statistic cookies, clocktables | Planned |
+| =org export= | iCalendar, JSCalendar export | Planned |
 
 * Design Principles
 
 - *Correctness over features*: every rule must match the org-mode
   specification. A rule that produces false positives is worse than no rule.
 - *Safety first*: never modify content inside protected regions. Never corrupt
-  a file.
+  a file. Separate formatting (cosmetic) from updates (semantic).
 - *Sensible defaults*: defaults match Emacs org-mode behaviour. Opinionated
   formatting is opt-in.
 - *One rule, one job*: each rule is independent, testable, and documented.
 - *Spec-driven*: every rule references the org-mode manual and formal syntax.
+- *Composable*: commands produce output suitable for piping.
+  OrgLocator strings are the universal addressing scheme.
 
 * Non-Goals
 
 - Replacing Emacs for editing org files
-- Implementing a full org-mode parser
+- Implementing a full org-mode parser (line-based scanning is sufficient
+  for the targeted use cases)
 - Supporting org-mode extensions that deviate from the specification
   (though common extensions like org-roam are tracked in the ecosystem doc
   to avoid false positives)

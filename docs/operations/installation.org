@@ -1,4 +1,4 @@
-#+TITLE: orgfmt — Installation
+#+TITLE: org-tools — Installation
 #+DATE: 2026-03-21
 
 * From Source
@@ -6,9 +6,9 @@
 Requires Rust 1.70+ (or use =mise= to install the pinned version).
 
 #+begin_src sh
-git clone https://github.com/YOUR_USER/orgfmt.git
-cd orgfmt
-cargo install --path .
+git clone https://github.com/YOUR_USER/org-tools.git
+cd org-tools
+cargo install --path crates/org
 #+end_src
 
 Or with mise:
@@ -21,13 +21,15 @@ mise run build      # cargo build
 * From Cargo
 
 #+begin_src sh
-cargo install orgfmt
+cargo install org
 #+end_src
 
 * Verify Installation
 
 #+begin_src sh
-orgfmt --help
-orgfmt check --help
-orgfmt format --help
+org --help
+org fmt check --help
+org fmt format --help
+org query search --help
+org query agenda --help
 #+end_src

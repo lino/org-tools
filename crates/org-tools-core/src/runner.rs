@@ -27,6 +27,7 @@ use crate::rules::lint::file_application::FileApplication;
 use crate::rules::lint::heading_level_gap::HeadingLevelGap;
 use crate::rules::lint::incomplete_drawer::IncompleteDrawer;
 use crate::rules::lint::invalid_babel_call::InvalidBabelCall;
+use crate::rules::lint::invalid_edna_syntax::InvalidEdnaSyntax;
 use crate::rules::lint::invalid_effort_property::InvalidEffortProperty;
 use crate::rules::lint::invalid_id_property::InvalidIdProperty;
 use crate::rules::lint::invalid_image_alignment::InvalidImageAlignment;
@@ -157,6 +158,7 @@ impl Runner {
             Box::new(AffiliatedKeywordPlacement),
             Box::new(UndeclaredTag),
             Box::new(InvalidTableFormula),
+            Box::new(InvalidEdnaSyntax),
         ];
 
         Self {
@@ -237,5 +239,53 @@ impl Runner {
 
         diagnostics.sort_by_key(|d| (d.line, d.column));
         (formatted, diagnostics)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn lint_rule_ids_are_unique() {
+        let runner = Runner::default();
+        let mut seen = HashSet::new();
+        for rule in &runner.lint_rules {
+            let id = rule.id();
+            assert!(
+                seen.insert(id),
+                "Duplicate lint rule ID: {id} (rule: {})",
+                rule.name()
+            );
+        }
+    }
+
+    #[test]
+    fn lint_rule_names_are_unique() {
+        let runner = Runner::default();
+        let mut seen = HashSet::new();
+        for rule in &runner.lint_rules {
+            let name = rule.name();
+            assert!(
+                seen.insert(name),
+                "Duplicate lint rule name: {name} (id: {})",
+                rule.id()
+            );
+        }
+    }
+
+    #[test]
+    fn format_rule_ids_are_unique() {
+        let runner = Runner::default();
+        let mut seen = HashSet::new();
+        for rule in &runner.format_rules {
+            let id = rule.id();
+            assert!(
+                seen.insert(id),
+                "Duplicate format rule ID: {id} (rule: {})",
+                rule.name()
+            );
+        }
     }
 }

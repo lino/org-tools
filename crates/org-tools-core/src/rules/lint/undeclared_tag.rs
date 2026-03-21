@@ -25,7 +25,7 @@ pub struct UndeclaredTag;
 
 impl LintRule for UndeclaredTag {
     fn id(&self) -> &'static str {
-        "W019"
+        "W033"
     }
 
     fn name(&self) -> &'static str {

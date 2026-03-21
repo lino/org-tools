@@ -114,6 +114,10 @@ Sources:
   ~next-sibling~, ~children~, ~parent~, ~match(...)~, ~file(...)~
 - Mini-language actions: ~todo!(STATE)~, ~scheduled!(TIMESPEC)~,
   ~deadline!(TIMESPEC)~, ~set-property!(PROP VAL)~, ~tag!(TAG)~
+- org-tools support:
+  - W035 (~invalid-edna-syntax~) validates BLOCKER/TRIGGER property syntax
+  - ~blocked~ and ~actionable~ query predicates evaluate edna BLOCKER
+    conditions to determine whether an entry is ready to work on
 
 *** org-drill — Flashcards/spaced repetition (org-contrib)
 - Properties (~:DRILL_*~):

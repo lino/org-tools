@@ -12,6 +12,7 @@ pub mod config;
 pub mod cookie;
 pub mod diagnostic;
 pub mod document;
+pub mod edna;
 pub mod entry;
 pub mod files;
 pub mod formatter;

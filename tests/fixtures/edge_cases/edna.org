@@ -1,0 +1,142 @@
+# org-edna edge case fixtures for org-tools
+#+TITLE: Org-Edna Edge Cases
+
+* Valid BLOCKER with ids() reference
+Two entries with IDs where the second is blocked by the first.
+
+** TODO First task
+:PROPERTIES:
+:ID: edna-task-1
+:END:
+This task must be completed before the second one.
+
+** TODO Second task (blocked)
+:PROPERTIES:
+:ID: edna-task-2
+:BLOCKER: ids(edna-task-1)
+:END:
+This task is blocked until edna-task-1 is DONE.
+
+* Valid TRIGGER with todo!() action
+An entry that triggers a state change on another entry upon completion.
+
+** TODO Trigger source
+:PROPERTIES:
+:ID: edna-trigger-src
+:TRIGGER: ids(edna-trigger-tgt) todo!(TODO)
+:END:
+When this is marked DONE, the target switches to TODO.
+
+** DONE Trigger target
+:PROPERTIES:
+:ID: edna-trigger-tgt
+:END:
+This entry will be set to TODO when the source completes.
+
+* Valid structural finders
+Entries using relative structural finders.
+
+** TODO Parent task
+:PROPERTIES:
+:TRIGGER: children todo!(TODO)
+:END:
+
+*** TODO Child A
+:PROPERTIES:
+:BLOCKER: parent
+:END:
+
+*** TODO Child B
+:PROPERTIES:
+:BLOCKER: previous-sibling
+:END:
+
+** TODO Sibling after
+:PROPERTIES:
+:BLOCKER: previous-sibling
+:END:
+
+** TODO Sibling before trigger
+:PROPERTIES:
+:TRIGGER: next-sibling todo!(DONE)
+:END:
+
+** TODO Next sibling target
+
+* Valid match() finder
+Entry blocked until all entries matching a tag query are done.
+
+** TODO Prepare release
+:PROPERTIES:
+:BLOCKER: match("release_blocker") todo-state?(DONE)
+:END:
+Blocked until all entries tagged :release_blocker: are DONE.
+
+** TODO Fix critical bug                                     :release_blocker:
+:PROPERTIES:
+:ID: edna-bug-1
+:END:
+
+** TODO Update changelog                                     :release_blocker:
+:PROPERTIES:
+:ID: edna-bug-2
+:END:
+
+* Valid condition with has-property?
+Entry with a property-based condition.
+
+** TODO Conditional task
+:PROPERTIES:
+:BLOCKER: ids("edna-task-1") has-property?("CATEGORY" "project")
+:END:
+Only unblocked if edna-task-1 has a CATEGORY property set.
+
+* Valid if/then/else/endif
+Conditional edna block with branching logic.
+
+** TODO Branching task
+:PROPERTIES:
+:TRIGGER: if todo-state?("DONE") then ids("edna-trigger-tgt") todo!("TODO") else ids("edna-task-2") todo!("WAITING") endif
+:END:
+If edna-task-1 is done, set trigger-tgt to TODO; otherwise set task-2 to WAITING.
+
+* Invalid: unknown finder — should trigger W035
+Entry with a finder that does not exist in edna.
+
+** TODO Bad finder
+:PROPERTIES:
+:BLOCKER: nonexistent-finder(edna-task-1)
+:END:
+
+* Invalid: action missing ! — should trigger W035
+Actions in edna require a trailing bang (e.g. todo!(), not todo()).
+
+** TODO Bad action
+:PROPERTIES:
+:TRIGGER: ids(edna-task-1) todo(DONE)
+:END:
+
+* Invalid: unclosed parentheses — should trigger W035
+Malformed edna expression with mismatched parens.
+
+** TODO Bad parens
+:PROPERTIES:
+:BLOCKER: ids(edna-task-1 todo-state?(DONE)
+:END:
+
+* Content inside a code block with :BLOCKER:
+Lint must not flag edna-like properties inside source blocks.
+
+#+begin_src org
+,** TODO Fake task
+:PROPERTIES:
+:BLOCKER: nonexistent-finder(foo)
+:TRIGGER: ids(bar) todo(NOPE)
+:END:
+#+end_src
+
+#+begin_example
+:PROPERTIES:
+:BLOCKER: broken(syntax
+:END:
+#+end_example

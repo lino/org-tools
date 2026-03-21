@@ -32,6 +32,7 @@ compose via Unix pipes.
 | =org clock=   | Clock reports, running status | Done   |
 | =org export=  | iCalendar, JSCalendar export  | Done   |
 | =org archive= | Archive done entries          | Done   |
+| /org-edna/    | Dependency lint + query       | Done   |
 
 ** org fmt — Roadmap
 
@@ -46,7 +47,7 @@ compose via Unix pipes.
 | Tag alignment (F007)          | Done   |                                       |
 | Property drawer align (F008)  | Done   |                                       |
 | Timestamp spacing (F009)      | Done   |                                       |
-| Table formulas (=#+TBLFM:=)   | Done   | Preserved; W020 validates syntax/refs |
+| Table formulas (=#+TBLFM:=)   | Done   | Preserved; W034 validates syntax/refs |
 | Right-align numbers in tables | Done   | Matches Emacs; header rows excluded   |
 
 ** In-buffer Settings — Roadmap
@@ -64,7 +65,7 @@ parse and respect these to avoid false positives and produce correct results.
 |                           |        | OrgDocument; ready for lint + query use          |
 | =#+FILETAGS:=             | Done   | Parsed into filetags; included in inherited_tags |
 |                           |        | for query tag matching                           |
-| =#+TAGS:=                 | Done   | Parsed into TagSpec; W019 undeclared-tag lint    |
+| =#+TAGS:=                 | Done   | Parsed into TagSpec; W033 undeclared-tag lint    |
 |                           |        | rule; mutually exclusive groups; regex members   |
 | =#+PROPERTY:=             | Done   | File-wide default properties; property() method  |
 |                           |        | falls back to defaults when entry lacks property |

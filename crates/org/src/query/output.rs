@@ -4,6 +4,7 @@
 //! Output rendering for query results.
 
 use org_tools_core::document::{OrgDocument, OrgEntry};
+use org_tools_core::edna::{self, EdnaContext};
 use org_tools_core::locator::locator_for_entry;
 use serde::Serialize;
 
@@ -69,16 +70,25 @@ pub struct JsonEntry {
     pub deadline: Option<String>,
     pub closed: Option<String>,
     pub clocked_minutes: i64,
+    pub blocked: bool,
 }
 
 /// Render matches as JSON.
-pub fn render_json(matches: &[MatchedEntry<'_>]) -> String {
+///
+/// The `all_docs` parameter enables edna blocker evaluation for the `blocked` field.
+pub fn render_json(matches: &[MatchedEntry<'_>], all_docs: &[&OrgDocument]) -> String {
     let items: Vec<JsonEntry> = matches
         .iter()
         .map(|m| {
             let entry = m.entry();
             let loc = locator_for_entry(m.doc, m.entry_idx);
             let total_clocked: i64 = entry.clocks.iter().filter_map(|c| c.duration_minutes).sum();
+            let ctx = EdnaContext {
+                all_docs,
+                doc: m.doc,
+                entry_idx: m.entry_idx,
+            };
+            let blocked = edna::is_blocked(&ctx);
 
             JsonEntry {
                 file: m.doc.file.display().to_string(),
@@ -94,6 +104,7 @@ pub fn render_json(matches: &[MatchedEntry<'_>]) -> String {
                 deadline: entry.planning.deadline.as_ref().map(format_ts),
                 closed: entry.planning.closed.as_ref().map(format_ts),
                 clocked_minutes: total_clocked,
+                blocked,
             }
         })
         .collect();

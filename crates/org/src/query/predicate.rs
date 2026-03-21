@@ -4,6 +4,7 @@
 //! Predicate evaluation against [`OrgEntry`] values.
 
 use org_tools_core::document::{OrgDocument, OrgEntry};
+use org_tools_core::edna::{self, EdnaContext};
 use org_tools_core::rules::timestamp::OrgTimestamp;
 
 use super::parser::{CmpOp, Comparison, DateMatch, DateRef, DateUnit, Predicate, PriorityMatch};
@@ -11,10 +12,12 @@ use super::parser::{CmpOp, Comparison, DateMatch, DateRef, DateUnit, Predicate, 
 /// Evaluate a predicate against an entry in a document.
 ///
 /// The `doc` parameter is needed for tag inheritance and TODO keyword config.
+/// The `all_docs` parameter enables cross-file resolution for edna blockers.
 pub fn matches(
     pred: &Predicate,
     entry: &OrgEntry,
     doc: &OrgDocument,
+    all_docs: &[&OrgDocument],
     today: (u16, u8, u8),
 ) -> bool {
     match pred {
@@ -56,9 +59,48 @@ pub fn matches(
         Predicate::Deadline(dm) => match_date_opt(&entry.planning.deadline, dm, today),
         Predicate::Closed(dm) => match_date_opt(&entry.planning.closed, dm, today),
         Predicate::Clocked => !entry.clocks.is_empty(),
-        Predicate::And(preds) => preds.iter().all(|p| matches(p, entry, doc, today)),
-        Predicate::Or(preds) => preds.iter().any(|p| matches(p, entry, doc, today)),
-        Predicate::Not(inner) => !matches(inner, entry, doc, today),
+        Predicate::Blocked => {
+            let entry_idx = doc
+                .entries
+                .iter()
+                .position(|e| std::ptr::eq(e, entry))
+                .unwrap_or(0);
+            let ctx = EdnaContext {
+                all_docs,
+                doc,
+                entry_idx,
+            };
+            edna::is_blocked(&ctx)
+        }
+        Predicate::Actionable => {
+            // Actionable = has a TODO keyword AND is not blocked.
+            let has_todo = entry.keyword.is_some()
+                && !entry
+                    .keyword
+                    .as_deref()
+                    .is_some_and(|k| doc.todo_keywords.is_done(k));
+            if !has_todo {
+                return false;
+            }
+            let entry_idx = doc
+                .entries
+                .iter()
+                .position(|e| std::ptr::eq(e, entry))
+                .unwrap_or(0);
+            let ctx = EdnaContext {
+                all_docs,
+                doc,
+                entry_idx,
+            };
+            !edna::is_blocked(&ctx)
+        }
+        Predicate::And(preds) => preds
+            .iter()
+            .all(|p| matches(p, entry, doc, all_docs, today)),
+        Predicate::Or(preds) => preds
+            .iter()
+            .any(|p| matches(p, entry, doc, all_docs, today)),
+        Predicate::Not(inner) => !matches(inner, entry, doc, all_docs, today),
     }
 }
 
@@ -148,148 +190,97 @@ mod tests {
         (doc, 0)
     }
 
+    /// Helper: evaluate predicate with a single-doc context.
+    fn eval(pred: &Predicate, doc: &OrgDocument, idx: usize) -> bool {
+        let all: Vec<&OrgDocument> = vec![doc];
+        matches(pred, &doc.entries[idx], doc, &all, today())
+    }
+
     #[test]
     fn match_todo_any() {
         let (doc, idx) = make_doc_and_entry("* TODO Task\n");
-        assert!(matches(
-            &Predicate::Todo(None),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Todo(None), &doc, idx));
     }
 
     #[test]
     fn match_todo_specific() {
         let (doc, idx) = make_doc_and_entry("* TODO Task\n");
-        assert!(matches(
-            &Predicate::Todo(Some("TODO".to_string())),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
-        assert!(!matches(
-            &Predicate::Todo(Some("NEXT".to_string())),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Todo(Some("TODO".to_string())), &doc, idx));
+        assert!(!eval(&Predicate::Todo(Some("NEXT".to_string())), &doc, idx));
     }
 
     #[test]
     fn match_done() {
         let (doc, idx) = make_doc_and_entry("* DONE Task\n");
-        assert!(matches(&Predicate::Done, &doc.entries[idx], &doc, today()));
+        assert!(eval(&Predicate::Done, &doc, idx));
     }
 
     #[test]
     fn match_tags() {
         let (doc, idx) = make_doc_and_entry("* Task :work:urgent:\n");
-        assert!(matches(
-            &Predicate::Tags(vec!["work".to_string()]),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
-        assert!(matches(
+        assert!(eval(&Predicate::Tags(vec!["work".to_string()]), &doc, idx));
+        assert!(eval(
             &Predicate::Tags(vec!["work".to_string(), "urgent".to_string()]),
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
-        assert!(!matches(
-            &Predicate::Tags(vec!["home".to_string()]),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(!eval(&Predicate::Tags(vec!["home".to_string()]), &doc, idx));
     }
 
     #[test]
     fn match_heading_substring() {
         let (doc, idx) = make_doc_and_entry("* Team Meeting Notes\n");
-        assert!(matches(
-            &Predicate::Heading("meeting".to_string()),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
-        assert!(!matches(
-            &Predicate::Heading("standup".to_string()),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Heading("meeting".to_string()), &doc, idx));
+        assert!(!eval(&Predicate::Heading("standup".to_string()), &doc, idx));
     }
 
     #[test]
     fn match_property() {
         let (doc, idx) = make_doc_and_entry("* Task\n:PROPERTIES:\n:CATEGORY: project\n:END:\n");
-        assert!(matches(
+        assert!(eval(
             &Predicate::Property {
                 key: "CATEGORY".to_string(),
                 value: "project".to_string()
             },
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
-        // Existence check.
-        assert!(matches(
+        assert!(eval(
             &Predicate::Property {
                 key: "CATEGORY".to_string(),
                 value: String::new()
             },
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
     }
 
     #[test]
     fn match_priority() {
         let (doc, idx) = make_doc_and_entry("* TODO [#A] Urgent\n");
-        assert!(matches(
+        assert!(eval(
             &Predicate::Priority(PriorityMatch::Exact('A')),
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
-        assert!(matches(
+        assert!(eval(
             &Predicate::Priority(PriorityMatch::Cmp(CmpOp::Gte, 'B')),
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
-        assert!(!matches(
+        assert!(!eval(
             &Predicate::Priority(PriorityMatch::Exact('B')),
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
     }
 
     #[test]
     fn match_level() {
         let (doc, _) = make_doc_and_entry("* A\n** B\n*** C\n");
-        assert!(matches(
-            &Predicate::Level(Comparison::Eq(2)),
-            &doc.entries[1],
-            &doc,
-            today()
-        ));
-        assert!(matches(
-            &Predicate::Level(Comparison::Lte(2)),
-            &doc.entries[1],
-            &doc,
-            today()
-        ));
-        assert!(!matches(
-            &Predicate::Level(Comparison::Eq(1)),
-            &doc.entries[1],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Level(Comparison::Eq(2)), &doc, 1));
+        assert!(eval(&Predicate::Level(Comparison::Lte(2)), &doc, 1));
+        assert!(!eval(&Predicate::Level(Comparison::Eq(1)), &doc, 1));
     }
 
     #[test]
@@ -297,34 +288,19 @@ mod tests {
         let (doc, idx) = make_doc_and_entry(
             "* Task\n:LOGBOOK:\nCLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:00] =>  1:00\n:END:\n",
         );
-        assert!(matches(
-            &Predicate::Clocked,
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Clocked, &doc, idx));
     }
 
     #[test]
     fn match_scheduled_today() {
         let (doc, idx) = make_doc_and_entry("* Task\nSCHEDULED: <2024-06-15 Sat>\n");
-        assert!(matches(
-            &Predicate::Scheduled(DateMatch::Today),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Scheduled(DateMatch::Today), &doc, idx));
     }
 
     #[test]
     fn match_deadline_past() {
         let (doc, idx) = make_doc_and_entry("* Task\nDEADLINE: <2024-06-10 Mon>\n");
-        assert!(matches(
-            &Predicate::Deadline(DateMatch::Past),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Deadline(DateMatch::Past), &doc, idx));
     }
 
     #[test]
@@ -334,7 +310,7 @@ mod tests {
             Predicate::Todo(Some("TODO".to_string())),
             Predicate::Tags(vec!["work".to_string()]),
         ]);
-        assert!(matches(&pred, &doc.entries[idx], &doc, today()));
+        assert!(eval(&pred, &doc, idx));
     }
 
     #[test]
@@ -344,35 +320,55 @@ mod tests {
             Predicate::Todo(Some("TODO".to_string())),
             Predicate::Todo(Some("NEXT".to_string())),
         ]);
-        assert!(matches(&pred, &doc.entries[idx], &doc, today()));
+        assert!(eval(&pred, &doc, idx));
     }
 
     #[test]
     fn match_not() {
         let (doc, idx) = make_doc_and_entry("* TODO Task\n");
-        assert!(!matches(
+        assert!(!eval(
             &Predicate::Not(Box::new(Predicate::Todo(None))),
-            &doc.entries[idx],
             &doc,
-            today()
+            idx
         ));
-        assert!(matches(
-            &Predicate::Not(Box::new(Predicate::Done)),
-            &doc.entries[idx],
-            &doc,
-            today()
-        ));
+        assert!(eval(&Predicate::Not(Box::new(Predicate::Done)), &doc, idx));
     }
 
     #[test]
     fn match_inherited_tags() {
         let (doc, _) = make_doc_and_entry("* Parent :parent_tag:\n** Child :child_tag:\n");
-        // Child should match parent_tag through inheritance.
-        assert!(matches(
+        assert!(eval(
             &Predicate::Tags(vec!["parent_tag".to_string()]),
-            &doc.entries[1],
             &doc,
-            today()
+            1
         ));
+    }
+
+    #[test]
+    fn match_blocked() {
+        let org = "* TODO Dep\n:PROPERTIES:\n:ID: dep-1\n:END:\n\
+                   * TODO Blocked\n:PROPERTIES:\n:BLOCKER: ids(\"dep-1\")\n:END:\n";
+        let (doc, _) = make_doc_and_entry(org);
+        // Entry 1 is blocked because dep-1 (entry 0) is TODO.
+        assert!(eval(&Predicate::Blocked, &doc, 1));
+        // Entry 0 has no blocker.
+        assert!(!eval(&Predicate::Blocked, &doc, 0));
+    }
+
+    #[test]
+    fn match_actionable() {
+        let org = "* TODO Dep\n:PROPERTIES:\n:ID: dep-1\n:END:\n\
+                   * TODO Blocked\n:PROPERTIES:\n:BLOCKER: ids(\"dep-1\")\n:END:\n";
+        let (doc, _) = make_doc_and_entry(org);
+        // Entry 0 is actionable (TODO + no blocker).
+        assert!(eval(&Predicate::Actionable, &doc, 0));
+        // Entry 1 is not actionable (blocked).
+        assert!(!eval(&Predicate::Actionable, &doc, 1));
+    }
+
+    #[test]
+    fn done_entry_not_actionable() {
+        let (doc, idx) = make_doc_and_entry("* DONE Task\n");
+        assert!(!eval(&Predicate::Actionable, &doc, idx));
     }
 }

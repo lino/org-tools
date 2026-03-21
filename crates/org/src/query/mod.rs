@@ -4,6 +4,7 @@
 //! Query engine for org-mode entries.
 
 pub mod agenda;
+pub mod deps;
 pub mod output;
 pub mod parser;
 pub mod predicate;

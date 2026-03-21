@@ -209,23 +209,36 @@ org fmt check --format json . | jq '.[] | select(.severity == "error")'
 | W018 | quote-section                | Deprecated QUOTE headline                  |
 | W019 | special-property-in-drawer   | Reserved property in property drawer       |
 | W020 | misplaced-heading            | Heading inside a list or block             |
-| W021 | suspicious-language          | Possibly misspelled src block language     |
-| W022 | orphaned-affiliated-keywords | Affiliated keyword not before an element   |
-| W023 | non-existent-setupfile       | =#+SETUPFILE= points to missing file       |
-| W024 | link-to-local-file           | Link to non-existent local file            |
-| W025 | invalid-babel-call           | Malformed =#+CALL:= line                   |
-| W026 | unknown-options-item         | Unknown item in =#+OPTIONS:=               |
-| W027 | percent-encoding-link        | Unnecessary percent encoding in link       |
-| W028 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment        |
-| W029 | timestamp-validity           | Invalid date/time in timestamp             |
-| W030 | link-syntax                  | Malformed link syntax                      |
-| W031 | list-consistency             | Mixed list markers in same list            |
-| W032 | priority-validity            | Invalid priority cookie                    |
-| W033 | drawer-nesting               | Incorrectly nested drawers                 |
-| W034 | clock-entry-validity         | Malformed =CLOCK:= entry                   |
-| W035 | keyword-validity             | Unknown or misplaced keyword               |
-| W036 | block-type-validity          | Unknown block type                         |
-| W037 | affiliated-keyword-placement | Affiliated keyword in wrong position       |
+| W021 | orphaned-affiliated-keywords | Affiliated keyword not before an element   |
+| W022 | non-existent-setupfile       | =#+SETUPFILE= points to missing file       |
+| W023 | link-to-local-file           | Link to non-existent local file            |
+| W024 | invalid-babel-call           | Malformed =#+CALL:= line                   |
+| W025 | percent-encoding-link        | Unnecessary percent encoding in link       |
+| W026 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment        |
+| W027 | timestamp-validity           | Invalid date/time in timestamp             |
+| W028 | link-syntax                  | Malformed link syntax                      |
+| W029 | list-consistency             | Mixed list markers in same list            |
+| W030 | priority-validity            | Invalid priority cookie                    |
+| W031 | clock-entry-validity         | Malformed =CLOCK:= entry                   |
+| W032 | affiliated-keyword-placement | Affiliated keyword in wrong position       |
+| W033 | undeclared-tag               | Tag not declared in =#+TAGS:=              |
+| W034 | invalid-table-formula        | Invalid =#+TBLFM:= formula syntax          |
+| W035 | invalid-edna-syntax          | Invalid org-edna BLOCKER/TRIGGER syntax    |
+
+*** Info (suggestions)
+
+| ID   | Name                 | Description                            |
+|------+----------------------+----------------------------------------|
+| I001 | suspicious-language  | Possibly misspelled src block language |
+| I002 | unknown-options-item | Unknown item in =#+OPTIONS:=           |
+| I003 | keyword-validity     | Unknown or misplaced keyword           |
+| I004 | block-type-validity  | Unknown block type                     |
+
+*** Structural errors
+
+| ID   | Name           | Description                |
+|------+----------------+----------------------------|
+| E007 | drawer-nesting | Incorrectly nested drawers |
 
 * Query (=org query=)
 
@@ -276,6 +289,8 @@ org query search 'priority:>=B'                  # priority comparison
 org query search 'level:2'                       # heading level
 org query search 'level:<=3'                     # level comparison
 org query search 'clocked'                       # has clock entries
+org query search 'blocked'                       # blocked by edna BLOCKER
+org query search 'actionable'                    # not blocked, ready to work on
 
 # Date predicates
 org query search 'scheduled:today'
@@ -296,6 +311,36 @@ org query search 'meeting'                       # same as heading:meeting
 
 Tag inheritance is supported: querying for a parent's tag matches child
 entries too.
+
+** =org query deps=
+
+Show the dependency graph derived from org-edna =:BLOCKER:= and =:TRIGGER:=
+properties.
+
+#+begin_src sh
+org query deps [OPTIONS] [PATHS...]
+#+end_src
+
+| Option              | Description                      |
+|---------------------+----------------------------------|
+| =--format mermaid=  | Mermaid diagram output (default) |
+| =--format plantuml= | PlantUML diagram output          |
+| =--format dot=      | Graphviz DOT output              |
+| =--format json=     | JSON adjacency list              |
+
+#+begin_src sh
+# Mermaid dependency graph (default)
+org query deps ~/org/projects/
+
+# Graphviz DOT for rendering with dot(1)
+org query deps --format dot ~/org/projects/ | dot -Tpng -o deps.png
+
+# JSON for programmatic consumption
+org query deps --format json ~/org/projects/
+
+# PlantUML output
+org query deps --format plantuml ~/org/projects/ > deps.puml
+#+end_src
 
 ** Piping
 

@@ -15,6 +15,7 @@ pub mod file_application;
 pub mod heading_level_gap;
 pub mod incomplete_drawer;
 pub mod invalid_babel_call;
+pub mod invalid_edna_syntax;
 pub mod invalid_effort_property;
 pub mod invalid_id_property;
 pub mod invalid_image_alignment;

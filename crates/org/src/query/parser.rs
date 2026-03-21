@@ -49,6 +49,10 @@ pub enum Predicate {
     Closed(DateMatch),
     /// Match entries that have any clock entries.
     Clocked,
+    /// Match entries blocked by org-edna `:BLOCKER:` dependencies.
+    Blocked,
+    /// Match actionable entries: TODO keyword and not blocked by edna.
+    Actionable,
     /// Logical AND of predicates.
     And(Vec<Predicate>),
     /// Logical OR of predicates.
@@ -313,6 +317,8 @@ fn parse_term(term: &str) -> Result<Predicate, ParseError> {
         "done" | "DONE" => return Ok(Predicate::Done),
         "clocked" => return Ok(Predicate::Clocked),
         "todo" | "TODO" => return Ok(Predicate::Todo(None)),
+        "blocked" => return Ok(Predicate::Blocked),
+        "actionable" => return Ok(Predicate::Actionable),
         _ => {}
     }
 

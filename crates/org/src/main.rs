@@ -126,6 +126,33 @@ enum QueryCommand {
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
     },
+    /// Show org-edna dependency graph.
+    Deps {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "mermaid")]
+        format: DepsOutputFormat,
+
+        /// Only include entries with TODO keywords.
+        #[arg(long, default_value = "true")]
+        todo_only: bool,
+    },
+}
+
+/// Output format for dependency graphs.
+#[derive(Clone, ValueEnum)]
+enum DepsOutputFormat {
+    /// Mermaid diagram syntax.
+    Mermaid,
+    /// PlantUML syntax.
+    Plantuml,
+    /// Graphviz DOT format.
+    Dot,
+    /// JSON array of edges.
+    Json,
 }
 
 /// Subcommands for `org update`.
@@ -591,10 +618,11 @@ fn run_query(command: QueryCommand) -> i32 {
                 }
             }
 
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
             let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
             for doc in &docs {
                 for (idx, entry) in doc.entries.iter().enumerate() {
-                    if query::predicate::matches(&pred, entry, doc, today) {
+                    if query::predicate::matches(&pred, entry, doc, &doc_refs, today) {
                         matches.push(query::output::MatchedEntry {
                             doc,
                             entry_idx: idx,
@@ -613,7 +641,9 @@ fn run_query(command: QueryCommand) -> i32 {
 
             match format {
                 QueryOutputFormat::Human => print!("{}", query::output::render_human(&matches)),
-                QueryOutputFormat::Json => print!("{}", query::output::render_json(&matches)),
+                QueryOutputFormat::Json => {
+                    print!("{}", query::output::render_json(&matches, &doc_refs))
+                }
                 QueryOutputFormat::Locator => {
                     print!("{}", query::output::render_locators(&matches))
                 }
@@ -702,6 +732,44 @@ fn run_query(command: QueryCommand) -> i32 {
             } else {
                 1
             }
+        }
+        QueryCommand::Deps {
+            paths,
+            format,
+            todo_only: _,
+        } => {
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
+
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
+            let edges = query::deps::extract_edges(&doc_refs);
+
+            if edges.is_empty() {
+                eprintln!("org: no edna dependencies found");
+                return 1;
+            }
+
+            match format {
+                DepsOutputFormat::Mermaid => {
+                    print!("{}", query::deps::render_mermaid(&edges, &doc_refs))
+                }
+                DepsOutputFormat::Plantuml => print!("{}", query::deps::render_plantuml(&edges)),
+                DepsOutputFormat::Dot => print!("{}", query::deps::render_dot(&edges)),
+                DepsOutputFormat::Json => println!("{}", query::deps::render_json(&edges)),
+            }
+
+            0
         }
     }
 }

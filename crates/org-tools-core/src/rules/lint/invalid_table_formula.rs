@@ -28,7 +28,7 @@ pub struct InvalidTableFormula;
 
 impl LintRule for InvalidTableFormula {
     fn id(&self) -> &'static str {
-        "W020"
+        "W034"
     }
 
     fn name(&self) -> &'static str {

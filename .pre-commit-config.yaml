@@ -1,0 +1,25 @@
+repos:
+  # Rust: formatting and linting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # org-tools: format org files in docs/ and README.org
+      - id: org-fmt
+        name: org fmt
+        entry: bash -c 'cargo run --quiet -- fmt format "$@" || true' --
+        language: system
+        files: ^(docs/.*\.org|README\.org)$
+        types_or: [file]

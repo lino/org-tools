@@ -178,21 +178,21 @@ Sources:
 
 ** Packages That Do NOT Extend Syntax
 
-| Package | Purpose | Why no syntax change |
-|---------|---------|---------------------|
-| org-super-agenda | Groups/filters agenda display | Pure Elisp config |
-| org-ql | Query language for org files | Query in minibuffer/Elisp |
-| org-modern | Modern visual styling | Display-only (text properties) |
-| org-appear | Show/hide emphasis markers | Display-only |
-| org-superstar | Custom heading bullets | Display-only (font-lock) |
-| org-bullets | Custom heading bullets | Display-only |
-| org-fancy-priorities | Custom priority display | Display-only |
-| org-pomodoro | Pomodoro timer with org-clock | Uses standard org-clock |
-| org-cliplink | Paste URL as org link | Creates standard links |
-| org-sidebar | Side panel display | Read-only display |
-| citar | Citation frontend | Uses built-in org-cite |
-| ox-gfm | GitHub Markdown export | Standard export backend |
-| ox-rst | reStructuredText export | Standard export backend |
+| Package              | Purpose                       | Why no syntax change           |
+|----------------------+-------------------------------+--------------------------------|
+| org-super-agenda     | Groups/filters agenda display | Pure Elisp config              |
+| org-ql               | Query language for org files  | Query in minibuffer/Elisp      |
+| org-modern           | Modern visual styling         | Display-only (text properties) |
+| org-appear           | Show/hide emphasis markers    | Display-only                   |
+| org-superstar        | Custom heading bullets        | Display-only (font-lock)       |
+| org-bullets          | Custom heading bullets        | Display-only                   |
+| org-fancy-priorities | Custom priority display       | Display-only                   |
+| org-pomodoro         | Pomodoro timer with org-clock | Uses standard org-clock        |
+| org-cliplink         | Paste URL as org link         | Creates standard links         |
+| org-sidebar          | Side panel display            | Read-only display              |
+| citar                | Citation frontend             | Uses built-in org-cite         |
+| ox-gfm               | GitHub Markdown export        | Standard export backend        |
+| ox-rst               | reStructuredText export       | Standard export backend        |
 
 * Differences: 200ok org-parser vs Official Spec
 

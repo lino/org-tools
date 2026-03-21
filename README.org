@@ -44,12 +44,12 @@ set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.
 
 A unique identifier for any heading across a tree of org files:
 
-| Pattern | Example | Stability |
-|---------+---------+-----------|
-| =id:<uuid>= | =id:550e8400-e29b-...= | Survives moves |
-| =<file>::#<custom-id>= | =notes.org::#project-x= | File-scoped |
-| =<file>::*/<path>= | =todo.org::*/Work/Meeting= | Fragile on rename |
-| =<file>::<line>= | =inbox.org::42= | Fragile on edit |
+| Pattern                | Example                    | Stability         |
+|------------------------+----------------------------+-------------------|
+| =id:<uuid>=            | =id:550e8400-e29b-...=     | Survives moves    |
+| =<file>::#<custom-id>= | =notes.org::#project-x=    | File-scoped       |
+| =<file>::*/<path>=     | =todo.org::*/Work/Meeting= | Fragile on rename |
+| =<file>::<line>=       | =inbox.org::42=            | Fragile on edit   |
 
 When an entry has an =:ID:= property, that is always preferred.
 
@@ -120,21 +120,21 @@ mise run lint      # clippy + rustfmt check
 
 org-tools is a Cargo workspace with two crates:
 
-| Crate | Purpose |
-|-------+---------|
-| =org-tools-core= | Shared library: rules, runner, config, OrgDocument, OrgLocator |
-| =org= | Umbrella binary: =org fmt=, =org query=, (future) =org clock=, =org update=, =org export= |
+| Crate            | Purpose                                                                                   |
+|------------------+-------------------------------------------------------------------------------------------|
+| =org-tools-core= | Shared library: rules, runner, config, OrgDocument, OrgLocator                            |
+| =org=            | Umbrella binary: =org fmt=, =org query=, (future) =org clock=, =org update=, =org export= |
 
 * Documentation
 
-| Path                   | Contents                                    |
-|------------------------+---------------------------------------------|
-| [[file:docs/technical/architecture.org][docs/technical/]]        | Architecture (arc42), ADRs                  |
-| [[file:docs/operations/installation.org][docs/operations/]]       | Installation, release process               |
-| [[file:docs/product/vision.org][docs/product/]]          | Product vision and design principles        |
-| [[file:docs/user/usage.org][docs/user/]]             | Usage guide and rule reference              |
-| [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]] | Org-mode ecosystem and extension reference  |
-| [[file:schemas/][schemas/]]               | JSON schemas for output formats             |
+| Path                                                        | Contents                                   |
+|-------------------------------------------------------------+--------------------------------------------|
+| [[file:docs/technical/architecture.org][docs/technical/]]   | Architecture (arc42), ADRs                 |
+| [[file:docs/operations/installation.org][docs/operations/]] | Installation, release process              |
+| [[file:docs/product/vision.org][docs/product/]]             | Product vision and design principles       |
+| [[file:docs/user/usage.org][docs/user/]]                    | Usage guide and rule reference             |
+| [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]]     | Org-mode ecosystem and extension reference |
+| [[file:schemas/][schemas/]]                                 | JSON schemas for output formats            |
 
 * License
 

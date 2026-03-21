@@ -73,31 +73,30 @@ pub struct JsonEntry {
 
 /// Render matches as JSON.
 pub fn render_json(matches: &[MatchedEntry<'_>]) -> String {
-    let items: Vec<JsonEntry> = matches.iter().map(|m| {
-        let entry = m.entry();
-        let loc = locator_for_entry(m.doc, m.entry_idx);
-        let total_clocked: i64 = entry
-            .clocks
-            .iter()
-            .filter_map(|c| c.duration_minutes)
-            .sum();
+    let items: Vec<JsonEntry> = matches
+        .iter()
+        .map(|m| {
+            let entry = m.entry();
+            let loc = locator_for_entry(m.doc, m.entry_idx);
+            let total_clocked: i64 = entry.clocks.iter().filter_map(|c| c.duration_minutes).sum();
 
-        JsonEntry {
-            file: m.doc.file.display().to_string(),
-            line: entry.heading_line,
-            locator: loc.to_string(),
-            level: entry.level,
-            keyword: entry.keyword.clone(),
-            priority: entry.priority.map(|p| p.to_string()),
-            title: entry.title.clone(),
-            tags: entry.tags.clone(),
-            properties: entry.properties.clone(),
-            scheduled: entry.planning.scheduled.as_ref().map(format_ts),
-            deadline: entry.planning.deadline.as_ref().map(format_ts),
-            closed: entry.planning.closed.as_ref().map(format_ts),
-            clocked_minutes: total_clocked,
-        }
-    }).collect();
+            JsonEntry {
+                file: m.doc.file.display().to_string(),
+                line: entry.heading_line,
+                locator: loc.to_string(),
+                level: entry.level,
+                keyword: entry.keyword.clone(),
+                priority: entry.priority.map(|p| p.to_string()),
+                title: entry.title.clone(),
+                tags: entry.tags.clone(),
+                properties: entry.properties.clone(),
+                scheduled: entry.planning.scheduled.as_ref().map(format_ts),
+                deadline: entry.planning.deadline.as_ref().map(format_ts),
+                closed: entry.planning.closed.as_ref().map(format_ts),
+                clocked_minutes: total_clocked,
+            }
+        })
+        .collect();
 
     serde_json::to_string_pretty(&items).unwrap_or_default()
 }

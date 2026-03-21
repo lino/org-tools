@@ -58,7 +58,9 @@ impl LintRule for MisplacedHeading {
                 if let Some(pos) = raw.find("\n*") {
                     let after = &raw[pos + 1..];
                     let stars_end = after.len() - after.trim_start_matches('*').len();
-                    if stars_end > 0 && after.len() > stars_end && after.as_bytes()[stars_end] == b' '
+                    if stars_end > 0
+                        && after.len() > stars_end
+                        && after.as_bytes()[stars_end] == b' '
                     {
                         let (line_num, _) = ctx.source.line_col(offset);
                         diagnostics.push(Diagnostic {

@@ -153,10 +153,7 @@ pub fn parse_query(input: &str) -> Result<Predicate, ParseError> {
     }
     let (pred, rest) = parse_or(&tokens)?;
     if !rest.is_empty() {
-        return Err(ParseError(format!(
-            "unexpected token: {:?}",
-            rest[0]
-        )));
+        return Err(ParseError(format!("unexpected token: {:?}", rest[0])));
     }
     Ok(pred)
 }
@@ -504,7 +501,9 @@ fn parse_cmp_op(value: &str) -> Result<(CmpOp, &str), ParseError> {
     } else if let Some(rest) = value.strip_prefix('=') {
         Ok((CmpOp::Eq, rest))
     } else {
-        Err(ParseError(format!("expected comparison operator in: {value}")))
+        Err(ParseError(format!(
+            "expected comparison operator in: {value}"
+        )))
     }
 }
 
@@ -566,10 +565,7 @@ mod tests {
     #[test]
     fn parse_priority_comparison() {
         let p = parse_query("priority:>=B").unwrap();
-        assert_eq!(
-            p,
-            Predicate::Priority(PriorityMatch::Cmp(CmpOp::Gte, 'B'))
-        );
+        assert_eq!(p, Predicate::Priority(PriorityMatch::Cmp(CmpOp::Gte, 'B')));
     }
 
     #[test]
@@ -678,10 +674,7 @@ mod tests {
         let p = parse_query("scheduled:2024-01-15").unwrap();
         assert_eq!(
             p,
-            Predicate::Scheduled(DateMatch::Cmp(
-                CmpOp::Eq,
-                DateRef::Absolute(2024, 1, 15)
-            ))
+            Predicate::Scheduled(DateMatch::Cmp(CmpOp::Eq, DateRef::Absolute(2024, 1, 15)))
         );
     }
 }

@@ -25,13 +25,65 @@ compose via Unix pipes.
 
 * Capabilities
 
-| Subcommand | Purpose | Status |
-|------------+---------+--------|
-| =org fmt= | Lint and format org files | Done |
-| =org query= | Search entries, agenda view | Done |
-| =org clock= | Clock in/out, reports | Planned |
-| =org update= | Statistic cookies, clocktables | Planned |
-| =org export= | iCalendar, JSCalendar export | Planned |
+| Subcommand   | Purpose                      | Status      |
+|--------------+------------------------------+-------------|
+| =org fmt=    | Lint and format org files    | Done        |
+| =org query=  | Search entries, agenda view  | Done        |
+| =org update= | Add IDs, statistic cookies   | In progress |
+| =org clock=  | Clock in/out, reports        | Planned     |
+| =org export= | iCalendar, JSCalendar export | Planned     |
+
+** org fmt — Roadmap
+
+| Feature                       | Status  | Notes                                    |
+|-------------------------------+---------+------------------------------------------|
+| Trailing whitespace (F001)    | Done    |                                          |
+| Blank lines (F002)            | Done    |                                          |
+| Heading spacing (F003)        | Done    |                                          |
+| Keyword spacing (F004)        | Done    |                                          |
+| Table formatting (F005)       | Done    | Left-aligns; Emacs right-aligns numbers  |
+| List formatting (F006)        | Done    |                                          |
+| Tag alignment (F007)          | Done    |                                          |
+| Property drawer align (F008)  | Done    |                                          |
+| Timestamp spacing (F009)      | Done    |                                          |
+| Table formulas (=#+TBLFM:=)   | Planned | Preserve lines, validate cell references |
+| Right-align numbers in tables | Planned | Known Emacs divergence                   |
+
+** In-buffer Settings — Roadmap
+
+Org-mode files configure behaviour via =#+KEYWORD:= lines. org-tools must
+parse and respect these to avoid false positives and produce correct results.
+
+*** Affects current functionality
+
+| Setting                   | Status  | Impact                                           |
+|---------------------------+---------+--------------------------------------------------|
+| =#+TODO:= / =#+SEQ_TODO:= | Planned | Replace hardcoded keyword list; propagate to     |
+| / =#+TYP_TODO:=           |         | heading parser, query predicates, done-state     |
+| =#+PRIORITIES:=           | Planned | Validate cookies against defined range;          |
+|                           |         | propagate to query priority comparisons          |
+| =#+TAGS:= / =#+FILETAGS:= | Planned | Tag validation lint rule; mutually exclusive     |
+|                           |         | groups; query tag inheritance respects file tags |
+| =#+PROPERTY:=             | Planned | File-wide default property values; query should  |
+|                           |         | fall back to these when entry lacks a property   |
+| =#+STARTUP: odd=          | Planned | Only odd heading levels valid; heading-level-gap |
+|                           |         | lint rule must respect this                      |
+| =#+CONSTANTS:=            | Planned | Named constants for table formula validation     |
+| =#+LINK:=                 | Planned | Custom link abbreviations; link syntax lint      |
+|                           |         | should recognise these as valid schemes          |
+| =#+SETUPFILE:=            | Planned | Already lint for non-existent files; need to     |
+|                           |         | actually load and apply settings from them       |
+
+*** Future (not yet needed)
+
+| Setting                   | Impact                                       |
+|---------------------------+----------------------------------------------|
+| =#+STARTUP: logdone= etc. | TODO state transition logging; relevant when |
+|                           | =org update= manages state changes           |
+| =#+COLUMNS:=              | Column view format; relevant if we support   |
+|                           | column view output                           |
+| =#+ARCHIVE:=              | Archive file location; relevant for a future |
+|                           | archive subcommand                           |
 
 * Design Principles
 
@@ -46,11 +98,76 @@ compose via Unix pipes.
 - *Composable*: commands produce output suitable for piping.
   OrgLocator strings are the universal addressing scheme.
 
+* Limitations
+
+org-tools is *not* Emacs. Some things are fundamentally out of scope because
+they require an Emacs Lisp runtime. Others are limitations of the current
+line-based parsing approach. This section documents both so users know what
+to expect.
+
+** No Emacs Lisp evaluation
+
+org-mode's power comes partly from Emacs Lisp being woven into every layer.
+org-tools cannot and will not embed a Lisp interpreter. This means:
+
+- *No code block execution (Babel)*: =#+BEGIN_SRC= blocks are treated as
+  opaque text. org-tools will never evaluate them, tangle them, or
+  produce =#+RESULTS:= blocks. Use Emacs for literate programming workflows.
+- *No dynamic blocks*: =#+BEGIN: clocktable= and similar blocks whose content
+  is generated by Elisp code cannot be updated. org-tools can preserve them
+  during formatting, but cannot regenerate their content.
+- *No Elisp-based link resolvers*: org-mode link types registered via Elisp
+  (=org-link-set-parameters=) are not available. org-tools recognises the
+  built-in types (=file:=, =http:=, =id:=, =mailto:=, etc.) and custom
+  abbreviations defined via =#+LINK:=, but not Elisp-registered protocols.
+- *No Elisp-based export backends*: =org export= (when implemented) will
+  target structured formats (iCalendar, JSCalendar) via native Rust code,
+  not the Elisp export framework.
+- *No table formula evaluation*: =#+TBLFM:= lines are preserved during
+  formatting, but org-tools cannot compute formula results. Table formulas
+  that use Elisp expressions (=lisp:...=, ='(...)=) or Emacs Calc
+  syntax are opaque to org-tools.
+
+** Line-based parsing limitations
+
+org-tools uses line-based scanning rather than a full AST parser. This is
+fast and sufficient for most rules, but has inherent limits:
+
+- *No inline markup parsing*: bold, italic, code, verbatim, strike-through,
+  and underline markers are not parsed. Rules cannot distinguish =*bold*=
+  from an unmatched =*= in running text.
+- *No nested structure within paragraphs*: footnote references, citations,
+  inline source blocks, and export snippets inside paragraph text are not
+  individually parsed.
+- *Heading-level structure only*: the document model is a flat list of
+  entries with parent/child relationships. Section-level elements (paragraphs,
+  lists, tables) are not modelled as individual nodes — rules scan the raw
+  text between headings.
+- *No cross-file include resolution*: =#+INCLUDE:= directives are not
+  expanded. Lint rules operate on each file independently.
+
+** Current known divergences from Emacs
+
+| Area                      | Emacs behaviour            | org-tools behaviour        |
+|---------------------------+----------------------------+----------------------------|
+| Table number alignment    | Right-aligns numbers       | Left-aligns everything     |
+| Heading spacing           | No auto-formatting         | Optional blank-line rules  |
+| Babel language validation | Checks against loaded      | Checks against static list |
+|                           | =org-babel-load-languages= |                            |
+| TODO keyword recognition  | Reads =#+TODO:= settings   | Hardcoded common keywords  |
+| Priority range validation | Reads =#+PRIORITIES:=      | Accepts any A-Z            |
+| Tag validation            | Reads =#+TAGS:= settings   | No validation of tag names |
+
+These divergences are tracked and will be addressed as in-buffer settings
+support is implemented (see roadmap above).
+
 * Non-Goals
 
 - Replacing Emacs for editing org files
-- Implementing a full org-mode parser (line-based scanning is sufficient
+- Embedding an Emacs Lisp interpreter
+- Implementing a full org-mode AST parser (line-based scanning is sufficient
   for the targeted use cases)
+- Executing or tangling source blocks
 - Supporting org-mode extensions that deviate from the specification
   (though common extensions like org-roam are tracked in the ecosystem doc
   to avoid false positives)

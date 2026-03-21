@@ -23,11 +23,44 @@ pub struct UnknownOptionsItem;
 
 /// Known `#+OPTIONS` keys from the org-mode export framework.
 const KNOWN_OPTIONS: &[&str] = &[
-    "'", "*", "-", ":", "<", "\\n", "^", "arch", "author", "broken-links",
-    "c", "creator", "d", "date", "e", "email", "expand-links", "f", "h",
-    "html-postamble", "html-preamble", "html-style", "html5-fancy",
-    "inline", "num", "p", "pri", "prop", "reveal_", "stat", "tags",
-    "tasks", "tex", "timestamp", "title", "toc", "todo", "|",
+    "'",
+    "*",
+    "-",
+    ":",
+    "<",
+    "\\n",
+    "^",
+    "arch",
+    "author",
+    "broken-links",
+    "c",
+    "creator",
+    "d",
+    "date",
+    "e",
+    "email",
+    "expand-links",
+    "f",
+    "h",
+    "html-postamble",
+    "html-preamble",
+    "html-style",
+    "html5-fancy",
+    "inline",
+    "num",
+    "p",
+    "pri",
+    "prop",
+    "reveal_",
+    "stat",
+    "tags",
+    "tasks",
+    "tex",
+    "timestamp",
+    "title",
+    "toc",
+    "todo",
+    "|",
 ];
 
 impl LintRule for UnknownOptionsItem {
@@ -63,8 +96,7 @@ impl LintRule for UnknownOptionsItem {
                 for item in rest.split_whitespace() {
                     if let Some(colon_pos) = item.find(':') {
                         let key = &item[..colon_pos];
-                        if !key.is_empty()
-                            && !KNOWN_OPTIONS.contains(&key.to_lowercase().as_str())
+                        if !key.is_empty() && !KNOWN_OPTIONS.contains(&key.to_lowercase().as_str())
                         {
                             let (line_num, _) = ctx.source.line_col(offset);
                             diagnostics.push(Diagnostic {
@@ -74,10 +106,7 @@ impl LintRule for UnknownOptionsItem {
                                 severity: Severity::Info,
                                 rule_id: self.id(),
                                 rule: self.name(),
-                                message: format!(
-                                    "unknown #+OPTIONS item '{}'",
-                                    key
-                                ),
+                                message: format!("unknown #+OPTIONS item '{}'", key),
                                 fix: None,
                             });
                         }

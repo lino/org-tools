@@ -13,13 +13,18 @@ use clap::{Parser, Subcommand, ValueEnum};
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
+use org_tools_core::id::{self, IdGenerator};
+use org_tools_core::locator::{resolve_locator, OrgLocator};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
 use org_tools_core::runner::Runner;
 use org_tools_core::source::SourceFile;
 
 /// Unified CLI for org-mode files.
 #[derive(Parser)]
-#[command(name = "org", about = "Unified CLI for org-mode: lint, format, query, clock, export")]
+#[command(
+    name = "org",
+    about = "Unified CLI for org-mode: lint, format, query, clock, export"
+)]
 struct Cli {
     /// Subcommand to run.
     #[command(subcommand)]
@@ -43,7 +48,12 @@ enum OrgCommand {
         #[command(subcommand)]
         command: QueryCommand,
     },
-    // TODO: Clock, Update, Export subcommands (phases 5-7)
+    /// Update org entries (add IDs, modify properties).
+    Update {
+        #[command(subcommand)]
+        command: UpdateCommand,
+    },
+    // TODO: Clock, Export subcommands (phases 6-7)
 }
 
 /// Subcommands for `org query`.
@@ -79,6 +89,35 @@ enum QueryCommand {
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
+    },
+}
+
+/// Subcommands for `org update`.
+#[derive(Subcommand)]
+enum UpdateCommand {
+    /// Add :ID: properties to entries that lack them.
+    AddId {
+        /// Targets: file paths, directory paths, or org locator strings.
+        targets: Vec<String>,
+
+        /// Include descendant entries when targeting via locator.
+        #[arg(long, short)]
+        recursive: bool,
+
+        /// Print what would be changed without writing files.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Generate IDs from a template with {placeholders}.
+        ///
+        /// Available: {uuid}, {uuid_short}, {file_stem}, {title_slug},
+        /// {level}, {index}, {ts}.
+        #[arg(long, conflicts_with = "id_command")]
+        id_format: Option<String>,
+
+        /// Pipe entry metadata (JSON) to a command that outputs the ID.
+        #[arg(long, conflicts_with = "id_format")]
+        id_command: Option<String>,
     },
 }
 
@@ -161,6 +200,7 @@ fn main() {
             run_fmt(command, &runner)
         }
         OrgCommand::Query { command } => run_query(command),
+        OrgCommand::Update { command } => run_update(command),
     };
 
     process::exit(exit_code);
@@ -202,7 +242,11 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                         }
                     }
                 }
-                if has_issues { 1 } else { 0 }
+                if has_issues {
+                    1
+                } else {
+                    0
+                }
             } else {
                 let mut all_diagnostics = Vec::new();
                 for file in &files {
@@ -250,10 +294,7 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
 
                         if !lint_diags.is_empty() {
                             has_lint_issues = true;
-                            print!(
-                                "{}",
-                                render_diagnostics(&lint_diags, OutputFormat::Human)
-                            );
+                            print!("{}", render_diagnostics(&lint_diags, OutputFormat::Human));
                         }
 
                         if check {
@@ -417,19 +458,162 @@ fn run_query(command: QueryCommand) -> i32 {
                             // Find entry index in doc to generate locator.
                             // Since we don't have easy access to the doc ref here,
                             // output file:line format.
-                            println!(
-                                "{}::{}",
-                                item.file.display(),
-                                item.entry.heading_line
-                            );
+                            println!("{}::{}", item.file.display(), item.entry.heading_line);
                         }
                     }
                 }
             }
 
-            if has_items { 0 } else { 1 }
+            if has_items {
+                0
+            } else {
+                1
+            }
         }
     }
+}
+
+/// Runs the `update` subcommand.
+fn run_update(command: UpdateCommand) -> i32 {
+    match command {
+        UpdateCommand::AddId {
+            targets,
+            recursive,
+            dry_run,
+            id_format,
+            id_command,
+        } => run_add_id(targets, recursive, dry_run, id_format, id_command),
+    }
+}
+
+/// Runs `org update add-id`.
+fn run_add_id(
+    targets: Vec<String>,
+    recursive: bool,
+    dry_run: bool,
+    id_format: Option<String>,
+    id_command: Option<String>,
+) -> i32 {
+    if targets.is_empty() {
+        eprintln!("org: no targets specified");
+        return 2;
+    }
+
+    let generator = if let Some(tpl) = id_format {
+        IdGenerator::Template(tpl)
+    } else if let Some(cmd) = id_command {
+        IdGenerator::Command(cmd)
+    } else {
+        IdGenerator::Uuid
+    };
+
+    // Resolve targets into (file_path, entry_indices) pairs.
+    // entry_indices = None means all entries in the file.
+    let mut file_targets: std::collections::HashMap<PathBuf, Option<Vec<usize>>> =
+        std::collections::HashMap::new();
+
+    for target in &targets {
+        // Try to parse as a locator first.
+        if let Ok(locator) = OrgLocator::parse(target) {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            match resolve_locator(&locator, &[cwd]) {
+                Ok(resolved) => {
+                    let source = match SourceFile::from_path(&resolved.file) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("org: error reading {}: {}", resolved.file.display(), e);
+                            return 2;
+                        }
+                    };
+                    let doc = OrgDocument::from_source(&source);
+
+                    let indices = if recursive {
+                        id::collect_subtree(&doc, resolved.entry_index)
+                    } else {
+                        vec![resolved.entry_index]
+                    };
+
+                    // Merge with existing targets for this file.
+                    let entry = file_targets
+                        .entry(resolved.file.clone())
+                        .or_insert(Some(Vec::new()));
+                    if let Some(ref mut existing) = entry {
+                        existing.extend(indices);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("org: {e}");
+                    return 2;
+                }
+            }
+        } else {
+            // Treat as file/directory path.
+            let path = PathBuf::from(target);
+            let files = collect_org_files(&[path]);
+            if files.is_empty() {
+                eprintln!("org: no .org files found in {target}");
+                return 2;
+            }
+            for file in files {
+                // None = all entries.
+                file_targets.insert(file, None);
+            }
+        }
+    }
+
+    let mut total_added = 0;
+
+    // Sort file paths for deterministic output order.
+    let mut file_list: Vec<_> = file_targets.into_iter().collect();
+    file_list.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (file, indices) in file_list {
+        let source = match SourceFile::from_path(&file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("org: error reading {}: {}", file.display(), e);
+                continue;
+            }
+        };
+        let doc = OrgDocument::from_source(&source);
+
+        let result = match id::add_ids(&source, &doc, indices.as_deref(), &generator) {
+            Ok(Some(r)) => r,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("org: error processing {}: {}", file.display(), e);
+                continue;
+            }
+        };
+
+        total_added += result.ids_added;
+
+        if dry_run {
+            println!(
+                "Would add {} ID{} to {}",
+                result.ids_added,
+                if result.ids_added == 1 { "" } else { "s" },
+                file.display()
+            );
+        } else {
+            if let Err(e) = std::fs::write(&file, &result.content) {
+                eprintln!("org: error writing {}: {}", file.display(), e);
+                continue;
+            }
+            println!(
+                "Added {} ID{} to {}",
+                result.ids_added,
+                if result.ids_added == 1 { "" } else { "s" },
+                file.display()
+            );
+        }
+    }
+
+    if total_added == 0 && !dry_run {
+        println!("All entries already have IDs");
+    }
+
+    0
 }
 
 /// Get today's date as (year, month, day).

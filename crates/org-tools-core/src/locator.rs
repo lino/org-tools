@@ -260,8 +260,8 @@ fn resolve_id(id: &str, search_paths: &[PathBuf]) -> Result<ResolvedEntry, Locat
     let files = collect_org_files(search_paths);
 
     for file_path in &files {
-        let source = SourceFile::from_path(file_path)
-            .map_err(|e| LocatorError::IoError(e.to_string()))?;
+        let source =
+            SourceFile::from_path(file_path).map_err(|e| LocatorError::IoError(e.to_string()))?;
         let doc = OrgDocument::from_source(&source);
         if let Some(idx) = doc.find_by_id(id) {
             let entry = &doc.entries[idx];
@@ -278,15 +278,11 @@ fn resolve_id(id: &str, search_paths: &[PathBuf]) -> Result<ResolvedEntry, Locat
     Err(LocatorError::EntryNotFound(format!("id:{id}")))
 }
 
-fn resolve_custom_id(
-    file: &Path,
-    custom_id: &str,
-) -> Result<ResolvedEntry, LocatorError> {
+fn resolve_custom_id(file: &Path, custom_id: &str) -> Result<ResolvedEntry, LocatorError> {
     if !file.is_file() {
         return Err(LocatorError::FileNotFound(file.to_path_buf()));
     }
-    let source =
-        SourceFile::from_path(file).map_err(|e| LocatorError::IoError(e.to_string()))?;
+    let source = SourceFile::from_path(file).map_err(|e| LocatorError::IoError(e.to_string()))?;
     let doc = OrgDocument::from_source(&source);
 
     match doc.find_by_custom_id(custom_id) {
@@ -307,15 +303,11 @@ fn resolve_custom_id(
     }
 }
 
-fn resolve_outline_path(
-    file: &Path,
-    path: &[String],
-) -> Result<ResolvedEntry, LocatorError> {
+fn resolve_outline_path(file: &Path, path: &[String]) -> Result<ResolvedEntry, LocatorError> {
     if !file.is_file() {
         return Err(LocatorError::FileNotFound(file.to_path_buf()));
     }
-    let source =
-        SourceFile::from_path(file).map_err(|e| LocatorError::IoError(e.to_string()))?;
+    let source = SourceFile::from_path(file).map_err(|e| LocatorError::IoError(e.to_string()))?;
     let doc = OrgDocument::from_source(&source);
 
     // Walk the tree matching path segments.
@@ -370,8 +362,7 @@ fn resolve_line_ref(file: &Path, line: usize) -> Result<ResolvedEntry, LocatorEr
     if !file.is_file() {
         return Err(LocatorError::FileNotFound(file.to_path_buf()));
     }
-    let source =
-        SourceFile::from_path(file).map_err(|e| LocatorError::IoError(e.to_string()))?;
+    let source = SourceFile::from_path(file).map_err(|e| LocatorError::IoError(e.to_string()))?;
     let doc = OrgDocument::from_source(&source);
 
     // Find the heading at or before the given line.
@@ -488,15 +479,13 @@ mod tests {
     fn resolve_id_locator() {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("test.org");
-        fs::write(
-            &file,
-            "* Heading\n:PROPERTIES:\n:ID: test-uuid\n:END:\n",
+        fs::write(&file, "* Heading\n:PROPERTIES:\n:ID: test-uuid\n:END:\n").unwrap();
+
+        let result = resolve_locator(
+            &OrgLocator::Id("test-uuid".to_string()),
+            &[dir.path().to_path_buf()],
         )
         .unwrap();
-
-        let result =
-            resolve_locator(&OrgLocator::Id("test-uuid".to_string()), &[dir.path().to_path_buf()])
-                .unwrap();
         assert_eq!(result.heading_text, "Heading");
         assert_eq!(result.line, 1);
     }
@@ -581,8 +570,10 @@ mod tests {
         let file = dir.path().join("test.org");
         fs::write(&file, "* Heading\n").unwrap();
 
-        let result =
-            resolve_locator(&OrgLocator::Id("nonexistent".to_string()), &[dir.path().to_path_buf()]);
+        let result = resolve_locator(
+            &OrgLocator::Id("nonexistent".to_string()),
+            &[dir.path().to_path_buf()],
+        );
         assert!(result.is_err());
     }
 
@@ -618,10 +609,7 @@ mod tests {
 
     #[test]
     fn locator_falls_back_to_outline_path() {
-        let source = SourceFile::new(
-            "test.org",
-            "* Work\n** Meeting\n".to_string(),
-        );
+        let source = SourceFile::new("test.org", "* Work\n** Meeting\n".to_string());
         let doc = OrgDocument::from_source(&source);
         let loc = locator_for_entry(&doc, 1);
         assert_eq!(

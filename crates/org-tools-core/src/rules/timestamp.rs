@@ -81,7 +81,10 @@ pub fn parse_timestamp(text: &str, pos: usize) -> Option<(OrgTimestamp, usize)> 
             }
         } else if part.starts_with('+') || part.starts_with(".+") {
             repeater = Some(part.to_string());
-        } else if part.starts_with('-') && part.len() > 1 && part[1..].chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        } else if part.starts_with('-')
+            && part.len() > 1
+            && part[1..].chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
             warning = Some(part.to_string());
         } else if part.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
             dayname = Some(part.to_string());

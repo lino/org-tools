@@ -14,7 +14,12 @@ const DONE_KEYWORDS: &[&str] = &["DONE", "CANCELLED", "CANCELED"];
 /// Evaluate a predicate against an entry in a document.
 ///
 /// The `doc` parameter is needed for tag inheritance.
-pub fn matches(pred: &Predicate, entry: &OrgEntry, doc: &OrgDocument, today: (u16, u8, u8)) -> bool {
+pub fn matches(
+    pred: &Predicate,
+    entry: &OrgEntry,
+    doc: &OrgDocument,
+    today: (u16, u8, u8),
+) -> bool {
     match pred {
         Predicate::Todo(kw) => match kw {
             None => entry.keyword.is_some(),
@@ -47,9 +52,7 @@ pub fn matches(pred: &Predicate, entry: &OrgEntry, doc: &OrgDocument, today: (u1
         }
         Predicate::Priority(pm) => match pm {
             PriorityMatch::Exact(ch) => entry.priority == Some(*ch),
-            PriorityMatch::Cmp(op, ch) => entry
-                .priority
-                .is_some_and(|p| cmp_priority(*op, p, *ch)),
+            PriorityMatch::Cmp(op, ch) => entry.priority.is_some_and(|p| cmp_priority(*op, p, *ch)),
         },
         Predicate::Level(cmp) => match_comparison(cmp, entry.level),
         Predicate::Scheduled(dm) => match_date_opt(&entry.planning.scheduled, dm, today),
@@ -76,18 +79,14 @@ fn match_comparison(cmp: &Comparison, value: usize) -> bool {
 fn cmp_priority(op: CmpOp, entry_pri: char, target: char) -> bool {
     match op {
         CmpOp::Eq => entry_pri == target,
-        CmpOp::Lt => entry_pri > target,  // Higher letter = lower priority.
+        CmpOp::Lt => entry_pri > target, // Higher letter = lower priority.
         CmpOp::Lte => entry_pri >= target,
         CmpOp::Gt => entry_pri < target,
         CmpOp::Gte => entry_pri <= target,
     }
 }
 
-fn match_date_opt(
-    ts: &Option<OrgTimestamp>,
-    dm: &DateMatch,
-    today: (u16, u8, u8),
-) -> bool {
+fn match_date_opt(ts: &Option<OrgTimestamp>, dm: &DateMatch, today: (u16, u8, u8)) -> bool {
     match dm {
         DateMatch::Any => ts.is_some(),
         _ => ts.as_ref().is_some_and(|t| match_date(t, dm, today)),
@@ -228,8 +227,7 @@ mod tests {
 
     #[test]
     fn match_property() {
-        let (doc, idx) =
-            make_doc_and_entry("* Task\n:PROPERTIES:\n:CATEGORY: project\n:END:\n");
+        let (doc, idx) = make_doc_and_entry("* Task\n:PROPERTIES:\n:CATEGORY: project\n:END:\n");
         assert!(matches(
             &Predicate::Property {
                 key: "CATEGORY".to_string(),
@@ -312,8 +310,7 @@ mod tests {
 
     #[test]
     fn match_scheduled_today() {
-        let (doc, idx) =
-            make_doc_and_entry("* Task\nSCHEDULED: <2024-06-15 Sat>\n");
+        let (doc, idx) = make_doc_and_entry("* Task\nSCHEDULED: <2024-06-15 Sat>\n");
         assert!(matches(
             &Predicate::Scheduled(DateMatch::Today),
             &doc.entries[idx],
@@ -324,8 +321,7 @@ mod tests {
 
     #[test]
     fn match_deadline_past() {
-        let (doc, idx) =
-            make_doc_and_entry("* Task\nDEADLINE: <2024-06-10 Mon>\n");
+        let (doc, idx) = make_doc_and_entry("* Task\nDEADLINE: <2024-06-10 Mon>\n");
         assert!(matches(
             &Predicate::Deadline(DateMatch::Past),
             &doc.entries[idx],

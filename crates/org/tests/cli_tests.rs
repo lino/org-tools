@@ -183,3 +183,149 @@ fn check_fix_mode() {
     let content = fs::read_to_string(&file).unwrap();
     assert_eq!(content, "* Heading\ntext\n");
 }
+
+// --- update add-id tests ---
+
+#[test]
+fn add_id_to_all_entries() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("ids.org");
+    fs::write(&file, "* A\n* B\n* C\n").unwrap();
+
+    org()
+        .args(["update", "add-id"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added 3 IDs"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    // All three headings should have :ID: properties.
+    assert_eq!(content.matches(":ID:").count(), 3);
+    assert_eq!(content.matches(":PROPERTIES:").count(), 3);
+    assert_eq!(content.matches(":END:").count(), 3);
+}
+
+#[test]
+fn add_id_idempotent() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("idem.org");
+    fs::write(&file, "* A\n* B\n").unwrap();
+
+    // First run adds IDs.
+    org()
+        .args(["update", "add-id"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added 2 IDs"));
+
+    // Second run is a no-op.
+    org()
+        .args(["update", "add-id"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("All entries already have IDs"));
+}
+
+#[test]
+fn add_id_dry_run() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("dry.org");
+    fs::write(&file, "* A\n* B\n").unwrap();
+
+    org()
+        .args(["update", "add-id", "--dry-run"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Would add 2 IDs"));
+
+    // File should be unchanged.
+    let content = fs::read_to_string(&file).unwrap();
+    assert_eq!(content, "* A\n* B\n");
+}
+
+#[test]
+fn add_id_locator_single_entry() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("single.org");
+    fs::write(&file, "* A\n* B\n* C\n").unwrap();
+
+    let locator = format!("{}::*/B", file.display());
+    org()
+        .args(["update", "add-id", &locator])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added 1 ID"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    // Only B should have an ID.
+    assert_eq!(content.matches(":ID:").count(), 1);
+    assert!(content.contains("* A\n* B\n:PROPERTIES:"));
+}
+
+#[test]
+fn add_id_locator_recursive() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("tree.org");
+    fs::write(&file, "* A\n** B\n*** C\n* D\n").unwrap();
+
+    let locator = format!("{}::*/A", file.display());
+    org()
+        .args(["update", "add-id", "-r", &locator])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added 3 IDs"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    // A, B, C should have IDs; D should not.
+    assert_eq!(content.matches(":ID:").count(), 3);
+    // D should still be a plain heading.
+    assert!(content.contains("* D\n") || content.ends_with("* D"));
+}
+
+#[test]
+fn add_id_custom_format() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("custom.org");
+    fs::write(&file, "* Hello World\n").unwrap();
+
+    org()
+        .args([
+            "update",
+            "add-id",
+            "--id-format",
+            "{file_stem}-{title_slug}-{level}",
+        ])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains(":ID: custom-hello-world-1\n"));
+}
+
+#[test]
+fn add_id_existing_drawer() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("drawer.org");
+    fs::write(&file, "* Task\n:PROPERTIES:\n:EFFORT: 1:00\n:END:\nBody\n").unwrap();
+
+    org()
+        .args(["update", "add-id"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added 1 ID"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    // Should have one :PROPERTIES: block (not two).
+    assert_eq!(content.matches(":PROPERTIES:").count(), 1);
+    assert_eq!(content.matches(":END:").count(), 1);
+    // :ID: should be inside the existing drawer, before :EFFORT:.
+    let id_pos = content.find(":ID:").unwrap();
+    let effort_pos = content.find(":EFFORT:").unwrap();
+    assert!(id_pos < effort_pos);
+}

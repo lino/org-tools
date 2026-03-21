@@ -26,8 +26,18 @@ pub struct HeadingParts<'a> {
 
 /// Default TODO keywords recognized when parsing headings.
 const DEFAULT_TODO_KEYWORDS: &[&str] = &[
-    "TODO", "DONE", "NEXT", "WAITING", "HOLD", "CANCELLED", "CANCELED",
-    "STARTED", "DELEGATED", "REVIEW", "DRAFT", "PUBLISHED",
+    "TODO",
+    "DONE",
+    "NEXT",
+    "WAITING",
+    "HOLD",
+    "CANCELLED",
+    "CANCELED",
+    "STARTED",
+    "DELEGATED",
+    "REVIEW",
+    "DRAFT",
+    "PUBLISHED",
 ];
 
 /// Returns the heading level (number of stars) if the line is a heading.
@@ -92,7 +102,9 @@ fn extract_tags(text: &str) -> (&str, Vec<&str>) {
         }
         let parts: Vec<&str> = inner.split(':').collect();
         let all_valid = parts.iter().all(|t| {
-            !t.is_empty() && t.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '@')
+            !t.is_empty()
+                && t.chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '@')
         });
         if all_valid {
             return (&trimmed[..tag_start], parts);
@@ -120,10 +132,7 @@ fn extract_keyword(text: &str) -> (&str, Option<&str>) {
 
 /// Extracts a priority cookie `[#X]` from the start of text.
 fn extract_priority(text: &str) -> (&str, Option<char>) {
-    if text.len() >= 4
-        && text.starts_with("[#")
-        && text.as_bytes()[3] == b']'
-    {
+    if text.len() >= 4 && text.starts_with("[#") && text.as_bytes()[3] == b']' {
         let ch = text.as_bytes()[2] as char;
         if ch.is_ascii_alphabetic() {
             let rest = if text.len() > 4 {

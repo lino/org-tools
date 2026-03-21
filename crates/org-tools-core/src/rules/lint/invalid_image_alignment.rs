@@ -48,10 +48,7 @@ impl LintRule for InvalidImageAlignment {
                 if let Some(align_pos) = rest.find(":align") {
                     let after = &rest[align_pos + 6..].trim_start();
                     let value = after.split_whitespace().next().unwrap_or("");
-                    if !value.is_empty()
-                        && value != "left"
-                        && value != "center"
-                        && value != "right"
+                    if !value.is_empty() && value != "left" && value != "center" && value != "right"
                     {
                         let (line_num, col) = ctx.source.line_col(offset);
                         diagnostics.push(Diagnostic {
@@ -83,10 +80,7 @@ impl LintRule for InvalidImageAlignment {
                             severity: Severity::Warning,
                             rule_id: self.id(),
                             rule: self.name(),
-                            message: format!(
-                                "invalid :center value '{}' — expected t",
-                                value
-                            ),
+                            message: format!("invalid :center value '{}' — expected t", value),
                             fix: None,
                         });
                     }

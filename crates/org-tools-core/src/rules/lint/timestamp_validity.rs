@@ -7,7 +7,9 @@
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::rules::format::regions::{is_protected, protected_regions};
-use crate::rules::timestamp::{find_timestamps, is_valid_date, is_valid_repeater, is_valid_warning};
+use crate::rules::timestamp::{
+    find_timestamps, is_valid_date, is_valid_repeater, is_valid_warning,
+};
 use crate::rules::{LintContext, LintRule};
 
 /// Checks org-mode timestamps for valid dates, repeater intervals, and

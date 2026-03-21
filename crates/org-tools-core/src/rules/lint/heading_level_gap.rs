@@ -89,8 +89,8 @@ impl LintRule for HeadingLevelGap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::SourceFile;
     use crate::config::Config;
+    use crate::source::SourceFile;
 
     fn check_it(input: &str) -> Vec<Diagnostic> {
         let source = SourceFile::new("test.org", input.to_string());

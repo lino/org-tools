@@ -86,10 +86,7 @@ impl FormatRule for ListFormat {
                     let new_line = format!("{}{}{}{}", indent, marker, checkbox_str, content_part);
 
                     if new_line != raw {
-                        fixes.push(Fix::new(
-                            Span::new(offset, offset + raw.len()),
-                            new_line,
-                        ));
+                        fixes.push(Fix::new(Span::new(offset, offset + raw.len()), new_line));
                     }
                 }
             }

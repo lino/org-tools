@@ -31,11 +31,11 @@ Lint org files and report diagnostics.
 org fmt check [OPTIONS] <PATHS>...
 #+end_src
 
-| Option           | Description                              |
-|------------------+------------------------------------------|
-| =--format human= | Human-readable output (default)          |
-| =--format json=  | JSON output for tooling integration      |
-| =--fix=          | Auto-fix fixable issues in place         |
+| Option           | Description                         |
+|------------------+-------------------------------------|
+| =--format human= | Human-readable output (default)     |
+| =--format json=  | JSON output for tooling integration |
+| =--fix=          | Auto-fix fixable issues in place    |
 
 Exit codes:
 
@@ -53,17 +53,17 @@ Format org files.
 org fmt format [OPTIONS] <PATHS>...
 #+end_src
 
-| Option      | Description                                        |
-|-------------+----------------------------------------------------|
-| =--check=   | Exit 1 if files would change (for CI)              |
-| =--stdout=  | Write formatted output to stdout (don't modify)    |
-| /(neither)/ | Format files in place                              |
+| Option      | Description                                     |
+|-------------+-------------------------------------------------|
+| =--check=   | Exit 1 if files would change (for CI)           |
+| =--stdout=  | Write formatted output to stdout (don't modify) |
+| /(neither)/ | Format files in place                           |
 
 ** Common Options
 
-| Option            | Description                               |
-|-------------------+-------------------------------------------|
-| =--config <PATH>= | Path to config file (default: search for  |
+| Option            | Description                                   |
+|-------------------+-----------------------------------------------|
+| =--config <PATH>= | Path to config file (default: search for      |
 |                   | =.org-tools.toml= in current and parent dirs) |
 
 * Directory Scanning
@@ -161,72 +161,72 @@ org fmt check --format json . | jq '.[] | select(.severity == "error")'
 
 ** Format Rules (auto-fixable)
 
-| ID   | Name                   | Description                                |
-|------+------------------------+--------------------------------------------|
-| F001 | trailing-whitespace    | Remove trailing whitespace                 |
-| F002 | blank-lines            | Collapse excessive consecutive blank lines |
-| F003 | heading-spacing        | Enforce blank lines before headings        |
-| F004 | table-format           | Align table columns and normalise seps     |
-| F005 | property-drawer-align  | Align property drawer values               |
-| F006 | keyword-spacing        | Normalise spacing in keyword lines         |
-| F007 | tag-alignment          | Align heading tags                         |
-| F008 | list-format            | Normalise list item formatting             |
-| F009 | timestamp-spacing      | Normalise timestamp internal spacing       |
+| ID   | Name                  | Description                                |
+|------+-----------------------+--------------------------------------------|
+| F001 | trailing-whitespace   | Remove trailing whitespace                 |
+| F002 | blank-lines           | Collapse excessive consecutive blank lines |
+| F003 | heading-spacing       | Enforce blank lines before headings        |
+| F004 | table-format          | Align table columns and normalise seps     |
+| F005 | property-drawer-align | Align property drawer values               |
+| F006 | keyword-spacing       | Normalise spacing in keyword lines         |
+| F007 | tag-alignment         | Align heading tags                         |
+| F008 | list-format           | Normalise list item formatting             |
+| F009 | timestamp-spacing     | Normalise timestamp internal spacing       |
 
 ** Lint Rules (report-only)
 
 *** Errors (structural issues)
 
-| ID   | Name                         | Description                         |
-|------+------------------------------+-------------------------------------|
-| E001 | unclosed-block               | =#+BEGIN= without matching =#+END=  |
-| E002 | duplicate-custom-id          | Duplicate =CUSTOM_ID= property      |
-| E003 | duplicate-name               | Duplicate =#+NAME:= value           |
-| E004 | duplicate-target             | Duplicate =<<target>>=              |
-| E005 | duplicate-footnote-def       | Duplicate footnote definition       |
-| E006 | incomplete-drawer            | =:DRAWER:= without =:END:=         |
+| ID   | Name                   | Description                        |
+|------+------------------------+------------------------------------|
+| E001 | unclosed-block         | =#+BEGIN= without matching =#+END= |
+| E002 | duplicate-custom-id    | Duplicate =CUSTOM_ID= property     |
+| E003 | duplicate-name         | Duplicate =#+NAME:= value          |
+| E004 | duplicate-target       | Duplicate =<<target>>=             |
+| E005 | duplicate-footnote-def | Duplicate footnote definition      |
+| E006 | incomplete-drawer      | =:DRAWER:= without =:END:=         |
 
 *** Warnings (correctness / style)
 
-| ID   | Name                         | Description                               |
-|------+------------------------------+-------------------------------------------|
-| W001 | heading-level-gap            | Heading level jumps (e.g., * to ***)      |
-| W002 | missing-src-language         | =#+BEGIN_SRC= without language            |
-| W003 | misplaced-property-drawer    | Property drawer not after heading         |
-| W004 | orphaned-footnotes           | Footnote ref without def or vice versa    |
-| W005 | invalid-keyword-syntax       | Malformed keyword line                    |
-| W006 | obsolete-affiliated-keywords | Deprecated affiliated keyword syntax      |
-| W007 | deprecated-export-blocks     | Old-style export block syntax             |
-| W008 | deprecated-category-setup    | Deprecated =#+CATEGORY= placement        |
-| W009 | trailing-bracket-after-link  | Stray =]= after a link                    |
-| W010 | invalid-effort-property      | Malformed =Effort= property              |
-| W011 | invalid-id-property          | Malformed =ID= property                  |
-| W012 | spurious-colons              | Unnecessary colons in headline            |
+| ID   | Name                         | Description                                |
+|------+------------------------------+--------------------------------------------|
+| W001 | heading-level-gap            | Heading level jumps (e.g., * to ***)       |
+| W002 | missing-src-language         | =#+BEGIN_SRC= without language             |
+| W003 | misplaced-property-drawer    | Property drawer not after heading          |
+| W004 | orphaned-footnotes           | Footnote ref without def or vice versa     |
+| W005 | invalid-keyword-syntax       | Malformed keyword line                     |
+| W006 | obsolete-affiliated-keywords | Deprecated affiliated keyword syntax       |
+| W007 | deprecated-export-blocks     | Old-style export block syntax              |
+| W008 | deprecated-category-setup    | Deprecated =#+CATEGORY= placement          |
+| W009 | trailing-bracket-after-link  | Stray =]= after a link                     |
+| W010 | invalid-effort-property      | Malformed =Effort= property                |
+| W011 | invalid-id-property          | Malformed =ID= property                    |
+| W012 | spurious-colons              | Unnecessary colons in headline             |
 | W013 | missing-export-backend       | Missing export backend in =#+BEGIN_EXPORT= |
-| W014 | planning-inactive            | Inactive timestamp in SCHEDULED/DEADLINE  |
-| W015 | misplaced-planning-info      | Planning info not after heading           |
-| W016 | file-application             | =#+begin_src= with =file= header arg     |
-| W017 | obsolete-include-markup      | Old =#+INCLUDE= markup syntax            |
-| W018 | quote-section                | Deprecated QUOTE headline                 |
-| W019 | special-property-in-drawer   | Reserved property in property drawer      |
-| W020 | misplaced-heading            | Heading inside a list or block            |
-| W021 | suspicious-language          | Possibly misspelled src block language    |
-| W022 | orphaned-affiliated-keywords | Affiliated keyword not before an element  |
-| W023 | non-existent-setupfile       | =#+SETUPFILE= points to missing file     |
-| W024 | link-to-local-file           | Link to non-existent local file           |
-| W025 | invalid-babel-call           | Malformed =#+CALL:= line                 |
-| W026 | unknown-options-item         | Unknown item in =#+OPTIONS:=             |
-| W027 | percent-encoding-link        | Unnecessary percent encoding in link      |
-| W028 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment      |
-| W029 | timestamp-validity           | Invalid date/time in timestamp            |
-| W030 | link-syntax                  | Malformed link syntax                     |
-| W031 | list-consistency             | Mixed list markers in same list           |
-| W032 | priority-validity            | Invalid priority cookie                   |
-| W033 | drawer-nesting               | Incorrectly nested drawers                |
-| W034 | clock-entry-validity         | Malformed =CLOCK:= entry                 |
-| W035 | keyword-validity             | Unknown or misplaced keyword              |
-| W036 | block-type-validity          | Unknown block type                        |
-| W037 | affiliated-keyword-placement | Affiliated keyword in wrong position      |
+| W014 | planning-inactive            | Inactive timestamp in SCHEDULED/DEADLINE   |
+| W015 | misplaced-planning-info      | Planning info not after heading            |
+| W016 | file-application             | =#+begin_src= with =file= header arg       |
+| W017 | obsolete-include-markup      | Old =#+INCLUDE= markup syntax              |
+| W018 | quote-section                | Deprecated QUOTE headline                  |
+| W019 | special-property-in-drawer   | Reserved property in property drawer       |
+| W020 | misplaced-heading            | Heading inside a list or block             |
+| W021 | suspicious-language          | Possibly misspelled src block language     |
+| W022 | orphaned-affiliated-keywords | Affiliated keyword not before an element   |
+| W023 | non-existent-setupfile       | =#+SETUPFILE= points to missing file       |
+| W024 | link-to-local-file           | Link to non-existent local file            |
+| W025 | invalid-babel-call           | Malformed =#+CALL:= line                   |
+| W026 | unknown-options-item         | Unknown item in =#+OPTIONS:=               |
+| W027 | percent-encoding-link        | Unnecessary percent encoding in link       |
+| W028 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment        |
+| W029 | timestamp-validity           | Invalid date/time in timestamp             |
+| W030 | link-syntax                  | Malformed link syntax                      |
+| W031 | list-consistency             | Mixed list markers in same list            |
+| W032 | priority-validity            | Invalid priority cookie                    |
+| W033 | drawer-nesting               | Incorrectly nested drawers                 |
+| W034 | clock-entry-validity         | Malformed =CLOCK:= entry                   |
+| W035 | keyword-validity             | Unknown or misplaced keyword               |
+| W036 | block-type-validity          | Unknown block type                         |
+| W037 | affiliated-keyword-placement | Affiliated keyword in wrong position       |
 
 * Query (=org query=)
 
@@ -238,12 +238,12 @@ Search for entries matching a query expression.
 org query search [OPTIONS] <QUERY> [PATHS...]
 #+end_src
 
-| Option              | Description                                      |
-|---------------------+--------------------------------------------------|
-| =--format human=    | Human-readable output (default)                  |
-| =--format json=     | JSON output (see =schemas/org-query-output.schema.json=) |
-| =--format locator=  | One OrgLocator per line (for piping)             |
-| =--limit N=         | Maximum results to return                        |
+| Option             | Description                                              |
+|--------------------+----------------------------------------------------------|
+| =--format human=   | Human-readable output (default)                          |
+| =--format json=    | JSON output (see =schemas/org-query-output.schema.json=) |
+| =--format locator= | One OrgLocator per line (for piping)                     |
+| =--limit N=        | Maximum results to return                                |
 
 ** =org query agenda=
 
@@ -253,11 +253,11 @@ Show upcoming scheduled and deadline items grouped by day.
 org query agenda [OPTIONS] [PATHS...]
 #+end_src
 
-| Option           | Description                       |
-|------------------+-----------------------------------|
+| Option           | Description                         |
+|------------------+-------------------------------------|
 | =--days N=       | Number of days to show (default: 7) |
-| =--format human= | Human-readable timeline (default) |
-| =--format json=  | JSON output                       |
+| =--format human= | Human-readable timeline (default)   |
+| =--format json=  | JSON output                         |
 
 ** Query Syntax
 
@@ -314,12 +314,12 @@ org query search 'todo:TODO tags:work' --format locator ~/org/
 
 Every heading in an org file can be addressed by an OrgLocator string:
 
-| Pattern | Example | When used |
-|---------+---------+-----------|
-| =id:<uuid>= | =id:550e8400-...= | Entry has =:ID:= property (preferred) |
-| =<file>::#<id>= | =notes.org::#project-x= | Entry has =:CUSTOM_ID:= property |
-| =<file>::*/<path>= | =todo.org::*/Work/Meeting= | Fallback: outline path |
-| =<file>::<line>= | =inbox.org::42= | Line number (fragile) |
+| Pattern            | Example                    | When used                             |
+|--------------------+----------------------------+---------------------------------------|
+| =id:<uuid>=        | =id:550e8400-...=          | Entry has =:ID:= property (preferred) |
+| =<file>::#<id>=    | =notes.org::#project-x=    | Entry has =:CUSTOM_ID:= property      |
+| =<file>::*/<path>= | =todo.org::*/Work/Meeting= | Fallback: outline path                |
+| =<file>::<line>=   | =inbox.org::42=            | Line number (fragile)                 |
 
 The =::= separator mirrors org-mode's own link syntax.
 

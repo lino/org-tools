@@ -80,10 +80,7 @@ impl FormatRule for TagAlignment {
                     let new_line = format!("{}{}{}", prefix, " ".repeat(spaces_needed), tag_str);
 
                     if new_line != raw {
-                        fixes.push(Fix::new(
-                            Span::new(offset, offset + raw.len()),
-                            new_line,
-                        ));
+                        fixes.push(Fix::new(Span::new(offset, offset + raw.len()), new_line));
                     }
                 }
             }

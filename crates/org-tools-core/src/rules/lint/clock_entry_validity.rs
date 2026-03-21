@@ -90,8 +90,7 @@ impl LintRule for ClockEntryValidity {
                                     if let Some(actual_mins) =
                                         compute_duration_mins(&start_ts, &end_ts)
                                     {
-                                        let claimed_mins =
-                                            claimed_h as i64 * 60 + claimed_m as i64;
+                                        let claimed_mins = claimed_h as i64 * 60 + claimed_m as i64;
                                         if claimed_mins != actual_mins {
                                             diagnostics.push(Diagnostic {
                                                 file: ctx.source.path.clone(),

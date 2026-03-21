@@ -69,9 +69,7 @@ impl LintRule for ObsoleteIncludeMarkup {
                             .unwrap_or("")
                             .to_uppercase();
                         if DEPRECATED_BACKENDS.contains(&first_word.as_str())
-                            && !after_path
-                                .to_uppercase()
-                                .starts_with("EXPORT")
+                            && !after_path.to_uppercase().starts_with("EXPORT")
                         {
                             let (line_num, col) = ctx.source.line_col(offset);
                             diagnostics.push(Diagnostic {

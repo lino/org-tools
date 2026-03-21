@@ -12,6 +12,7 @@ pub mod diagnostic;
 pub mod document;
 pub mod files;
 pub mod formatter;
+pub mod id;
 pub mod locator;
 pub mod output;
 pub mod rules;

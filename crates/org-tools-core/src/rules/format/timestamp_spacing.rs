@@ -76,10 +76,7 @@ impl FormatRule for TimestampSpacing {
                 }
 
                 if changed {
-                    fixes.push(Fix::new(
-                        Span::new(offset, offset + raw.len()),
-                        new_line,
-                    ));
+                    fixes.push(Fix::new(Span::new(offset, offset + raw.len()), new_line));
                 }
             }
 

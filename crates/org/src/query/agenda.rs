@@ -223,7 +223,7 @@ mod tests {
     fn day_of_week_known() {
         // 2024-01-01 is a Monday.
         assert_eq!(day_of_week(2024, 1, 1), 0); // Mon
-        // 2024-06-15 is a Saturday.
+                                                // 2024-06-15 is a Saturday.
         assert_eq!(day_of_week(2024, 6, 15), 5); // Sat
     }
 

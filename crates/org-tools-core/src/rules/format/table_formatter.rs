@@ -155,7 +155,9 @@ fn is_numeric(s: &str) -> bool {
     }
     // Allow digits, dots, commas (thousands separators), spaces (European style).
     let has_digit = rest.chars().any(|c| c.is_ascii_digit());
-    let all_valid = rest.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',' || c == ' ' || c == '%' || c == '$' || c == '€');
+    let all_valid = rest.chars().all(|c| {
+        c.is_ascii_digit() || c == '.' || c == ',' || c == ' ' || c == '%' || c == '$' || c == '€'
+    });
     has_digit && all_valid
 }
 
@@ -309,7 +311,8 @@ mod tests {
     #[test]
     fn right_aligns_numbers() {
         let input = "| Item | Price |\n|---+---|\n| Apple | 1 |\n| Banana | 250 |\n";
-        let expected = "| Item   | Price |\n|--------+-------|\n| Apple  |     1 |\n| Banana |   250 |\n";
+        let expected =
+            "| Item   | Price |\n|--------+-------|\n| Apple  |     1 |\n| Banana |   250 |\n";
         assert_eq!(format_it(input), expected);
     }
 

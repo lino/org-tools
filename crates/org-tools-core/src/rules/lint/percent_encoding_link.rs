@@ -74,8 +74,7 @@ impl LintRule for PercentEncodingLink {
                 while let Some(pct_pos) = check.find('%') {
                     if pct_pos + 2 < check.len() {
                         let code = &check[pct_pos + 1..pct_pos + 3];
-                        if code.chars().all(|c| c.is_ascii_hexdigit())
-                            && !is_allowed_encoding(code)
+                        if code.chars().all(|c| c.is_ascii_hexdigit()) && !is_allowed_encoding(code)
                         {
                             let (line_num, _) = ctx.source.line_col(offset);
                             diagnostics.push(Diagnostic {

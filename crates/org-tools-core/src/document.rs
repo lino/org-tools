@@ -177,9 +177,7 @@ impl OrgDocument {
                 }
 
                 // Parse property drawer (immediately after heading or planning).
-                if i < lines.len()
-                    && lines[i].trim().eq_ignore_ascii_case(":PROPERTIES:")
-                {
+                if i < lines.len() && lines[i].trim().eq_ignore_ascii_case(":PROPERTIES:") {
                     let (props, end) = parse_property_drawer(&lines, i + 1);
                     entry.properties = props;
                     i = end;
@@ -221,9 +219,11 @@ impl OrgDocument {
 
     /// Find an entry by its `:CUSTOM_ID:` property.
     pub fn find_by_custom_id(&self, custom_id: &str) -> Option<usize> {
-        self.entries
-            .iter()
-            .position(|e| e.properties.get("CUSTOM_ID").is_some_and(|v| v == custom_id))
+        self.entries.iter().position(|e| {
+            e.properties
+                .get("CUSTOM_ID")
+                .is_some_and(|v| v == custom_id)
+        })
     }
 
     /// Get the outline path for an entry (ancestor titles from root to entry).
@@ -292,10 +292,7 @@ fn parse_planning(line: &str) -> Planning {
 
 /// Parses a `:PROPERTIES:` drawer, returning (properties, next_line_index).
 /// `start` is the line after `:PROPERTIES:`.
-fn parse_property_drawer(
-    lines: &[&str],
-    start: usize,
-) -> (HashMap<String, String>, usize) {
+fn parse_property_drawer(lines: &[&str], start: usize) -> (HashMap<String, String>, usize) {
     let mut props = HashMap::new();
     let mut i = start;
 
@@ -525,9 +522,8 @@ mod tests {
 
     #[test]
     fn property_drawer() {
-        let source = make_source(
-            "* Heading\n:PROPERTIES:\n:ID: abc-123\n:CUSTOM_ID: my-heading\n:END:\n",
-        );
+        let source =
+            make_source("* Heading\n:PROPERTIES:\n:ID: abc-123\n:CUSTOM_ID: my-heading\n:END:\n");
         let doc = OrgDocument::from_source(&source);
         let e = &doc.entries[0];
         assert_eq!(e.properties.get("ID").unwrap(), "abc-123");
@@ -547,9 +543,7 @@ mod tests {
 
     #[test]
     fn find_by_custom_id() {
-        let source = make_source(
-            "* Heading\n:PROPERTIES:\n:CUSTOM_ID: my-section\n:END:\n",
-        );
+        let source = make_source("* Heading\n:PROPERTIES:\n:CUSTOM_ID: my-section\n:END:\n");
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.find_by_custom_id("my-section"), Some(0));
     }
@@ -569,9 +563,7 @@ mod tests {
 
     #[test]
     fn running_clock() {
-        let source = make_source(
-            "* Task\n:LOGBOOK:\nCLOCK: [2024-01-15 Mon 09:00]\n:END:\n",
-        );
+        let source = make_source("* Task\n:LOGBOOK:\nCLOCK: [2024-01-15 Mon 09:00]\n:END:\n");
         let doc = OrgDocument::from_source(&source);
         let e = &doc.entries[0];
         assert_eq!(e.clocks.len(), 1);
@@ -581,18 +573,16 @@ mod tests {
 
     #[test]
     fn standalone_clock_outside_logbook() {
-        let source = make_source(
-            "* Task\nCLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:00] =>  1:00\n",
-        );
+        let source =
+            make_source("* Task\nCLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:00] =>  1:00\n");
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.entries[0].clocks.len(), 1);
     }
 
     #[test]
     fn file_level_properties() {
-        let source = make_source(
-            ":PROPERTIES:\n:ID: file-id\n:END:\n#+TITLE: My Document\n* Heading\n",
-        );
+        let source =
+            make_source(":PROPERTIES:\n:ID: file-id\n:END:\n#+TITLE: My Document\n* Heading\n");
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.file_properties.get("ID").unwrap(), "file-id");
         assert_eq!(doc.file_keywords.get("TITLE").unwrap(), "My Document");

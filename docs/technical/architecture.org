@@ -30,34 +30,34 @@ Key requirements:
 |----------+---------------+-----------------------------------------------------------------|
 |        1 | Correctness   | Rules match org-mode spec and Emacs behaviour                   |
 |        2 | Safety        | Never modify content inside protected regions                   |
-|        3 | Performance   | Sub-second for typical org-mode collections (hundreds of files)  |
-|        4 | Extensibility | Adding a new rule requires only a struct + trait impl + tests    |
-|        5 | Composability | Commands pipe together via locators and sparse org subtrees      |
+|        3 | Performance   | Sub-second for typical org-mode collections (hundreds of files) |
+|        4 | Extensibility | Adding a new rule requires only a struct + trait impl + tests   |
+|        5 | Composability | Commands pipe together via locators and sparse org subtrees     |
 
 ** Stakeholders
 
-| Role             | Expectations                                                |
-|------------------+-------------------------------------------------------------|
-| Org-mode users   | Consistent formatting, catch common mistakes, fast feedback |
-| CI/CD pipelines  | Machine-readable output (JSON), reliable exit codes         |
-| Script authors   | Locator-based piping between commands                       |
-| Rule contributors | Simple pattern: implement trait, add tests, register rule  |
+| Role              | Expectations                                                |
+|-------------------+-------------------------------------------------------------|
+| Org-mode users    | Consistent formatting, catch common mistakes, fast feedback |
+| CI/CD pipelines   | Machine-readable output (JSON), reliable exit codes         |
+| Script authors    | Locator-based piping between commands                       |
+| Rule contributors | Simple pattern: implement trait, add tests, register rule   |
 
 * Constraints
 
 ** Technical Constraints
 
-| Constraint        | Rationale                                                         |
-|-------------------+-------------------------------------------------------------------|
-| Pure Rust         | Single binary, no runtime dependencies, cross-platform            |
-| Line-based parser | Keeps complexity low; no external org parser dependency            |
-| GPL-3.0-or-later  | Respects the org-mode ecosystem's licensing conventions            |
-| No Emacs dep      | Must run in CI, editors, and environments where Emacs is absent   |
+| Constraint        | Rationale                                                       |
+|-------------------+-----------------------------------------------------------------|
+| Pure Rust         | Single binary, no runtime dependencies, cross-platform          |
+| Line-based parser | Keeps complexity low; no external org parser dependency         |
+| GPL-3.0-or-later  | Respects the org-mode ecosystem's licensing conventions         |
+| No Emacs dep      | Must run in CI, editors, and environments where Emacs is absent |
 
 ** Conventions
 
-| Convention           | Description                                   |
-|----------------------+-----------------------------------------------|
+| Convention           | Description                                     |
+|----------------------+-------------------------------------------------|
 | Rule ID scheme       | F=format, E=error, W=warning, I=info + 3 digits |
 | Config format        | TOML (=.org-tools.toml=)                        |
 | Output formats       | Human-readable (default), JSON, locator         |
@@ -150,34 +150,34 @@ graph TD
 
 *** org-tools-core (shared library)
 
-| Module               | Responsibility                                       |
-|----------------------+------------------------------------------------------|
-| =source.rs=          | File reading, line start indexing, line/col lookups   |
-| =document.rs=        | OrgDocument heading tree model from line-based scan   |
-| =locator.rs=         | OrgLocator parse/display/resolve across file trees    |
-| =runner.rs=          | Rule registration, check/format pipeline              |
-| =diagnostic.rs=      | Span, Fix, Diagnostic, Severity types                 |
-| =formatter.rs=       | Applies non-overlapping fixes to source text          |
-| =config.rs=          | TOML config loading with ancestor directory search    |
-| =output.rs=          | Renders diagnostics as human-readable or JSON         |
-| =files.rs=           | Recursive =.org= file collection (respects .gitignore)|
-| =rules/mod.rs=       | FormatRule / LintRule traits, context structs          |
-| =rules/format/=      | 9 format rule implementations (F-series)              |
-| =rules/lint/=        | 37 lint rule implementations (E/W/I-series)           |
-| =rules/heading.rs=   | Shared heading parsing (HeadingParts, parse_heading)  |
-| =rules/list.rs=      | Shared list parsing utilities                         |
-| =rules/timestamp.rs= | Shared timestamp parsing (OrgTimestamp)                |
-| =rules/format/regions.rs= | Protected region detection                       |
+| Module                    | Responsibility                                         |
+|---------------------------+--------------------------------------------------------|
+| =source.rs=               | File reading, line start indexing, line/col lookups    |
+| =document.rs=             | OrgDocument heading tree model from line-based scan    |
+| =locator.rs=              | OrgLocator parse/display/resolve across file trees     |
+| =runner.rs=               | Rule registration, check/format pipeline               |
+| =diagnostic.rs=           | Span, Fix, Diagnostic, Severity types                  |
+| =formatter.rs=            | Applies non-overlapping fixes to source text           |
+| =config.rs=               | TOML config loading with ancestor directory search     |
+| =output.rs=               | Renders diagnostics as human-readable or JSON          |
+| =files.rs=                | Recursive =.org= file collection (respects .gitignore) |
+| =rules/mod.rs=            | FormatRule / LintRule traits, context structs          |
+| =rules/format/=           | 9 format rule implementations (F-series)               |
+| =rules/lint/=             | 37 lint rule implementations (E/W/I-series)            |
+| =rules/heading.rs=        | Shared heading parsing (HeadingParts, parse_heading)   |
+| =rules/list.rs=           | Shared list parsing utilities                          |
+| =rules/timestamp.rs=      | Shared timestamp parsing (OrgTimestamp)                |
+| =rules/format/regions.rs= | Protected region detection                             |
 
 *** org binary (CLI)
 
-| Module               | Responsibility                                       |
-|----------------------+------------------------------------------------------|
-| =main.rs=            | CLI parsing, subcommand dispatch, config loading      |
-| =query/parser.rs=    | Query language tokenizer + recursive descent parser   |
-| =query/predicate.rs= | Predicate evaluation against OrgEntry values          |
-| =query/output.rs=    | Query result rendering (human, JSON, locator)         |
-| =query/agenda.rs=    | Agenda view: scheduled/deadline timeline by day       |
+| Module               | Responsibility                                      |
+|----------------------+-----------------------------------------------------|
+| =main.rs=            | CLI parsing, subcommand dispatch, config loading    |
+| =query/parser.rs=    | Query language tokenizer + recursive descent parser |
+| =query/predicate.rs= | Predicate evaluation against OrgEntry values        |
+| =query/output.rs=    | Query result rendering (human, JSON, locator)       |
+| =query/agenda.rs=    | Agenda view: scheduled/deadline timeline by day     |
 
 ** Level 3: Key Data Models
 
@@ -370,29 +370,29 @@ Key decisions:
 
 * Risks and Technical Debt
 
-| Risk / Debt                      | Mitigation                                      |
-|----------------------------------+-------------------------------------------------|
-| Line-based parsing has limits    | Sufficient for ~35 of ~58 org-lint checks;       |
-|                                  | OrgDocument provides heading-level structure     |
-| Table alignment is left-only     | Track as known divergence from Emacs; future fix |
-| No incremental/cached processing | Acceptable at current scale; revisit if needed   |
-| No parallel file processing      | Single-threaded is fast enough; easy to add later|
-| ID resolution scans all files    | O(n) per lookup; cache if needed at scale        |
+| Risk / Debt                      | Mitigation                                        |
+|----------------------------------+---------------------------------------------------|
+| Line-based parsing has limits    | Sufficient for ~35 of ~58 org-lint checks;        |
+|                                  | OrgDocument provides heading-level structure      |
+| Table alignment is left-only     | Track as known divergence from Emacs; future fix  |
+| No incremental/cached processing | Acceptable at current scale; revisit if needed    |
+| No parallel file processing      | Single-threaded is fast enough; easy to add later |
+| ID resolution scans all files    | O(n) per lookup; cache if needed at scale         |
 
 * Glossary
 
-| Term             | Definition                                                   |
-|------------------+--------------------------------------------------------------|
-| Format rule      | A rule that produces =Fix= values to auto-correct formatting |
-| Lint rule        | A rule that produces =Diagnostic= values (report-only)       |
-| Protected region | A block (src, example, etc.) whose content must not be       |
-|                  | modified by format rules                                     |
-| Fix              | A byte-span replacement: replace bytes [start, end) with     |
-|                  | new text                                                     |
-| Diagnostic       | A reported issue: file, line, column, severity, rule, message|
-| Runner           | Orchestrates rule execution and fix application              |
-| SourceFile       | In-memory representation of an =.org= file with line index   |
+| Term             | Definition                                                    |
+|------------------+---------------------------------------------------------------|
+| Format rule      | A rule that produces =Fix= values to auto-correct formatting  |
+| Lint rule        | A rule that produces =Diagnostic= values (report-only)        |
+| Protected region | A block (src, example, etc.) whose content must not be        |
+|                  | modified by format rules                                      |
+| Fix              | A byte-span replacement: replace bytes [start, end) with      |
+|                  | new text                                                      |
+| Diagnostic       | A reported issue: file, line, column, severity, rule, message |
+| Runner           | Orchestrates rule execution and fix application               |
+| SourceFile       | In-memory representation of an =.org= file with line index    |
 | OrgDocument      | Lightweight heading tree built by single-pass line scanning   |
 | OrgEntry         | A heading entry with properties, planning, clocks, tags       |
-| OrgLocator       | Universal address for a heading: id, custom-id, path, or line|
+| OrgLocator       | Universal address for a heading: id, custom-id, path, or line |
 | Predicate        | A query condition evaluated against an OrgEntry               |

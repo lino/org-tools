@@ -92,7 +92,9 @@ impl LintRule for OrphanedAffiliatedKeywords {
                             severity: Severity::Warning,
                             rule_id: self.id(),
                             rule: self.name(),
-                            message: "affiliated keyword is separated from its element by a blank line".to_string(),
+                            message:
+                                "affiliated keyword is separated from its element by a blank line"
+                                    .to_string(),
                             fix: None,
                         });
                         break;
@@ -113,7 +115,8 @@ impl LintRule for OrphanedAffiliatedKeywords {
                             severity: Severity::Warning,
                             rule_id: self.id(),
                             rule: self.name(),
-                            message: "affiliated keyword is not followed by an attachable element".to_string(),
+                            message: "affiliated keyword is not followed by an attachable element"
+                                .to_string(),
                             fix: None,
                         });
                         break;

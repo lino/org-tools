@@ -1,0 +1,39 @@
+#+TITLE: ADR-0002: Two-phase pipeline (format, then lint)
+#+DATE: 2026-03-21
+#+STATUS: accepted
+
+* Context
+
+orgfmt has two categories of rules:
+
+- *Format rules* produce fixes (auto-correctable changes)
+- *Lint rules* produce diagnostics (report-only)
+
+These could run independently on the original source, or lint rules could
+run on the formatted result.
+
+* Decision
+
+Use a two-phase pipeline:
+
+1. Run all format rules on the original source → collect fixes
+2. Apply fixes to produce formatted text
+3. Run all lint rules on the formatted text → collect diagnostics
+
+The =format= command uses this full pipeline. The =check= command also runs
+format rules but reports fixes as "would reformat" diagnostics instead of
+applying them.
+
+* Consequences
+
+- *Easier*: lint rules see well-formatted input, reducing false positives
+  caused by cosmetic issues (e.g., extra whitespace triggering a pattern
+  mismatch in a lint rule)
+- *Easier*: the formatted output is always lint-checked, so the user sees
+  remaining issues after formatting
+- *Trade-off*: lint rules cannot detect issues that format rules have already
+  fixed (this is by design — those issues are auto-fixed, not reported)
+
+* References
+
+- Similar approach used by ruff (Python) and prettier + eslint (JavaScript)

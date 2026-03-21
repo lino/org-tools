@@ -1,0 +1,35 @@
+#+TITLE: ADR-0003: GPL-3.0-or-later license
+#+DATE: 2026-03-21
+#+STATUS: accepted
+
+* Context
+
+orgfmt's rule set was designed by studying =org-lint.el= and the org-mode
+specification. The org-mode project and the wider Emacs ecosystem use the
+GNU General Public License.
+
+Licensing options considered:
+
+- MIT/Apache-2.0 (permissive, maximum adoption)
+- GPL-3.0-or-later (copyleft, matches org-mode ecosystem)
+
+* Decision
+
+License orgfmt under GPL-3.0-or-later.
+
+While orgfmt does not share code with Emacs or org-mode, its rule design is
+directly informed by studying GPL-licensed source code. Using GPL respects
+the ecosystem that made this tool possible and ensures that improvements
+flow back to the community.
+
+* Consequences
+
+- *Easier*: clear alignment with the org-mode ecosystem; no licensing
+  friction when referencing Emacs source for rule behaviour
+- *Harder*: GPL is incompatible with some proprietary integration scenarios;
+  this is an acceptable trade-off for a standalone CLI tool
+
+* References
+
+- [[https://www.gnu.org/licenses/gpl-3.0.html][GNU GPL v3]]
+- [[https://git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/COPYING][org-mode license]]

@@ -1,0 +1,50 @@
+#+TITLE: ADR-0001: Line-based parsing instead of full AST
+#+DATE: 2026-03-21
+#+STATUS: accepted
+
+* Context
+
+orgfmt needs to parse org-mode files to detect formatting issues and produce
+fixes. Two approaches were considered:
+
+1. Build or depend on a full org-mode AST parser
+2. Use line-based text processing with manual pattern matching
+
+A full AST parser would provide complete structural understanding of org
+documents, but:
+
+- No mature, standalone Rust org-mode parser exists
+- The org-mode specification is large and not fully formalised
+- Emacs's own =org-element.el= is the de facto spec, making perfect
+  replication non-trivial
+- Many lint and format checks only need line-level context
+
+* Decision
+
+Use line-based parsing. Each rule works directly on raw text, iterating over
+lines and using string matching to identify org-mode constructs.
+
+Shared parsing utilities (heading detection, list item detection, timestamp
+parsing) are extracted into =rules/heading.rs=, =rules/list.rs=, and
+=rules/timestamp.rs= to avoid duplication across rules.
+
+Protected regions (source blocks, etc.) are detected by scanning for
+=#+BEGIN_= / =#+END_= pairs.
+
+* Consequences
+
+- *Easier*: implementation is straightforward; rules are self-contained;
+  no parser dependency to maintain; fast startup and execution
+- *Harder*: some org-lint checks require structural understanding that
+  line-based parsing cannot provide (nested elements, cross-reference
+  resolution across includes). These checks (~23 of ~58) are deferred
+  or simplified.
+- *Trade-off*: approximately 35 of Emacs org-lint's 58 checks are fully
+  implementable with this approach. The remaining checks would require
+  at minimum a block-level parser.
+
+* References
+
+- [[https://orgmode.org/worg/org-syntax.html][Org Syntax (formal spec)]]
+- [[https://git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/lisp/org-element.el][org-element.el (Emacs parser)]]
+- [[https://git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/lisp/org-lint.el][org-lint.el (Emacs linter)]]

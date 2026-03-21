@@ -56,25 +56,25 @@ parse and respect these to avoid false positives and produce correct results.
 
 *** Affects current functionality
 
-| Setting                   | Status  | Impact                                           |
-|---------------------------+---------+--------------------------------------------------|
-| =#+TODO:= / =#+SEQ_TODO:= | Done    | Parsed from file keywords; custom keyword set    |
-| / =#+TYP_TODO:=           |         | used in heading parser, query, done-state        |
-| =#+PRIORITIES:=           | Done    | Parsed from file keywords; range stored on       |
-|                           |         | OrgDocument; ready for lint + query use          |
-| =#+FILETAGS:=             | Done    | Parsed into filetags; included in inherited_tags |
-|                           |         | for query tag matching                           |
-| =#+TAGS:=                 | Done    | Parsed into TagSpec; W019 undeclared-tag lint    |
-|                           |         | rule; mutually exclusive groups; regex members   |
-| =#+PROPERTY:=             | Done    | File-wide default properties; property() method  |
-|                           |         | falls back to defaults when entry lacks property |
-| =#+STARTUP: odd=          | Done    | W001 heading-level-gap respects odd mode;        |
-|                           |         | flags even levels and adjusts gap step to 2      |
-| =#+CONSTANTS:=            | Done    | Parsed into table_constants map on OrgDocument   |
-| =#+LINK:=                 | Done    | Parsed into link_abbreviations map on            |
-|                           |         | OrgDocument; is_known_link_scheme() helper       |
-| =#+SETUPFILE:=            | Planned | Already lint for non-existent files; need to     |
-|                           |         | actually load and apply settings from them       |
+| Setting                   | Status | Impact                                           |
+|---------------------------+--------+--------------------------------------------------|
+| =#+TODO:= / =#+SEQ_TODO:= | Done   | Parsed from file keywords; custom keyword set    |
+| / =#+TYP_TODO:=           |        | used in heading parser, query, done-state        |
+| =#+PRIORITIES:=           | Done   | Parsed from file keywords; range stored on       |
+|                           |        | OrgDocument; ready for lint + query use          |
+| =#+FILETAGS:=             | Done   | Parsed into filetags; included in inherited_tags |
+|                           |        | for query tag matching                           |
+| =#+TAGS:=                 | Done   | Parsed into TagSpec; W019 undeclared-tag lint    |
+|                           |        | rule; mutually exclusive groups; regex members   |
+| =#+PROPERTY:=             | Done   | File-wide default properties; property() method  |
+|                           |        | falls back to defaults when entry lacks property |
+| =#+STARTUP: odd=          | Done   | W001 heading-level-gap respects odd mode;        |
+|                           |        | flags even levels and adjusts gap step to 2      |
+| =#+CONSTANTS:=            | Done   | Parsed into table_constants map on OrgDocument   |
+| =#+LINK:=                 | Done   | Parsed into link_abbreviations map on            |
+|                           |        | OrgDocument; is_known_link_scheme() helper       |
+| =#+SETUPFILE:=            | Done   | Loads local setupfile and merges keywords;       |
+|                           |        | main file overrides; additive for TAGS/LINK      |
 
 *** Future (not yet needed)
 

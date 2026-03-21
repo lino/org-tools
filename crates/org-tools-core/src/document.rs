@@ -142,6 +142,14 @@ impl OrgDocument {
             if !first_heading_seen {
                 if parse_heading(line).is_some() {
                     first_heading_seen = true;
+                    // Load and merge settings from #+SETUPFILE: if present.
+                    merge_setupfile_settings(
+                        &source.path,
+                        &mut file_keywords,
+                        &mut tags_lines,
+                        &mut link_abbreviations,
+                        &mut table_constants,
+                    );
                     // Derive settings from file keywords collected so far.
                     todo_kw = todo_keywords_from_file(&file_keywords);
                     kw_strs = todo_kw.all().iter().map(|s| s.to_string()).collect();
@@ -479,6 +487,87 @@ fn parse_default_properties(file_keywords: &HashMap<String, String>) -> HashMap<
         }
     }
     props
+}
+
+/// Load settings from a `#+SETUPFILE:` and merge them into the main file's keyword collections.
+///
+/// Setupfile settings act as defaults — the main file's own keywords take precedence.
+/// For additive keywords (`TAGS`, `LINK`, `CONSTANTS`), setupfile values are appended.
+/// Only local files are loaded; URLs are skipped. Recursive `#+SETUPFILE:` within
+/// setupfiles is not followed (single level only).
+fn merge_setupfile_settings(
+    source_path: &std::path::Path,
+    file_keywords: &mut HashMap<String, String>,
+    tags_lines: &mut Vec<String>,
+    link_abbreviations: &mut HashMap<String, String>,
+    table_constants: &mut HashMap<String, String>,
+) {
+    let setupfile_val = match file_keywords.get("SETUPFILE") {
+        Some(v) => v.clone(),
+        None => return,
+    };
+
+    let path_str = setupfile_val.trim();
+    // Remove quotes if present.
+    let path_str = path_str
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(path_str);
+
+    // Skip URLs and empty values.
+    if path_str.is_empty() || path_str.starts_with("http://") || path_str.starts_with("https://") {
+        return;
+    }
+
+    let base_dir = source_path.parent().unwrap_or(std::path::Path::new("."));
+    let resolved = base_dir.join(path_str);
+
+    let content = match std::fs::read_to_string(&resolved) {
+        Ok(c) => c,
+        Err(_) => return, // File doesn't exist or can't be read (W022 handles the warning).
+    };
+
+    // Extract preamble keywords from the setupfile.
+    for line in content.split('\n') {
+        let raw = line.strip_suffix('\r').unwrap_or(line);
+        // Stop at first heading.
+        if parse_heading(raw).is_some() {
+            break;
+        }
+        if let Some((key, val)) = parse_keyword_line(raw) {
+            // Additive keywords: append to existing collections.
+            if key == "TAGS" {
+                tags_lines.push(val);
+                continue;
+            }
+            if key == "LINK" {
+                if let Some(space) = val.find(|c: char| c.is_whitespace()) {
+                    let prefix = val[..space].to_string();
+                    let template = val[space..].trim().to_string();
+                    if !prefix.is_empty() && !template.is_empty() {
+                        link_abbreviations.entry(prefix).or_insert(template);
+                    }
+                }
+                continue;
+            }
+            if key == "CONSTANTS" {
+                for pair in val.split_whitespace() {
+                    if let Some(eq) = pair.find('=') {
+                        let name = &pair[..eq];
+                        let value = &pair[eq + 1..];
+                        if !name.is_empty() && !value.is_empty() {
+                            table_constants
+                                .entry(name.to_string())
+                                .or_insert_with(|| value.to_string());
+                        }
+                    }
+                }
+                continue;
+            }
+            // Non-additive keywords: main file takes precedence.
+            file_keywords.entry(key).or_insert(val);
+        }
+    }
 }
 
 /// Finds the parent index for a heading at the given level.
@@ -1046,5 +1135,74 @@ mod tests {
         let source = make_source("#+CONSTANTS: eps=2.4e-6\n* H\n");
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.table_constants.get("eps"), Some(&"2.4e-6".to_string()));
+    }
+
+    // --- SETUPFILE inheritance ---
+
+    #[test]
+    fn setupfile_inherits_keywords() {
+        let dir = tempfile::tempdir().unwrap();
+        let setup_path = dir.path().join("setup.org");
+        std::fs::write(&setup_path, "#+TODO: OPEN | CLOSED\n#+FILETAGS: :shared:\n").unwrap();
+
+        let main_path = dir.path().join("main.org");
+        let main_content = format!("#+SETUPFILE: {}\n* OPEN Task\n", setup_path.display());
+        let source = SourceFile::new(main_path, main_content);
+        let doc = OrgDocument::from_source(&source);
+
+        assert_eq!(doc.todo_keywords.todo, vec!["OPEN"]);
+        assert_eq!(doc.todo_keywords.done, vec!["CLOSED"]);
+        assert_eq!(doc.filetags, vec!["shared"]);
+    }
+
+    #[test]
+    fn setupfile_main_file_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let setup_path = dir.path().join("setup.org");
+        std::fs::write(&setup_path, "#+TODO: OPEN | CLOSED\n").unwrap();
+
+        let main_path = dir.path().join("main.org");
+        let main_content = format!(
+            "#+SETUPFILE: {}\n#+TODO: DRAFT | PUBLISHED\n* DRAFT Task\n",
+            setup_path.display()
+        );
+        let source = SourceFile::new(main_path, main_content);
+        let doc = OrgDocument::from_source(&source);
+
+        // Main file's TODO takes precedence.
+        assert_eq!(doc.todo_keywords.todo, vec!["DRAFT"]);
+        assert_eq!(doc.todo_keywords.done, vec!["PUBLISHED"]);
+    }
+
+    #[test]
+    fn setupfile_additive_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        let setup_path = dir.path().join("setup.org");
+        std::fs::write(&setup_path, "#+TAGS: @shared\n").unwrap();
+
+        let main_path = dir.path().join("main.org");
+        let main_content = format!(
+            "#+SETUPFILE: {}\n#+TAGS: @local\n* Task\n",
+            setup_path.display()
+        );
+        let source = SourceFile::new(main_path, main_content);
+        let doc = OrgDocument::from_source(&source);
+
+        assert!(doc.tag_spec.matches_tag("@shared"));
+        assert!(doc.tag_spec.matches_tag("@local"));
+    }
+
+    #[test]
+    fn setupfile_url_skipped() {
+        let source = make_source("#+SETUPFILE: https://example.com/setup.org\n* Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.todo_keywords, TodoKeywords::default());
+    }
+
+    #[test]
+    fn setupfile_missing_uses_defaults() {
+        let source = make_source("#+SETUPFILE: ./nonexistent.org\n* Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.todo_keywords, TodoKeywords::default());
     }
 }

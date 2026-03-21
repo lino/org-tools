@@ -1,0 +1,52 @@
+#+TITLE: Heading Edge Cases
+
+* Level 1
+** Level 2
+*** Level 3
+**** Level 4
+***** Level 5
+
+* Another Level 1
+
+*** Gap: skipping level 2
+
+* Back to level 1
+***** Big gap: 1 to 5
+
+* Heading with trailing spaces
+** Also trailing spaces
+
+*Not a heading (no space after stars)
+**** Heading right after non-heading text
+
+* TODO A todo heading
+* DONE A done heading
+* TODO [#A] High priority
+* TODO [#B] Medium priority
+* TODO [#C] Low priority
+* [#A] Priority without TODO (valid in org-mode)
+
+* Heading :tag1:
+** Heading :tag1:tag2:
+*** Heading with many tags :tag1:tag2:tag3:tag4:
+* Short :t:
+*  Extra space after star :tag:
+
+* Heading with no content after it
+* Next heading immediately
+
+* Heading
+Some body text
+** Sub-heading directly after text (no blank line)
+
+*
+** Empty headings (just stars)
+
+* WAITING Custom TODO keyword
+* CANCELLED Another custom keyword
+
+* Heading with TODO in body
+This line has TODO in it but is not a heading.
+
+* Heading with *bold* text (stars in body, not heading)
+Some text with ** double stars ** in the middle.

@@ -1,0 +1,111 @@
+#+TITLE: Comprehensive Test Document
+#+AUTHOR: Test Author
+#+DATE: <2024-01-15 Mon>
+#+STARTUP: overview
+#+FILETAGS: :test:comprehensive:
+#+TODO: TODO WAITING REVIEW | DONE CANCELLED
+
+* Introduction
+:PROPERTIES:
+:CUSTOM_ID: intro
+:ID: intro-id
+:END:
+
+This document exercises as many org-mode features as possible.
+
+* TODO [#A] High Priority Task                                         :urgent:
+SCHEDULED: <2024-01-20 Sat>
+DEADLINE: <2024-02-01 Thu>
+:PROPERTIES:
+:CUSTOM_ID: high-priority
+:EFFORT: 2:00
+:END:
+
+** Sub-task 1
+- [X] Define requirements
+- [ ] Write implementation
+- [-] Review code
+  - [X] Style review
+  - [ ] Logic review
+
+** Sub-task 2
+
+| Step | Description | Status |
+|------+-------------+--------|
+| 1    | Plan        | Done   |
+| 2    | Execute     | WIP    |
+| 3    | Verify      | TODO   |
+
+*** Deep nesting
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 11:30] =>  2:30
+CLOCK: [2024-01-14 Sun 14:00]--[2024-01-14 Sun 16:00] =>  2:00
+:END:
+
+Notes from the work session.
+
+* DONE [#B] Completed Task                                           :done:archive:
+CLOSED: [2024-01-18 Thu 16:45]
+:PROPERTIES:
+:CUSTOM_ID: completed
+:END:
+
+Footnote reference here [fn:1].
+
+* WAITING Review Session                                                :review:
+SCHEDULED: <2024-01-25 Thu +1w>
+
+Recurring weekly review.
+
+See also [[#intro][the introduction]] and [[#high-priority]].
+
+Also see [[https://orgmode.org][Org Mode website]].
+
+* Data and Tables
+
+#+CAPTION: Monthly data
+#+NAME: monthly-data
+| Month | Revenue | Expenses |
+|-------+---------+----------|
+| Jan   |   10000 |     7500 |
+| Feb   |   12000 |     8000 |
+| Mar   |   11500 |     7800 |
+
+#+BEGIN_SRC python :var data=monthly-data :results output
+for row in data:
+    print(f"{row[0]}: profit = {row[1] - row[2]}")
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+This is example output.
+  Preserves indentation.
+    And nesting.
+#+END_EXAMPLE
+
+#+BEGIN_QUOTE
+"The only way to do great work is to love what you do."
+#+END_QUOTE
+
+* Notes
+
+[fn:1] This is a footnote definition.
+
+Reference to an inline footnote [fn:inline:This is defined inline].
+
+* Edge Cases Combined
+
+Text with trailing whitespace
+More text with trailing tabs
+
+Table directly after text:
+|a|b|c|
+|d|e|f|
+
+** No blank line before this heading
+*** Level gap here
+
+***** Skipped two levels
+
+* Final Section :final:
+
+Last paragraph of the document.

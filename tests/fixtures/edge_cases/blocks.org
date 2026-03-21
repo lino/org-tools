@@ -1,0 +1,136 @@
+#+TITLE: Block Edge Cases
+
+* Matched blocks
+
+#+BEGIN_SRC python
+def hello():
+    print("hello")
+#+END_SRC
+
+#+BEGIN_SRC rust
+fn main() {
+    println!("hello");
+}
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+This is example text.
+It preserves formatting.
+#+END_EXAMPLE
+
+#+BEGIN_QUOTE
+This is a quote block.
+#+END_QUOTE
+
+#+BEGIN_VERSE
+This is verse.
+  Indentation matters here.
+#+END_VERSE
+
+#+BEGIN_CENTER
+Centered text.
+#+END_CENTER
+
+#+BEGIN_COMMENT
+This is a comment. Not exported.
+#+END_COMMENT
+
+#+BEGIN_EXPORT html
+<div>raw html</div>
+#+END_EXPORT
+
+* Lowercase blocks
+
+#+begin_src python
+code
+#+end_src
+
+#+begin_example
+example
+#+end_example
+
+* Mixed case (should still work)
+
+#+Begin_Src python
+code
+#+End_Src
+
+* SRC block without language (lint warning)
+
+#+BEGIN_SRC
+some code without language
+#+END_SRC
+
+* Unclosed blocks (lint errors)
+
+#+BEGIN_SRC python
+this block never closes
+
+* Another unclosed
+
+#+BEGIN_QUOTE
+never closed
+
+* Unmatched END
+
+#+END_SRC
+
+* Nested blocks (unusual but syntactically valid in some contexts)
+
+#+BEGIN_QUOTE
+#+BEGIN_SRC python
+code inside quote
+#+END_SRC
+#+END_QUOTE
+
+* Block with org-mode syntax inside (should be protected)
+
+#+BEGIN_SRC org
+* This is not a heading
+| not | a | table |
+:PROPERTIES:
+:ID: not-a-property
+:END:
+#+END_SRC
+
+* Unknown block type
+
+#+BEGIN_FOOBAR
+unknown content
+#+END_FOOBAR
+
+* Empty blocks
+
+#+BEGIN_SRC python
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+#+END_EXAMPLE
+
+* Block with special characters in content
+
+#+BEGIN_SRC bash
+echo "#+END_SRC"  # tricky line that looks like block end
+echo '* not a heading'
+#+END_SRC
+
+* SRC block with header arguments
+
+#+BEGIN_SRC python :results output :exports both
+print("hello")
+#+END_SRC
+
+#+BEGIN_SRC elisp :var x=5
+(message "%d" x)
+#+END_SRC
+
+* Dynamic blocks
+
+#+BEGIN: clocktable :maxlevel 3
+content
+#+END:
+
+* Block at end of file without trailing newline
+#+BEGIN_SRC python
+code
+#+END_SRC

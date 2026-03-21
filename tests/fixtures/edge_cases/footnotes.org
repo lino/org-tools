@@ -1,0 +1,49 @@
+#+TITLE: Footnote Edge Cases
+
+* References and definitions
+
+Text with a footnote reference [fn:1].
+
+Text with multiple references [fn:1] and [fn:2] and [fn:3].
+
+[fn:1] First footnote definition.
+
+[fn:2] Second footnote definition.
+
+* Orphaned definition (no reference)
+
+[fn:unused] This footnote is defined but never referenced.
+
+* Orphaned reference (no definition)
+
+Text with reference to [fn:nonexistent] which has no definition.
+
+* Inline footnotes
+
+Text with inline footnote [fn:inline:This is the definition inline].
+
+Text with another inline [fn::anonymous inline footnote].
+
+* Multiple references to same footnote
+
+First reference [fn:shared].
+Second reference [fn:shared].
+Third reference [fn:shared].
+
+[fn:shared] Shared definition.
+
+* Footnote-like text in code blocks
+
+#+BEGIN_SRC org
+[fn:not-a-ref] This is inside a code block.
+Text [fn:also-not] a reference.
+#+END_SRC
+
+* Named footnote labels
+
+[fn:descriptive-name] A footnote with a descriptive label.
+
+Reference to [fn:descriptive-name].
+
+* Footnote at very end of file
+[fn:3] Third footnote, at end of file.

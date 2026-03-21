@@ -1,0 +1,100 @@
+#+TITLE: Timestamp Edge Cases
+
+* Active timestamps
+
+<2024-01-15 Mon>
+<2024-01-15 Mon 09:00>
+<2024-01-15 Mon 09:00-17:00>
+
+* Inactive timestamps
+
+[2024-01-15 Mon]
+[2024-01-15 Mon 09:00]
+
+* Timestamps with repeaters
+
+<2024-01-15 Mon +1w>
+<2024-01-15 Mon +1m>
+<2024-01-15 Mon +1y>
+<2024-01-15 Mon +1d>
+<2024-01-15 Mon +1h>
+<2024-01-15 Mon ++1w>
+<2024-01-15 Mon .+1d>
+
+* Timestamps with warning delays
+
+<2024-01-15 Mon -3d>
+<2024-01-15 Mon +1w -2d>
+
+* Date ranges
+
+<2024-01-15 Mon>--<2024-01-20 Sat>
+
+* Invalid dates (should be caught by lint)
+
+<2024-02-30 Fri>
+<2024-13-01 Mon>
+<2024-00-15 Mon>
+<2024-01-32 Mon>
+
+* Leap year edge cases
+
+<2024-02-29 Thu>
+<2023-02-29 Wed>
+<2000-02-29 Tue>
+<1900-02-29 Thu>
+
+* Wrong day names
+
+<2024-01-15 Tue>
+<2024-01-15 Wed>
+
+* SCHEDULED and DEADLINE
+
+* TODO Task with scheduling
+SCHEDULED: <2024-01-15 Mon>
+
+* TODO Task with deadline
+DEADLINE: <2024-02-01 Thu>
+
+* TODO Task with both
+SCHEDULED: <2024-01-15 Mon> DEADLINE: <2024-02-01 Thu>
+
+* DONE Completed task
+CLOSED: [2024-01-20 Sat 14:30]
+
+* Spacing issues in planning lines
+
+* TODO Bad spacing scheduled
+SCHEDULED:  <2024-01-15 Mon>
+
+* TODO No space after colon
+SCHEDULED:<2024-01-15 Mon>
+
+* CLOCK entries
+
+** Task with clock
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:30] =>  1:30
+CLOCK: [2024-01-14 Sun 14:00]--[2024-01-14 Sun 15:45] =>  1:45
+:END:
+
+** Running clock (no end time)
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 09:00]
+:END:
+
+** Clock with wrong duration
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:30] =>  2:30
+:END:
+
+** Clock where end is before start
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 10:30]--[2024-01-15 Mon 09:00] =>  1:30
+:END:
+
+* Timestamps in body text
+
+Meeting on <2024-03-15 Fri 14:00> in room 301.
+Created on [2024-01-01 Mon].

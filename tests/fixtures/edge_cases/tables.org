@@ -1,0 +1,75 @@
+#+TITLE: Table Edge Cases
+
+* Simple tables
+
+| a | b |
+| c | d |
+
+| Name  | Age | City    |
+|-------+-----+---------|
+| Alice | 30  | Berlin  |
+| Bob   | 25  | Hamburg |
+
+* Misaligned tables (formatter should fix)
+
+|Name|Age|City|
+|---|---|---|
+|Alice|30|Berlin|
+|Bob|25|Hamburg|
+
+| Name | Age |
+|---+---|
+|Alice | 30 |
+| Bob|25|
+
+* Uneven column counts
+
+| a | b | c |
+| d | e |
+| f |
+
+* Wide content
+
+| A very long column header that pushes width | Short |
+|----------------------------------------------+-------|
+| data                                         | x     |
+
+* Empty table
+
+| |
+| |
+
+* Table with only separator
+
+|---|
+
+* Single column table
+
+| a |
+| b |
+| c |
+
+* Unicode content in tables
+
+| Name   | Emoji |
+|--------+-------|
+| Ñoño   | 🎉    |
+| Ü      | ä     |
+| 日本語 | 中文  |
+
+* Table immediately after heading (no blank line)
+| a | b |
+| c | d |
+
+* Multiple separators
+
+| Header |
+|--------|
+| data   |
+|--------|
+| more   |
+|--------|
+
+* Table at end of file with no trailing newline
+| x | y |
+| z | w |

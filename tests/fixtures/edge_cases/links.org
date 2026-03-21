@@ -1,0 +1,84 @@
+#+TITLE: Link Edge Cases
+
+* Valid links
+
+[[https://example.com]]
+
+[[https://example.com][Example Website]]
+
+[[file:other.org]]
+
+[[file:other.org][Other Document]]
+
+[[file:image.png]]
+
+[[/absolute/path/to/file]]
+
+[[./relative/path]]
+
+[[#custom-id]]
+
+[[#custom-id][Link to section]]
+
+[[*Heading][Link to heading]]
+
+* Angle bracket links
+
+<https://example.com>
+
+<mailto:user@example.com>
+
+* Malformed links (should be caught by lint)
+
+[[unclosed link
+
+[[target][description with missing close
+
+[[]]
+
+[[][empty target with description]]
+
+* Links in various contexts
+
+Links in a table:
+| Link | Description |
+|------+-------------|
+| [[https://example.com][link]] | A link in a table |
+
+Links in a list:
+- [[https://a.com][First]]
+- [[https://b.com][Second]]
+  - [[https://c.com][Nested]]
+
+* Links with special characters
+
+[[https://example.com/path?q=hello&lang=en]]
+
+[[https://example.com/path%20with%20spaces]]
+
+[[file:name with spaces.org][Spaced filename]]
+
+* Internal links
+
+<<target>>
+
+Link to [[target]].
+
+* Multiple links on one line
+
+See [[https://a.com][A]] and [[https://b.com][B]] and [[https://c.com][C]].
+
+* Link-like text in code
+
+#+BEGIN_SRC python
+url = "[[not-a-link]]"
+#+END_SRC
+
+=[[also not a link in verbatim]]=
+
+~[[not a link in code]]~
+
+* Plain URLs (not org links)
+
+Visit https://example.com for more info.
+Or http://old-style.com if you prefer.

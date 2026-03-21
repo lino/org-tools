@@ -1,0 +1,331 @@
+#+TITLE: Org Babel Edge Cases
+#+PROPERTY: header-args :results output :exports both
+
+* Basic source blocks with languages
+
+#+BEGIN_SRC python
+print("Hello from Python")
+#+END_SRC
+
+#+BEGIN_SRC elisp
+(message "Hello from Elisp")
+#+END_SRC
+
+#+BEGIN_SRC shell
+echo "Hello from shell"
+#+END_SRC
+
+#+BEGIN_SRC ruby
+puts "Hello from Ruby"
+#+END_SRC
+
+#+BEGIN_SRC javascript
+console.log("Hello from JS");
+#+END_SRC
+
+#+BEGIN_SRC rust
+fn main() {
+    println!("Hello from Rust");
+}
+#+END_SRC
+
+#+BEGIN_SRC go
+package main
+import "fmt"
+func main() {
+    fmt.Println("Hello from Go")
+}
+#+END_SRC
+
+#+BEGIN_SRC sql
+SELECT * FROM users WHERE active = true;
+#+END_SRC
+
+#+BEGIN_SRC C
+#include <stdio.h>
+int main() {
+    printf("Hello from C\n");
+    return 0;
+}
+#+END_SRC
+
+#+BEGIN_SRC haskell
+main = putStrLn "Hello from Haskell"
+#+END_SRC
+
+* Header arguments
+
+#+BEGIN_SRC python :results value
+return 42
+#+END_SRC
+
+#+BEGIN_SRC python :results output :exports code
+print("only exported as code")
+#+END_SRC
+
+#+BEGIN_SRC python :results output :exports results
+print("only exported as results")
+#+END_SRC
+
+#+BEGIN_SRC python :results output :exports both
+print("exported as both")
+#+END_SRC
+
+#+BEGIN_SRC python :results output :exports none
+print("not exported at all")
+#+END_SRC
+
+* Variable passing
+
+#+NAME: my-data
+| x | y |
+|---+---|
+| 1 | 2 |
+| 3 | 4 |
+| 5 | 6 |
+
+#+BEGIN_SRC python :var data=my-data :results output
+for row in data:
+    print(f"x={row[0]}, y={row[1]}")
+#+END_SRC
+
+#+NAME: my-value
+: 42
+
+#+BEGIN_SRC python :var val=my-value :results output
+print(f"The value is {val}")
+#+END_SRC
+
+* Named blocks and references
+
+#+NAME: helper-function
+#+BEGIN_SRC python :results output
+def greet(name):
+    return f"Hello, {name}!"
+#+END_SRC
+
+#+BEGIN_SRC python :noweb yes :results output
+<<helper-function>>
+print(greet("World"))
+#+END_SRC
+
+* Session blocks
+
+#+BEGIN_SRC python :session my-session
+x = 10
+#+END_SRC
+
+#+BEGIN_SRC python :session my-session
+print(x * 2)
+#+END_SRC
+
+* Tangling
+
+#+BEGIN_SRC python :tangle hello.py
+#!/usr/bin/env python3
+print("This file was tangled from org-mode")
+#+END_SRC
+
+#+BEGIN_SRC python :tangle hello.py
+def main():
+    print("Appended to the same file")
+
+if __name__ == "__main__":
+    main()
+#+END_SRC
+
+* CALL syntax
+
+#+CALL: helper-function()
+
+#+CALL: helper-function() :results output
+
+#+CALL: helper-function[:results value]()
+
+* Inline source blocks
+
+The answer is src_python{return 2 + 2} which is four.
+
+Also src_elisp{(+ 1 2)} equals three.
+
+* Multiple result formats
+
+#+BEGIN_SRC python :results output list
+for i in range(5):
+    print(f"Item {i}")
+#+END_SRC
+
+#+BEGIN_SRC python :results value table
+return [[1, 2], [3, 4], [5, 6]]
+#+END_SRC
+
+#+BEGIN_SRC python :results value scalar
+return "just a string"
+#+END_SRC
+
+#+BEGIN_SRC python :results value verbatim
+return {"key": "value"}
+#+END_SRC
+
+* Caching and evaluation
+
+#+BEGIN_SRC python :cache yes
+import time
+time.sleep(0.1)  # expensive computation
+return 42
+#+END_SRC
+
+#+BEGIN_SRC python :eval never
+# This block should never be evaluated
+import os
+os.system("rm -rf /")
+#+END_SRC
+
+#+BEGIN_SRC python :eval query
+# This block should ask before evaluating
+print("Are you sure?")
+#+END_SRC
+
+* Working directory
+
+#+BEGIN_SRC shell :dir /tmp
+pwd
+ls
+#+END_SRC
+
+#+BEGIN_SRC shell :dir ~/projects
+ls -la
+#+END_SRC
+
+* Error handling and edge cases
+
+#+BEGIN_SRC python :results output :prologue "import sys" :epilogue "sys.exit(0)"
+print("With prologue and epilogue")
+#+END_SRC
+
+#+BEGIN_SRC python :results output :post process-results(data=*this*)
+print("Output that gets post-processed")
+#+END_SRC
+
+* SRC block without language (lint warning)
+
+#+BEGIN_SRC
+this has no language identifier
+#+END_SRC
+
+* Empty SRC blocks
+
+#+BEGIN_SRC python
+#+END_SRC
+
+#+BEGIN_SRC elisp
+#+END_SRC
+
+* Blocks with complex header args
+
+#+BEGIN_SRC python :var x=5 y=10 :results value :exports both :cache yes :session test
+x + y
+#+END_SRC
+
+#+BEGIN_SRC R :results graphics file :file plot.png :width 800 :height 600
+plot(1:10, (1:10)^2, type="l", main="Quadratic")
+#+END_SRC
+
+#+BEGIN_SRC latex :results raw :exports results
+\begin{equation}
+E = mc^2
+\end{equation}
+#+END_SRC
+
+* Blocks with org-mode syntax inside (should be protected)
+
+#+BEGIN_SRC org
+* This is not a heading
+** Neither is this
+- Not a list for the formatter
+| Not | a | table |
+:PROPERTIES:
+:NOT: a real drawer
+:END:
+[fn:not-a-footnote] Not a real footnote.
+#+END_SRC
+
+* Literate programming with noweb
+
+#+NAME: imports
+#+BEGIN_SRC python
+import sys
+import os
+#+END_SRC
+
+#+NAME: main-logic
+#+BEGIN_SRC python
+def run():
+    print(f"Python {sys.version}")
+    print(f"CWD: {os.getcwd()}")
+#+END_SRC
+
+#+BEGIN_SRC python :noweb yes :tangle literate.py
+<<imports>>
+<<main-logic>>
+
+if __name__ == "__main__":
+    run()
+#+END_SRC
+
+* Results blocks (generated by evaluation)
+
+#+BEGIN_SRC python :results output
+print("hello")
+#+END_SRC
+
+#+RESULTS:
+: hello
+
+#+BEGIN_SRC python :results value
+return [1, 2, 3]
+#+END_SRC
+
+#+RESULTS:
+| 1 | 2 | 3 |
+
+* Ditaa and PlantUML (diagram blocks)
+
+#+BEGIN_SRC ditaa :file diagram.png
+    +--------+   +--------+
+    | Client |-->| Server |
+    +--------+   +--------+
+#+END_SRC
+
+#+BEGIN_SRC plantuml :file sequence.png
+@startuml
+Alice -> Bob: Hello
+Bob -> Alice: Hi!
+@enduml
+#+END_SRC
+
+* Babel in different contexts
+
+** Inside a TODO item
+*** TODO Process data
+#+BEGIN_SRC python :results output
+print("Processing...")
+#+END_SRC
+
+** With clock entries
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:00] =>  1:00
+:END:
+
+#+BEGIN_SRC python :results output
+print("Work done during clocked time")
+#+END_SRC
+
+** With properties
+:PROPERTIES:
+:header-args: :results output :exports both
+:END:
+
+#+BEGIN_SRC python
+print("Inherits header-args from properties")
+#+END_SRC

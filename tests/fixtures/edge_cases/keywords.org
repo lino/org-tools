@@ -1,0 +1,83 @@
+#+TITLE: Keyword Edge Cases
+#+AUTHOR: Test Author
+#+DATE: 2024-01-15
+#+EMAIL: test@example.com
+#+LANGUAGE: en
+#+OPTIONS: toc:2 num:t
+#+STARTUP: overview
+#+FILETAGS: :project:test:
+#+TAGS: urgent important
+#+TODO: TODO WAITING | DONE CANCELLED
+#+SEQ_TODO: DRAFT REVIEW | PUBLISHED
+#+PRIORITIES: A C B
+#+CATEGORY: testing
+#+PROPERTY: header-args :results output
+#+ARCHIVE: archive.org::
+
+* Keyword spacing issues
+
+#+TITLE:No space after colon
+#+AUTHOR:  Extra spaces after colon
+#+DATE:    Many spaces
+
+* Unknown keywords (lint info)
+
+#+FOOBAR: unknown keyword
+#+TYPO_TITLE: did they mean TITLE?
+#+SETUP_FILE: typo of SETUPFILE
+
+* Affiliated keywords
+
+#+CAPTION: A table caption
+#+NAME: my-table
+| a | b |
+| c | d |
+
+#+CAPTION: Caption for code block
+#+NAME: my-code
+#+ATTR_LATEX: :width 0.5\textwidth
+#+BEGIN_SRC python
+print("hello")
+#+END_SRC
+
+* Orphaned affiliated keywords (no target after them)
+
+#+CAPTION: This caption has no target below it
+
+Some text that is not a valid target.
+
+#+NAME: orphaned-name
+
+* Affiliated keyword with blank line before target
+
+#+CAPTION: Caption with blank line
+
+| a | b |
+
+* Lowercase keywords
+
+#+title: lowercase title
+#+author: lowercase author
+
+* Include and setupfile
+
+#+SETUPFILE: ./setup.org
+#+INCLUDE: "other.org" src org
+
+* Macro definitions
+
+#+MACRO: version 1.0.0
+#+MACRO: author John Doe
+
+* Export keywords
+
+#+EXPORT_FILE_NAME: output
+#+LATEX_HEADER: \usepackage{amsmath}
+#+HTML_HEAD: <style>body{font-family:sans-serif}</style>
+
+* Keywords inside blocks (should be ignored)
+
+#+BEGIN_SRC org
+#+TITLE: Not a real title
+#+FOOBAR: Not a real keyword
+#+END_SRC

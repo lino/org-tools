@@ -1,0 +1,98 @@
+#+TITLE: Drawer Edge Cases
+
+* Properly placed property drawer
+:PROPERTIES:
+:ID: proper-1
+:CUSTOM_ID: proper
+:END:
+Body text.
+
+* Property drawer with planning line
+SCHEDULED: <2024-01-15 Mon>
+:PROPERTIES:
+:ID: with-planning
+:END:
+
+* Property drawer with DEADLINE
+DEADLINE: <2024-02-01 Thu>
+:PROPERTIES:
+:ID: with-deadline
+:END:
+
+* Property drawer with both
+SCHEDULED: <2024-01-15 Mon> DEADLINE: <2024-02-01 Thu>
+:PROPERTIES:
+:ID: with-both
+:END:
+
+* Misplaced property drawer (blank line between)
+
+:PROPERTIES:
+:ID: misplaced-blank
+:END:
+
+* Misplaced property drawer (text between)
+Some text before the drawer.
+:PROPERTIES:
+:ID: misplaced-text
+:END:
+
+* Multiple properties to align
+:PROPERTIES:
+:ID: multi
+:CUSTOM_ID: my-section
+:CATEGORY: testing
+:ARCHIVE: archive.org::
+:LOGGING: nil
+:END:
+
+* Single property (no alignment needed)
+:PROPERTIES:
+:ID: single
+:END:
+
+* Duplicate CUSTOM_ID (lint error)
+:PROPERTIES:
+:CUSTOM_ID: duplicate-id
+:END:
+
+** Sub-heading with same CUSTOM_ID
+:PROPERTIES:
+:CUSTOM_ID: duplicate-id
+:END:
+
+* Custom drawers
+:LOGBOOK:
+CLOCK: [2024-01-15 Mon 09:00]--[2024-01-15 Mon 10:30] =>  1:30
+CLOCK: [2024-01-14 Sun 14:00]--[2024-01-14 Sun 15:45] =>  1:45
+:END:
+
+* Nested drawers (invalid per spec)
+:RESULTS:
+:PROPERTIES:
+:ID: nested-invalid
+:END:
+:END:
+
+* Empty property drawer
+:PROPERTIES:
+:END:
+
+* Property drawer with empty value
+:PROPERTIES:
+:ID:
+:CUSTOM_ID:
+:END:
+
+* File-level properties (before any heading)
+:PROPERTIES:
+:ID: file-level
+:END:
+
+* Drawer-like text in body
+The text :PROPERTIES: is not a drawer when not at line start.
+Also :END: is just text here.
+
+* Unclosed drawer
+:PROPERTIES:
+:ID: unclosed

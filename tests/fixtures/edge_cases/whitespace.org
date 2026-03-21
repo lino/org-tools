@@ -1,0 +1,56 @@
+#+TITLE: Whitespace Edge Cases
+
+* Trailing whitespace cases
+
+Line with trailing spaces
+Line with trailing tab
+Line with mixed trailing whitespace
+Line with no trailing whitespace
+
+* Multiple consecutive blank lines
+
+
+
+Three blank lines above (should collapse to one)
+
+
+
+
+Five blank lines above (should collapse to one)
+
+* Blank lines before headings
+
+Text directly before heading
+* Heading without blank line (should add one)
+
+Text with too many blanks
+
+
+
+* Heading with too many blank lines before it (should have exactly one)
+
+* Consecutive headings (no blank line needed)
+** Sub-heading
+*** Sub-sub-heading
+
+* Blank lines inside protected regions
+
+#+BEGIN_SRC python
+# These blank lines should be preserved
+
+
+
+# Even multiple ones
+#+END_SRC
+
+#+BEGIN_EXAMPLE
+
+
+
+Multiple blanks in example should stay.
+
+#+END_EXAMPLE
+
+* Trailing blank lines at end of file
+
+

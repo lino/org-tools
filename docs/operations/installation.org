@@ -1,0 +1,33 @@
+#+TITLE: orgfmt — Installation
+#+DATE: 2026-03-21
+
+* From Source
+
+Requires Rust 1.70+ (or use =mise= to install the pinned version).
+
+#+begin_src sh
+git clone https://github.com/YOUR_USER/orgfmt.git
+cd orgfmt
+cargo install --path .
+#+end_src
+
+Or with mise:
+
+#+begin_src sh
+mise install        # installs pinned Rust version
+mise run build      # cargo build
+#+end_src
+
+* From Cargo
+
+#+begin_src sh
+cargo install orgfmt
+#+end_src
+
+* Verify Installation
+
+#+begin_src sh
+orgfmt --help
+orgfmt check --help
+orgfmt format --help
+#+end_src

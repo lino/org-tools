@@ -1,6 +1,4 @@
 #+TITLE: org-tools — Architecture Documentation (arc42)
-#+AUTHOR: org-tools contributors
-#+DATE: 2026-03-21
 #+OPTIONS: toc:3 num:t
 
 * Introduction and Goals

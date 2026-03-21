@@ -1,5 +1,4 @@
 #+TITLE: org-tools — Release Process
-#+DATE: 2026-03-21
 
 * Pre-release Checklist
 

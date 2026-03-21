@@ -1,12 +1,11 @@
 #+TITLE: org-tools — Installation
-#+DATE: 2026-03-21
 
 * From Source
 
-Requires Rust 1.70+ (or use =mise= to install the pinned version).
+Requires Rust 1.83+ (or use =mise= to install the pinned version).
 
 #+begin_src sh
-git clone https://github.com/YOUR_USER/org-tools.git
+git clone https://github.com/org-tools/org-tools.git
 cd org-tools
 cargo install --path crates/org
 #+end_src
@@ -24,12 +23,29 @@ mise run build      # cargo build
 cargo install org
 #+end_src
 
+* Shell Completions
+
+Generate and install shell completions:
+
+#+begin_src sh
+# Bash
+org --completions bash > /etc/bash_completion.d/org
+
+# Zsh
+org --completions zsh > ~/.zsh/completions/_org
+
+# Fish
+org --completions fish > ~/.config/fish/completions/org.fish
+#+end_src
+
 * Verify Installation
 
 #+begin_src sh
 org --help
 org fmt check --help
-org fmt format --help
 org query search --help
-org query agenda --help
+org clock report --help
+org export ical --help
+org update set-state --help
+org archive --help
 #+end_src

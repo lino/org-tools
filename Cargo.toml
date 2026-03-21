@@ -6,6 +6,11 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
+authors = ["org-tools contributors"]
+repository = "https://github.com/org-tools/org-tools"
+homepage = "https://github.com/org-tools/org-tools"
+keywords = ["org-mode", "linter", "formatter", "emacs", "productivity"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
 
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }

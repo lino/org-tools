@@ -1,5 +1,4 @@
 #+TITLE: org-tools — Product Vision
-#+DATE: 2026-03-21
 
 * Problem Statement
 
@@ -25,29 +24,30 @@ compose via Unix pipes.
 
 * Capabilities
 
-| Subcommand   | Purpose                       | Status      |
-|--------------+-------------------------------+-------------|
-| =org fmt=    | Lint and format org files     | Done        |
-| =org query=  | Search entries, agenda view   | Done        |
-| =org update= | Add IDs, statistic cookies    | In progress |
-| =org clock=  | Clock reports, running status | Done        |
-| =org export= | iCalendar, JSCalendar export  | Done        |
+| Subcommand    | Purpose                       | Status |
+|---------------+-------------------------------+--------|
+| =org fmt=     | Lint and format org files     | Done   |
+| =org query=   | Search entries, agenda view   | Done   |
+| =org update=  | IDs, state, cookies, entries  | Done   |
+| =org clock=   | Clock reports, running status | Done   |
+| =org export=  | iCalendar, JSCalendar export  | Done   |
+| =org archive= | Archive done entries          | Done   |
 
 ** org fmt — Roadmap
 
-| Feature                       | Status | Notes                                   |
-|-------------------------------+--------+-----------------------------------------|
-| Trailing whitespace (F001)    | Done   |                                         |
-| Blank lines (F002)            | Done   |                                         |
-| Heading spacing (F003)        | Done   |                                         |
-| Keyword spacing (F004)        | Done   |                                         |
-| Table formatting (F005)       | Done   | Left-aligns; Emacs right-aligns numbers |
-| List formatting (F006)        | Done   |                                         |
-| Tag alignment (F007)          | Done   |                                         |
-| Property drawer align (F008)  | Done   |                                         |
-| Timestamp spacing (F009)      | Done   |                                         |
-| Table formulas (=#+TBLFM:=)   | Done   | Preserved; W020 validates syntax/refs   |
-| Right-align numbers in tables | Done   | Matches Emacs; header rows excluded     |
+| Feature                       | Status | Notes                                 |
+|-------------------------------+--------+---------------------------------------|
+| Trailing whitespace (F001)    | Done   |                                       |
+| Blank lines (F002)            | Done   |                                       |
+| Heading spacing (F003)        | Done   |                                       |
+| Keyword spacing (F004)        | Done   |                                       |
+| Table formatting (F005)       | Done   | Right-aligns numbers to match Emacs   |
+| List formatting (F006)        | Done   |                                       |
+| Tag alignment (F007)          | Done   |                                       |
+| Property drawer align (F008)  | Done   |                                       |
+| Timestamp spacing (F009)      | Done   |                                       |
+| Table formulas (=#+TBLFM:=)   | Done   | Preserved; W020 validates syntax/refs |
+| Right-align numbers in tables | Done   | Matches Emacs; header rows excluded   |
 
 ** In-buffer Settings — Roadmap
 

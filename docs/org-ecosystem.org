@@ -1,6 +1,5 @@
 #+TITLE: Org-Mode Ecosystem: Packages That Extend Syntax
 #+AUTHOR: org-tools
-#+DATE: 2026-03-21
 
 * Overview
 

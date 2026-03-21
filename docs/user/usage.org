@@ -1,5 +1,4 @@
 #+TITLE: org-tools — Usage Guide
-#+DATE: 2026-03-21
 
 * Quick Start
 
@@ -322,6 +321,366 @@ Every heading in an org file can be addressed by an OrgLocator string:
 | =<file>::<line>=   | =inbox.org::42=            | Line number (fragile)                 |
 
 The =::= separator mirrors org-mode's own link syntax.
+
+* Update (=org update=)
+
+** =org update add-id=
+
+Add =:ID:= properties to entries that lack them. Targets can be file paths,
+directories, or OrgLocator strings.
+
+#+begin_src sh
+org update add-id [OPTIONS] <TARGETS>...
+#+end_src
+
+| Option               | Description                                           |
+|----------------------+-------------------------------------------------------|
+| =--recursive, -r=    | Include descendant entries when targeting via locator |
+| =--dry-run=          | Print what would be changed without writing files     |
+| =--id-format <TMPL>= | Generate IDs from a template with ={placeholders}=    |
+| =--id-command <CMD>= | Pipe entry metadata (JSON) to a command that outputs  |
+|                      | the ID                                                |
+
+The =--id-format= template supports these placeholders: ={uuid}=, ={uuid_short}=,
+={file_stem}=, ={title_slug}=, ={level}=, ={index}=, ={ts}=.
+
+#+begin_src sh
+# Add UUIDs to all entries in a directory
+org update add-id ~/org/
+
+# Dry run to see what would change
+org update add-id --dry-run project.org
+
+# Add IDs only to a specific subtree
+org update add-id --recursive 'id:550e8400-e29b-41d4-a716-446655440000'
+
+# Use a custom ID format
+org update add-id --id-format '{file_stem}-{title_slug}-{uuid_short}' notes.org
+
+# Use an external command to generate IDs
+org update add-id --id-command 'jq -r .title | tr " " -' project.org
+#+end_src
+
+** =org update set-state=
+
+Change the TODO state of entries. Targets can be OrgLocator strings, file paths,
+or directories. When changing to a done state, a =CLOSED: = timestamp is added
+automatically (unless =--no-closed= is passed).
+
+#+begin_src sh
+org update set-state [OPTIONS] <STATE> <TARGETS>...
+#+end_src
+
+| Option        | Description                                                |
+|---------------+------------------------------------------------------------|
+| =--stdin=     | Read additional locator targets from stdin (one per line)  |
+| =--no-closed= | Don't add/remove =CLOSED: = timestamp on state transitions |
+| =--dry-run=   | Print what would be changed without writing files          |
+
+#+begin_src sh
+# Mark a specific entry as DONE
+org update set-state DONE 'id:550e8400-e29b-41d4-a716-446655440000'
+
+# Set multiple entries to NEXT
+org update set-state NEXT 'todo.org::*/Work/Task A' 'todo.org::*/Work/Task B'
+
+# Mark done without adding CLOSED timestamp
+org update set-state DONE --no-closed project.org
+
+# Pipe query results to set-state (see Piping section below)
+org query search 'todo:TODO tags:old' --format locator ~/org/ \
+| org update set-state DONE --stdin |
+#+end_src
+
+** =org update add-todo=
+
+Add a new TODO entry to a file or as a child of an existing heading.
+
+#+begin_src sh
+org update add-todo [OPTIONS] <TITLE> [TARGET]
+#+end_src
+
+| Option               | Description                                           |
+|----------------------+-------------------------------------------------------|
+| =--level N=          | Heading level (default: 1, or parent+1 with --parent) |
+| =--keyword <WORD>=   | TODO keyword (default: =TODO=)                        |
+| =--priority <CHAR>=  | Priority letter (A-Z)                                 |
+| =--tags <TAGS>=      | Tags, comma-separated                                 |
+| =--scheduled <DATE>= | SCHEDULED date (YYYY-MM-DD)                           |
+| =--deadline <DATE>=  | DEADLINE date (YYYY-MM-DD)                            |
+| =--parent <LOC>=     | Insert as child of this locator target                |
+| =--dry-run=          | Print what would be changed without writing files     |
+
+#+begin_src sh
+# Add a top-level TODO to a file
+org update add-todo 'Buy groceries' inbox.org
+
+# Add a prioritised, tagged entry with a deadline
+org update add-todo 'Prepare slides' project.org \
+  --priority A --tags work,presentation --deadline 2026-04-01
+
+# Add as a child of an existing entry
+org update add-todo 'Subtask one' project.org \
+  --parent 'id:550e8400-e29b-41d4-a716-446655440000'
+
+# Add with a custom keyword
+org update add-todo 'Review PR' inbox.org --keyword NEXT
+#+end_src
+
+** =org update add-cookie=
+
+Update statistic cookies (=[/]= and =[%]=) on headings to reflect the current
+state of child entries.
+
+#+begin_src sh
+org update add-cookie [OPTIONS] [PATHS...]
+#+end_src
+
+| Option            | Description                                        |
+|-------------------+----------------------------------------------------|
+| =--recursive, -r= | Insert cookies on headings that don't have one yet |
+| =--dry-run=       | Print what would be changed without writing files  |
+
+#+begin_src sh
+# Recalculate all cookies in a file
+org update add-cookie project.org
+
+# Add cookies to headings that lack them and recalculate
+org update add-cookie --recursive ~/org/
+
+# Preview changes
+org update add-cookie --dry-run project.org
+#+end_src
+
+* Clock (=org clock=)
+
+** =org clock report=
+
+Show a clock time report summarising clocked hours across entries.
+
+#+begin_src sh
+org clock report [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                      |
+|--------------------+--------------------------------------------------|
+| =--from <DATE>=    | Start date filter (YYYY-MM-DD)                   |
+| =--to <DATE>=      | End date filter (YYYY-MM-DD)                     |
+| =--group-by <KEY>= | Group time by =entry= (default), =tag=, or =day= |
+| =--tags <TAGS>=    | Filter to entries with these tags                |
+| =--format human=   | Human-readable table (default)                   |
+| =--format json=    | JSON output                                      |
+
+#+begin_src sh
+# Report all clocked time in the current directory
+org clock report
+
+# Time spent this week, grouped by day
+org clock report --from 2026-03-16 --to 2026-03-22 --group-by day
+
+# Time per tag for a specific project
+org clock report --group-by tag ~/org/projects/
+
+# Clocked time on work-tagged entries, as JSON
+org clock report --tags work --format json ~/org/
+#+end_src
+
+** =org clock status=
+
+Show currently running clocks (entries with an open =CLOCK:= line that has no
+end timestamp).
+
+#+begin_src sh
+org clock status [OPTIONS] [PATHS...]
+#+end_src
+
+| Option           | Description                     |
+|------------------+---------------------------------|
+| =--format human= | Human-readable output (default) |
+| =--format json=  | JSON output                     |
+
+#+begin_src sh
+# Show running clocks across all org files
+org clock status ~/org/
+
+# JSON output for scripting
+org clock status --format json ~/org/
+#+end_src
+
+* Export (=org export=)
+
+** =org export ical=
+
+Export scheduled, deadline, and timestamped entries to iCalendar (=.ics=) format.
+
+#+begin_src sh
+org export ical [OPTIONS] [PATHS...]
+#+end_src
+
+| Option          | Description                       |
+|-----------------+-----------------------------------|
+| =--output, -o=  | Output file (default: stdout)     |
+| =--from <DATE>= | Start date filter (YYYY-MM-DD)    |
+| =--to <DATE>=   | End date filter (YYYY-MM-DD)      |
+| =--tags <TAGS>= | Filter to entries with these tags |
+
+#+begin_src sh
+# Export all entries to stdout
+org export ical ~/org/
+
+# Export to a file, filtering by date range
+org export ical --output calendar.ics --from 2026-03-01 --to 2026-04-01 ~/org/
+
+# Export only work-tagged entries
+org export ical --tags work -o work.ics ~/org/
+#+end_src
+
+** =org export jscal=
+
+Export to JSCalendar (RFC 8984) JSON format. Accepts the same options as
+=org export ical=.
+
+#+begin_src sh
+org export jscal [OPTIONS] [PATHS...]
+#+end_src
+
+| Option          | Description                       |
+|-----------------+-----------------------------------|
+| =--output, -o=  | Output file (default: stdout)     |
+| =--from <DATE>= | Start date filter (YYYY-MM-DD)    |
+| =--to <DATE>=   | End date filter (YYYY-MM-DD)      |
+| =--tags <TAGS>= | Filter to entries with these tags |
+
+#+begin_src sh
+# Export as JSCalendar JSON
+org export jscal ~/org/ > events.json
+
+# Export a date range to a file
+org export jscal --output events.json --from 2026-01-01 --to 2026-12-31 ~/org/
+#+end_src
+
+* Archive (=org archive=)
+
+Move done entries to an archive file. By default, entries are archived to
+=<filename>_archive.org=. This can be overridden with =--target= or per-file
+with =#+ARCHIVE:= in-buffer settings.
+
+#+begin_src sh
+org archive [OPTIONS] [PATHS...]
+#+end_src
+
+| Option            | Description                                                      |
+|-------------------+------------------------------------------------------------------|
+| =--target <SPEC>= | Archive target (=file::heading=). Overrides =#+ARCHIVE:= setting |
+| =--tags <TAGS>=   | Filter to entries with these tags                                |
+| =--dry-run=       | Print what would be archived without writing files               |
+
+#+begin_src sh
+# Archive done entries in the current directory (dry run first)
+org archive --dry-run .
+
+# Archive for real
+org archive ~/org/projects/
+
+# Archive to a specific file and heading
+org archive --target 'archive.org::* Old Projects' ~/org/projects/
+
+# Archive only entries tagged "cleanup"
+org archive --tags cleanup ~/org/
+#+end_src
+
+* Shell Completions
+
+Generate shell completions with the =--completions= flag on the top-level =org=
+command.
+
+#+begin_src sh
+org --completions <SHELL>
+#+end_src
+
+Where =<SHELL>= is one of =bash=, =zsh=, =fish=, =elvish=, or =powershell=.
+
+** Installation
+
+*** Bash
+
+#+begin_src sh
+org --completions bash > ~/.local/share/bash-completion/completions/org
+#+end_src
+
+*** Zsh
+
+#+begin_src sh
+org --completions zsh > ~/.zfunc/_org
+# Make sure ~/.zfunc is in your fpath (add to .zshrc if needed):
+# fpath=(~/.zfunc $fpath)
+# autoload -Uz compinit && compinit
+#+end_src
+
+*** Fish
+
+#+begin_src sh
+org --completions fish > ~/.config/fish/completions/org.fish
+#+end_src
+
+* Piping and Composing Commands
+
+Many org-tools commands accept =--stdin= or produce output suitable for piping.
+The =--format locator= output from =org query search= is the main glue: it
+emits one OrgLocator per line, which other commands accept as targets.
+
+** Query results to state changes
+
+Find entries matching a query and change their TODO state in one pipeline:
+
+#+begin_src sh
+org query search 'todo:TODO tags:stale' --format locator ~/org/ \
+| org update set-state DONE --stdin |
+#+end_src
+
+** Query results to ID assignment
+
+Add =:ID:= properties to all entries matching a query:
+
+#+begin_src sh
+org query search 'todo not property:ID' --format locator ~/org/ \
+| xargs org update add-id |
+#+end_src
+
+** Export filtered by query
+
+Export only work-tagged entries to iCalendar:
+
+#+begin_src sh
+org export ical --tags work -o work.ics ~/org/
+#+end_src
+
+** Format then lint
+
+Format files first, then lint the result for issues that cannot be auto-fixed:
+
+#+begin_src sh
+org fmt format ~/org/ && org fmt check ~/org/
+#+end_src
+
+** Clock report for queried entries
+
+Combine tag filtering with clock reports:
+
+#+begin_src sh
+org clock report --tags client-a --group-by day --from 2026-03-01 ~/org/
+#+end_src
+
+** Dry run everything
+
+Most write commands support =--dry-run=. Use it to preview changes before
+committing:
+
+#+begin_src sh
+org update set-state DONE --dry-run 'id:550e8400-...'
+org archive --dry-run ~/org/projects/
+org update add-cookie --dry-run --recursive ~/org/
+#+end_src
 
 * Comparing with Emacs
 

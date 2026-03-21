@@ -53,11 +53,31 @@ A unique identifier for any heading across a tree of org files:
 
 When an entry has an =:ID:= property, that is always preferred.
 
-** Upcoming
+** Clock Tracking (=org clock=)
 
-- =org clock= — clock in/out, status, reports (Phase 5)
-- =org update= — statistic cookies, clocktables (Phase 6)
-- =org export= — iCalendar, JSCalendar with configurable mapping (Phase 7)
+- *Reports*: total clocked time grouped by entry, tag, or day
+- *Date filtering*: =--from= and =--to= date range
+- *Running clocks*: detect entries with open clock lines
+- *Output*: human-readable tables and JSON
+
+** Entry Updates (=org update=)
+
+- *add-id*: add =:ID:= properties to entries (UUID, template, or external command)
+- *set-state*: change TODO keyword with automatic =CLOSED: = timestamps
+- *add-todo*: insert new entries with planning, priority, and tags
+- *add-cookie*: compute and update =[/]= and =[%]= statistic cookies
+
+** Archive (=org archive=)
+
+- Move done entries to an archive file with metadata properties
+- Configurable target via =#+ARCHIVE:= or =--target=
+- Preserves subtree structure and adds =:ARCHIVE_TIME:=, =:ARCHIVE_FILE:=, =:ARCHIVE_OLPATH:=
+
+** Calendar Export (=org export=)
+
+- *iCalendar* (RFC 5545): SCHEDULED → VEVENT, DEADLINE → VTODO
+- *JSCalendar* (RFC 8984): structured JSON with Event/Task types
+- Date range and tag filtering, file or stdout output
 
 * Quick Start
 
@@ -80,8 +100,23 @@ org query agenda ~/org/
 # JSON output for tooling
 org query search 'deadline:past' --format json ~/org/
 
-# Pipe query results
-org query search 'clocked' --format locator ~/org/
+# Clock report grouped by tag
+org clock report ~/org/ --group-by tag
+
+# Export scheduled items to iCalendar
+org export ical ~/org/ -o calendar.ics
+
+# Add IDs to all entries
+org update add-id ~/org/
+
+# Mark entries as DONE via piping
+org query search 'todo:TODO tags:done' --format locator | org update set-state DONE --stdin
+
+# Archive completed entries
+org archive ~/org/
+
+# Shell completions
+org --completions bash > /etc/bash_completion.d/org
 #+end_src
 
 * Configuration
@@ -120,10 +155,10 @@ mise run lint      # clippy + rustfmt check
 
 org-tools is a Cargo workspace with two crates:
 
-| Crate            | Purpose                                                                                   |
-|------------------+-------------------------------------------------------------------------------------------|
-| =org-tools-core= | Shared library: rules, runner, config, OrgDocument, OrgLocator                            |
-| =org=            | Umbrella binary: =org fmt=, =org query=, (future) =org clock=, =org update=, =org export= |
+| Crate            | Purpose                                                                                         |
+|------------------+-------------------------------------------------------------------------------------------------|
+| =org-tools-core= | Shared library: rules, runner, config, OrgDocument, OrgLocator                                  |
+| =org=            | Umbrella binary: =org fmt=, =org query=, =org clock=, =org update=, =org export=, =org archive= |
 
 * Documentation
 

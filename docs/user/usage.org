@@ -1,0 +1,244 @@
+#+TITLE: orgfmt — Usage Guide
+#+DATE: 2026-03-21
+
+* Quick Start
+
+Check an org file for issues:
+
+#+begin_src sh
+orgfmt check file.org
+#+end_src
+
+Format an org file in place:
+
+#+begin_src sh
+orgfmt format file.org
+#+end_src
+
+Preview formatting without modifying the file:
+
+#+begin_src sh
+orgfmt format --stdout file.org
+#+end_src
+
+* Commands
+
+** =orgfmt check=
+
+Lint org files and report diagnostics.
+
+#+begin_src sh
+orgfmt check [OPTIONS] <PATHS>...
+#+end_src
+
+| Option           | Description                              |
+|------------------+------------------------------------------|
+| =--format human= | Human-readable output (default)          |
+| =--format json=  | JSON output for tooling integration      |
+| =--fix=          | Auto-fix fixable issues in place         |
+
+Exit codes:
+
+| Code | Meaning                     |
+|------+-----------------------------|
+|    0 | No issues found             |
+|    1 | Issues found                |
+|    2 | Error (missing files, etc.) |
+
+** =orgfmt format=
+
+Format org files.
+
+#+begin_src sh
+orgfmt format [OPTIONS] <PATHS>...
+#+end_src
+
+| Option      | Description                                        |
+|-------------+----------------------------------------------------|
+| =--check=   | Exit 1 if files would change (for CI)              |
+| =--stdout=  | Write formatted output to stdout (don't modify)    |
+| /(neither)/ | Format files in place                              |
+
+** Common Options
+
+| Option            | Description                               |
+|-------------------+-------------------------------------------|
+| =--config <PATH>= | Path to config file (default: search for  |
+|                   | =.orgfmt.toml= in current and parent dirs) |
+
+* Directory Scanning
+
+When given a directory, orgfmt recursively scans for =.org= files, respecting
+=.gitignore= rules (via the =ignore= crate).
+
+#+begin_src sh
+orgfmt check .                           # check all .org files in current dir
+orgfmt check ~/org/ ~/projects/notes/    # check multiple directories
+orgfmt format docs/                      # format all .org files under docs/
+#+end_src
+
+* Configuration
+
+Create =.orgfmt.toml= in your project root (or any ancestor directory).
+See =.orgfmt.toml.example= for all available options.
+
+** Format Options
+
+#+begin_src toml
+[format]
+trailing_whitespace = true       # remove trailing whitespace (default: true)
+blank_lines = false              # collapse consecutive blank lines (default: false)
+max_consecutive_blank_lines = 1  # max blank lines when blank_lines=true
+heading_blank_lines = false      # enforce blank lines before headings (default: false)
+heading_blank_lines_before = 1   # blank lines before heading when enabled
+table_format = true              # align table columns (default: true)
+property_drawer_align = true     # align property drawer values (default: true)
+#+end_src
+
+** Disabling Lint Rules
+
+#+begin_src toml
+[lint]
+disabled_rules = ["W001", "heading-level-gap"]
+#+end_src
+
+Rules can be disabled by ID (e.g., =W001=) or name (e.g., =heading-level-gap=).
+
+* Output Format
+
+** Human (default)
+
+#+begin_example
+file.org:5:1: warning [W001/heading-level-gap] heading level jumps from 1 to 3
+file.org:12:1: error [E001/unclosed-block] #+BEGIN_SRC without matching #+END_SRC
+#+end_example
+
+** JSON
+
+#+begin_src sh
+orgfmt check --format json file.org
+#+end_src
+
+Returns a JSON array of diagnostic objects:
+
+#+begin_src json
+[
+  {
+    "file": "file.org",
+    "line": 5,
+    "column": 1,
+    "severity": "warning",
+    "rule_id": "W001",
+    "rule": "heading-level-gap",
+    "message": "heading level jumps from 1 to 3",
+    "fixable": false
+  }
+]
+#+end_src
+
+* Editor Integration
+
+** Emacs (Flycheck / Flymake)
+
+orgfmt's output format (=file:line:col: severity message=) is compatible with
+standard compilation-mode parsing. A dedicated flycheck checker can be
+configured to invoke =orgfmt check= on save.
+
+** CI Usage
+
+#+begin_src sh
+# Fail CI if files need formatting
+orgfmt format --check .
+
+# Fail CI if lint issues exist
+orgfmt check .
+
+# Machine-readable output for custom processing
+orgfmt check --format json . | jq '.[] | select(.severity == "error")'
+#+end_src
+
+* Rule Reference
+
+** Format Rules (auto-fixable)
+
+| ID   | Name                   | Description                                |
+|------+------------------------+--------------------------------------------|
+| F001 | trailing-whitespace    | Remove trailing whitespace                 |
+| F002 | blank-lines            | Collapse excessive consecutive blank lines |
+| F003 | heading-spacing        | Enforce blank lines before headings        |
+| F004 | table-format           | Align table columns and normalise seps     |
+| F005 | property-drawer-align  | Align property drawer values               |
+| F006 | keyword-spacing        | Normalise spacing in keyword lines         |
+| F007 | tag-alignment          | Align heading tags                         |
+| F008 | list-format            | Normalise list item formatting             |
+| F009 | timestamp-spacing      | Normalise timestamp internal spacing       |
+
+** Lint Rules (report-only)
+
+*** Errors (structural issues)
+
+| ID   | Name                         | Description                         |
+|------+------------------------------+-------------------------------------|
+| E001 | unclosed-block               | =#+BEGIN= without matching =#+END=  |
+| E002 | duplicate-custom-id          | Duplicate =CUSTOM_ID= property      |
+| E003 | duplicate-name               | Duplicate =#+NAME:= value           |
+| E004 | duplicate-target             | Duplicate =<<target>>=              |
+| E005 | duplicate-footnote-def       | Duplicate footnote definition       |
+| E006 | incomplete-drawer            | =:DRAWER:= without =:END:=         |
+
+*** Warnings (correctness / style)
+
+| ID   | Name                         | Description                               |
+|------+------------------------------+-------------------------------------------|
+| W001 | heading-level-gap            | Heading level jumps (e.g., * to ***)      |
+| W002 | missing-src-language         | =#+BEGIN_SRC= without language            |
+| W003 | misplaced-property-drawer    | Property drawer not after heading         |
+| W004 | orphaned-footnotes           | Footnote ref without def or vice versa    |
+| W005 | invalid-keyword-syntax       | Malformed keyword line                    |
+| W006 | obsolete-affiliated-keywords | Deprecated affiliated keyword syntax      |
+| W007 | deprecated-export-blocks     | Old-style export block syntax             |
+| W008 | deprecated-category-setup    | Deprecated =#+CATEGORY= placement        |
+| W009 | trailing-bracket-after-link  | Stray =]= after a link                    |
+| W010 | invalid-effort-property      | Malformed =Effort= property              |
+| W011 | invalid-id-property          | Malformed =ID= property                  |
+| W012 | spurious-colons              | Unnecessary colons in headline            |
+| W013 | missing-export-backend       | Missing export backend in =#+BEGIN_EXPORT= |
+| W014 | planning-inactive            | Inactive timestamp in SCHEDULED/DEADLINE  |
+| W015 | misplaced-planning-info      | Planning info not after heading           |
+| W016 | file-application             | =#+begin_src= with =file= header arg     |
+| W017 | obsolete-include-markup      | Old =#+INCLUDE= markup syntax            |
+| W018 | quote-section                | Deprecated QUOTE headline                 |
+| W019 | special-property-in-drawer   | Reserved property in property drawer      |
+| W020 | misplaced-heading            | Heading inside a list or block            |
+| W021 | suspicious-language          | Possibly misspelled src block language    |
+| W022 | orphaned-affiliated-keywords | Affiliated keyword not before an element  |
+| W023 | non-existent-setupfile       | =#+SETUPFILE= points to missing file     |
+| W024 | link-to-local-file           | Link to non-existent local file           |
+| W025 | invalid-babel-call           | Malformed =#+CALL:= line                 |
+| W026 | unknown-options-item         | Unknown item in =#+OPTIONS:=             |
+| W027 | percent-encoding-link        | Unnecessary percent encoding in link      |
+| W028 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment      |
+| W029 | timestamp-validity           | Invalid date/time in timestamp            |
+| W030 | link-syntax                  | Malformed link syntax                     |
+| W031 | list-consistency             | Mixed list markers in same list           |
+| W032 | priority-validity            | Invalid priority cookie                   |
+| W033 | drawer-nesting               | Incorrectly nested drawers                |
+| W034 | clock-entry-validity         | Malformed =CLOCK:= entry                 |
+| W035 | keyword-validity             | Unknown or misplaced keyword              |
+| W036 | block-type-validity          | Unknown block type                        |
+| W037 | affiliated-keyword-placement | Affiliated keyword in wrong position      |
+
+* Comparing with Emacs
+
+Two scripts compare orgfmt output against Emacs org-mode:
+
+#+begin_src sh
+# Compare formatting output
+./scripts/compare-with-emacs.sh tests/fixtures/edge_cases/*.org
+
+# Compare lint diagnostics
+./scripts/compare-lint-with-emacs.sh tests/fixtures/edge_cases/*.org
+#+end_src
+
+These require Emacs to be installed. Use them when implementing or validating
+rules.

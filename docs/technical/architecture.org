@@ -1,5 +1,5 @@
-#+TITLE: orgfmt — Architecture Documentation (arc42)
-#+AUTHOR: orgfmt contributors
+#+TITLE: org-tools — Architecture Documentation (arc42)
+#+AUTHOR: org-tools contributors
 #+DATE: 2026-03-21
 #+OPTIONS: toc:3 num:t
 
@@ -7,9 +7,9 @@
 
 ** Requirements Overview
 
-orgfmt is a standalone org-mode linter and formatter written in Rust. It
-operates without requiring Emacs, produces diagnostics in human-readable or
-JSON format, and auto-fixes formatting issues.
+org-tools is a unified CLI for org-mode files written in Rust. It provides
+linting, formatting, querying, clocking, and exporting — all without
+requiring Emacs.
 
 Key requirements:
 
@@ -19,8 +19,10 @@ Key requirements:
   org-lint where feasible
 - *Safe*: never corrupt user files; protected regions (source blocks, example
   blocks, etc.) are never modified by format rules
-- *Configurable*: rules can be enabled/disabled via =.orgfmt.toml=; defaults
+- *Configurable*: rules can be enabled/disabled via =.org-tools.toml=; defaults
   match Emacs org-mode behaviour
+- *Composable*: commands produce output in formats suitable for piping
+  (=org query --format=locator | org clock report --from-locators -=)
 
 ** Quality Goals
 
@@ -30,7 +32,7 @@ Key requirements:
 |        2 | Safety        | Never modify content inside protected regions                   |
 |        3 | Performance   | Sub-second for typical org-mode collections (hundreds of files)  |
 |        4 | Extensibility | Adding a new rule requires only a struct + trait impl + tests    |
-|        5 | Usability     | Clear diagnostics with file, line, column, rule ID, and message |
+|        5 | Composability | Commands pipe together via locators and sparse org subtrees      |
 
 ** Stakeholders
 
@@ -38,6 +40,7 @@ Key requirements:
 |------------------+-------------------------------------------------------------|
 | Org-mode users   | Consistent formatting, catch common mistakes, fast feedback |
 | CI/CD pipelines  | Machine-readable output (JSON), reliable exit codes         |
+| Script authors   | Locator-based piping between commands                       |
 | Rule contributors | Simple pattern: implement trait, add tests, register rule  |
 
 * Constraints
@@ -56,8 +59,8 @@ Key requirements:
 | Convention           | Description                                   |
 |----------------------+-----------------------------------------------|
 | Rule ID scheme       | F=format, E=error, W=warning, I=info + 3 digits |
-| Config format        | TOML (=.orgfmt.toml=)                          |
-| Output formats       | Human-readable (default), JSON                  |
+| Config format        | TOML (=.org-tools.toml=)                        |
+| Output formats       | Human-readable (default), JSON, locator         |
 | Specification source | org-mode manual + formal syntax + Emacs source  |
 
 * Context and Scope
@@ -66,85 +69,172 @@ Key requirements:
 
 #+begin_src mermaid :file context.png
 graph LR
-    User["org-mode User"] -->|".org files"| orgfmt
-    orgfmt -->|"diagnostics"| User
-    CI["CI/CD Pipeline"] -->|".org files"| orgfmt
-    orgfmt -->|"JSON diagnostics + exit code"| CI
-    Editor["Editor/IDE"] -->|"file path"| orgfmt
-    orgfmt -->|"human diagnostics"| Editor
+    User["org-mode User"] -->|".org files"| OrgTools["org CLI"]
+    OrgTools -->|"diagnostics, query results"| User
+    CI["CI/CD Pipeline"] -->|".org files"| OrgTools
+    OrgTools -->|"JSON + exit code"| CI
+    Editor["Editor/IDE"] -->|"file path"| OrgTools
+    OrgTools -->|"human diagnostics"| Editor
+    Scripts["Shell Scripts"] -->|"piped locators"| OrgTools
+    OrgTools -->|"locators, org subtrees"| Scripts
 #+end_src
 
-orgfmt reads =.org= files from the filesystem, applies format rules to produce
-fixes, runs lint rules to produce diagnostics, and outputs results to stdout.
-It does not communicate with any external services.
+org-tools reads =.org= files from the filesystem, applies format/lint/query
+operations, and outputs results to stdout. Commands compose via locator strings
+and sparse org subtrees on stdin/stdout.
 
 ** Technical Context
 
-orgfmt is a pure command-line tool. Its only I/O is:
+org-tools is a pure command-line tool. Its only I/O is:
 
-- *Input*: =.org= files from the local filesystem, =.orgfmt.toml= configuration
-- *Output*: diagnostics to stdout/stderr, optionally modified =.org= files
-  (format in-place mode)
+- *Input*: =.org= files from the local filesystem, =.org-tools.toml= configuration,
+  stdin (for piped org content or locator lists)
+- *Output*: diagnostics, query results, locators, formatted files to stdout/stderr
 
 No network access, no database, no external APIs.
 
 * Solution Strategy
 
-The core strategy is *line-based text processing with span-based fixes*:
+The project is structured as a *Cargo workspace* with a shared library and an
+umbrella binary:
 
-1. Read the file into a =SourceFile= that indexes line starts for efficient
-   line/column lookups
-2. Run *format rules* — each returns a list of =Fix= structs (byte span +
-   replacement text)
-3. Deduplicate and sort fixes, then apply them in a single pass
-4. Run *lint rules* on the (possibly formatted) result — each returns a list
-   of =Diagnostic= structs
-5. Output diagnostics in the requested format
+- =org-tools-core=: all parsing, rules, document model, locator resolution
+- =org=: unified CLI with subcommands (=fmt=, =query=, future: =clock=, =update=, =export=)
 
-This two-phase approach (format → lint) means lint rules always see
-well-formatted input, reducing false positives.
+** Lint & Format Strategy
 
-Protected regions (source blocks, example blocks, etc.) are identified once
-and passed to format rules so they skip content that should not be modified.
+Line-based text processing with span-based fixes:
+
+1. Read file into =SourceFile= (indexes line starts for O(log n) lookups)
+2. Run *format rules* → collect =Fix= structs (byte span + replacement)
+3. Deduplicate and apply fixes in a single pass
+4. Run *lint rules* on formatted result → collect =Diagnostic= structs
+5. Output in requested format
+
+** Query Strategy
+
+1. Parse all =.org= files into =OrgDocument= heading trees (single-pass scan)
+2. Parse query string into a =Predicate= AST (recursive descent)
+3. Evaluate predicates against each =OrgEntry= (with tag inheritance)
+4. Output matches in requested format (human, JSON, locator, org subtree)
 
 * Building Block View
 
-** Level 1: System Overview
+** Level 1: Workspace Overview
 
 #+begin_src mermaid :file building-blocks-l1.png
 graph TD
-    CLI["CLI (main.rs)"] --> Runner
-    Runner --> FormatRules["Format Rules"]
-    Runner --> LintRules["Lint Rules"]
-    Runner --> Formatter["Fix Applicator"]
-    FormatRules --> Regions["Protected Regions"]
-    CLI --> Config["Configuration"]
-    CLI --> Output["Output Renderer"]
-    CLI --> Source["Source File"]
+    OrgBin["org binary"] --> Core["org-tools-core"]
+    subgraph "org binary"
+        FmtCmd["fmt subcommand"]
+        QueryCmd["query subcommand"]
+    end
+    subgraph "org-tools-core"
+        Runner
+        Document["OrgDocument"]
+        Locator["OrgLocator"]
+        Rules["Format + Lint Rules"]
+        Source["SourceFile"]
+        Config
+    end
+    FmtCmd --> Runner
+    QueryCmd --> Document
+    QueryCmd --> Locator
+    Runner --> Rules
+    Runner --> Source
+    Document --> Source
+    Locator --> Document
 #+end_src
 
 ** Level 2: Module Decomposition
 
+*** org-tools-core (shared library)
+
 | Module               | Responsibility                                       |
 |----------------------+------------------------------------------------------|
-| =main.rs=            | CLI parsing, file collection, orchestration           |
-| =runner.rs=          | Rule registration, check/format pipeline              |
 | =source.rs=          | File reading, line start indexing, line/col lookups   |
+| =document.rs=        | OrgDocument heading tree model from line-based scan   |
+| =locator.rs=         | OrgLocator parse/display/resolve across file trees    |
+| =runner.rs=          | Rule registration, check/format pipeline              |
 | =diagnostic.rs=      | Span, Fix, Diagnostic, Severity types                 |
 | =formatter.rs=       | Applies non-overlapping fixes to source text          |
 | =config.rs=          | TOML config loading with ancestor directory search    |
 | =output.rs=          | Renders diagnostics as human-readable or JSON         |
+| =files.rs=           | Recursive =.org= file collection (respects .gitignore)|
 | =rules/mod.rs=       | FormatRule / LintRule traits, context structs          |
-| =rules/format/=      | Format rule implementations (F-series)                |
-| =rules/lint/=        | Lint rule implementations (E/W/I-series)              |
-| =rules/heading.rs=   | Shared heading parsing utilities                      |
+| =rules/format/=      | 9 format rule implementations (F-series)              |
+| =rules/lint/=        | 37 lint rule implementations (E/W/I-series)           |
+| =rules/heading.rs=   | Shared heading parsing (HeadingParts, parse_heading)  |
 | =rules/list.rs=      | Shared list parsing utilities                         |
-| =rules/timestamp.rs= | Shared timestamp parsing utilities                    |
+| =rules/timestamp.rs= | Shared timestamp parsing (OrgTimestamp)                |
 | =rules/format/regions.rs= | Protected region detection                       |
 
-** Level 3: Rule Architecture
+*** org binary (CLI)
 
-Every rule is a struct that implements either =FormatRule= or =LintRule=:
+| Module               | Responsibility                                       |
+|----------------------+------------------------------------------------------|
+| =main.rs=            | CLI parsing, subcommand dispatch, config loading      |
+| =query/parser.rs=    | Query language tokenizer + recursive descent parser   |
+| =query/predicate.rs= | Predicate evaluation against OrgEntry values          |
+| =query/output.rs=    | Query result rendering (human, JSON, locator)         |
+| =query/agenda.rs=    | Agenda view: scheduled/deadline timeline by day       |
+
+** Level 3: Key Data Models
+
+*** OrgDocument
+
+A lightweight heading tree built by single-pass line scanning:
+
+#+begin_src rust
+pub struct OrgDocument {
+    pub file: PathBuf,
+    pub entries: Vec<OrgEntry>,          // flat list, tree via parent/children
+    pub file_properties: HashMap<String, String>,
+    pub file_keywords: HashMap<String, String>,
+}
+
+pub struct OrgEntry {
+    pub level: usize,                    // heading level (1 = *)
+    pub keyword: Option<String>,         // TODO state
+    pub priority: Option<char>,          // [#A]
+    pub title: String,                   // heading text
+    pub tags: Vec<String>,               // local tags
+    pub properties: HashMap<String, String>,
+    pub planning: Planning,              // SCHEDULED, DEADLINE, CLOSED
+    pub clocks: Vec<ClockEntry>,         // from LOGBOOK
+    pub parent: Option<usize>,           // index into entries
+    pub children: Vec<usize>,
+}
+#+end_src
+
+*** OrgLocator
+
+#+begin_src rust
+pub enum OrgLocator {
+    Id(String),                          // id:uuid
+    CustomId { file: PathBuf, custom_id: String },  // file::#id
+    OutlinePath { file: PathBuf, path: Vec<String> }, // file::*/A/B
+    LineRef { file: PathBuf, line: usize },          // file::42
+}
+#+end_src
+
+*** Query Predicates
+
+#+begin_src rust
+pub enum Predicate {
+    Todo(Option<String>), Done,
+    Tags(Vec<String>), Heading(String),
+    Property { key: String, value: String },
+    Priority(PriorityMatch), Level(Comparison),
+    Scheduled(DateMatch), Deadline(DateMatch), Closed(DateMatch),
+    Clocked,
+    And(Vec<Predicate>), Or(Vec<Predicate>), Not(Box<Predicate>),
+}
+#+end_src
+
+** Level 4: Rule Architecture
+
+Every rule is a struct implementing =FormatRule= or =LintRule=:
 
 #+begin_src rust
 pub trait FormatRule: Send + Sync {
@@ -162,8 +252,7 @@ pub trait LintRule: Send + Sync {
 }
 #+end_src
 
-Rules are independent — no rule depends on another rule's output. The runner
-registers all rules at construction time and invokes them in sequence.
+Rules are independent — no rule depends on another rule's output.
 
 * Runtime View
 
@@ -178,8 +267,8 @@ sequenceDiagram
     participant LintRule
     participant Output
 
-    User->>CLI: orgfmt check file.org
-    CLI->>CLI: Load config (.orgfmt.toml)
+    User->>CLI: org fmt check file.org
+    CLI->>CLI: Load config (.org-tools.toml)
     CLI->>CLI: Collect .org files
     loop Each file
         CLI->>Runner: check(source)
@@ -192,31 +281,36 @@ sequenceDiagram
     CLI-->>User: diagnostics + exit code
 #+end_src
 
-** Format Command
+** Query Command
 
-#+begin_src mermaid :file runtime-format.png
+#+begin_src mermaid :file runtime-query.png
 sequenceDiagram
     participant User
     participant CLI
-    participant Runner
-    participant FormatRule
-    participant Formatter
-    participant LintRule
+    participant Parser
+    participant OrgDocument
+    participant Predicate
+    participant Output
 
-    User->>CLI: orgfmt format file.org
-    CLI->>Runner: format(source)
-    Runner->>FormatRule: format(ctx) → fixes
-    Runner->>Runner: Sort + deduplicate fixes
-    Runner->>Formatter: apply_fixes(content, fixes) → formatted
-    Runner->>LintRule: check(formatted_source) → diagnostics
-    Runner-->>CLI: (formatted_content, lint_diagnostics)
-    CLI->>CLI: Write formatted content to file
-    CLI-->>User: "Formatted: file.org" + lint warnings
+    User->>CLI: org query search 'todo:TODO tags:work' ~/org/
+    CLI->>Parser: parse_query("todo:TODO tags:work")
+    Parser-->>CLI: Predicate AST
+    CLI->>CLI: Collect .org files
+    loop Each file
+        CLI->>OrgDocument: from_source(source)
+        OrgDocument-->>CLI: heading tree
+        loop Each entry
+            CLI->>Predicate: matches(pred, entry, doc, today)
+            Predicate-->>CLI: true/false
+        end
+    end
+    CLI->>Output: render(matches, format)
+    CLI-->>User: results + exit code
 #+end_src
 
 * Deployment View
 
-orgfmt is distributed as a single statically-linked binary. No runtime
+org-tools is distributed as a single statically-linked binary. No runtime
 dependencies, no configuration files required (defaults are sensible).
 
 Deployment targets:
@@ -224,6 +318,7 @@ Deployment targets:
 - *Local development*: installed via =cargo install= or downloaded binary
 - *CI/CD*: run in pipeline steps; use =--format json= for machine parsing
 - *Editor integration*: invoked as an external formatter/linter
+- *Shell scripts*: pipe locators between commands
 
 * Cross-cutting Concepts
 
@@ -235,9 +330,6 @@ comment blocks). The =regions.rs= module scans for =#+BEGIN_= / =#+END_=
 pairs and returns line ranges. Format rules call =is_protected()= to skip
 these lines.
 
-Lint rules should also skip protected regions when the syntax being checked
-would be literal text inside blocks.
-
 ** Fix Application
 
 Fixes are span-based: each =Fix= specifies a byte range and its replacement.
@@ -247,10 +339,17 @@ deduplication by keeping the first fix when spans overlap.
 
 ** Configuration Hierarchy
 
-orgfmt searches for =.orgfmt.toml= starting from the current directory and
+org-tools searches for =.org-tools.toml= starting from the current directory and
 walking up to the filesystem root. The first file found wins. This allows
-per-project and per-directory configuration, similar to how =.editorconfig=
-or =rustfmt.toml= work.
+per-project and per-directory configuration.
+
+** OrgLocator — Universal Entry Addressing
+
+Every heading can be addressed by an OrgLocator string. When an entry has an
+=:ID:= property, the locator uses that (survives moves). Otherwise, it falls
+back to =CUSTOM_ID=, outline path, or line number. Locators are the glue
+between commands: =org query --format=locator= outputs them, and =org clock=
+accepts them as input.
 
 ** Rule Independence
 
@@ -262,15 +361,23 @@ self-contained module with its own tests.
 
 Architecture Decision Records are maintained in [[file:adr/][docs/technical/adr/]].
 
+Key decisions:
+
+- [[file:adr/0001-line-based-parsing.org][ADR-0001]]: Line-based parsing instead of full AST
+- [[file:adr/0002-two-phase-format-then-lint.org][ADR-0002]]: Two-phase pipeline (format, then lint)
+- [[file:adr/0003-gpl-license.org][ADR-0003]]: GPL-3.0-or-later license
+- [[file:adr/0004-cargo-workspace-umbrella-binary.org][ADR-0004]]: Cargo workspace with umbrella =org= binary
+
 * Risks and Technical Debt
 
 | Risk / Debt                      | Mitigation                                      |
 |----------------------------------+-------------------------------------------------|
 | Line-based parsing has limits    | Sufficient for ~35 of ~58 org-lint checks;       |
-|                                  | document which checks need a full parser         |
+|                                  | OrgDocument provides heading-level structure     |
 | Table alignment is left-only     | Track as known divergence from Emacs; future fix |
 | No incremental/cached processing | Acceptable at current scale; revisit if needed   |
 | No parallel file processing      | Single-threaded is fast enough; easy to add later|
+| ID resolution scans all files    | O(n) per lookup; cache if needed at scale        |
 
 * Glossary
 
@@ -285,3 +392,7 @@ Architecture Decision Records are maintained in [[file:adr/][docs/technical/adr/
 | Diagnostic       | A reported issue: file, line, column, severity, rule, message|
 | Runner           | Orchestrates rule execution and fix application              |
 | SourceFile       | In-memory representation of an =.org= file with line index   |
+| OrgDocument      | Lightweight heading tree built by single-pass line scanning   |
+| OrgEntry         | A heading entry with properties, planning, clocks, tags       |
+| OrgLocator       | Universal address for a heading: id, custom-id, path, or line|
+| Predicate        | A query condition evaluated against an OrgEntry               |

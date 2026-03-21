@@ -1,0 +1,44 @@
+#+TITLE: ADR-0004: Cargo workspace with umbrella =org= binary
+#+DATE: 2026-03-21
+#+STATUS: accepted
+
+* Context
+
+org-tools started as a single-binary linter/formatter. As the scope expanded
+to include querying, clocking, exporting, and dynamic content updates, the
+question arose: should each capability be a separate binary, or should they
+be unified?
+
+Options considered:
+
+1. *Multiple binaries*: =org-fmt=, =org-query=, =org-clock=, =org-export=
+2. *Single binary with subcommands*: =org fmt=, =org query=, =org clock=, =org export=
+3. *Multiple [[bin]] targets in one crate* sharing the library
+
+* Decision
+
+Use a Cargo workspace with two crates:
+
+- =org-tools-core=: shared library containing all parsing, rules, document
+  model, and locator resolution
+- =org=: single umbrella binary with =clap= subcommands
+
+All functionality is accessed through =org <subcommand>=. No standalone
+binaries.
+
+* Consequences
+
+- *Easier*: single binary to install, single =PATH= entry, consistent CLI
+  experience across all features; shared code lives in one library crate
+  with clear public API
+- *Easier*: new features are just new subcommands — no new crate needed
+  unless the dependency footprint would be unacceptable
+- *Trade-off*: the binary includes all features even if the user only wants
+  formatting; acceptable for a CLI tool (binary size is small)
+- *Trade-off*: no backward-compatible standalone =orgfmt= binary; acceptable
+  since no release has been made
+
+* References
+
+- Similar approach: =cargo= (one binary, many subcommands), =git=, =rg=
+- Cargo workspace docs: https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html

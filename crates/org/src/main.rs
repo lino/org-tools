@@ -1,17 +1,19 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Unified CLI for org-mode: lint, format, query, clock, export.
+//! Unified CLI for org-mode: lint, format, query, clock, export, archive.
 
 mod clock;
 mod date;
 mod export;
 mod query;
 
+use std::io::BufRead;
 use std::path::PathBuf;
 use std::process;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
@@ -31,7 +33,11 @@ use org_tools_core::source::SourceFile;
 struct Cli {
     /// Subcommand to run.
     #[command(subcommand)]
-    command: OrgCommand,
+    command: Option<OrgCommand>,
+
+    /// Generate shell completions and exit.
+    #[arg(long, value_enum)]
+    completions: Option<Shell>,
 }
 
 /// Top-level subcommands.
@@ -65,6 +71,24 @@ enum OrgCommand {
     Export {
         #[command(subcommand)]
         command: ExportCommand,
+    },
+    /// Archive done entries to a separate file.
+    Archive {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Archive target (file::heading). Overrides #+ARCHIVE: setting.
+        #[arg(long)]
+        target: Option<String>,
+
+        /// Filter to entries with these tags.
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+
+        /// Print what would be archived without writing files.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -130,6 +154,81 @@ enum UpdateCommand {
         /// Pipe entry metadata (JSON) to a command that outputs the ID.
         #[arg(long, conflicts_with = "id_format")]
         id_command: Option<String>,
+    },
+    /// Change the TODO state of entries.
+    SetState {
+        /// New TODO keyword (e.g., DONE, TODO, NEXT).
+        state: String,
+
+        /// Targets: file paths, directory paths, or org locator strings.
+        targets: Vec<String>,
+
+        /// Read additional locator targets from stdin.
+        #[arg(long)]
+        stdin: bool,
+
+        /// Don't add/remove CLOSED: timestamp on state transitions.
+        #[arg(long)]
+        no_closed: bool,
+
+        /// Print what would be changed without writing files.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Add a new TODO entry.
+    AddTodo {
+        /// Title for the new entry.
+        title: String,
+
+        /// Target file or locator for parent entry.
+        #[arg(default_value = ".")]
+        target: String,
+
+        /// Heading level (default: 1, or parent+1 if --parent is used).
+        #[arg(long)]
+        level: Option<usize>,
+
+        /// TODO keyword (default: TODO).
+        #[arg(long, default_value = "TODO")]
+        keyword: String,
+
+        /// Priority letter (A-Z).
+        #[arg(long)]
+        priority: Option<char>,
+
+        /// Tags (comma-separated).
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+
+        /// SCHEDULED date (YYYY-MM-DD).
+        #[arg(long)]
+        scheduled: Option<String>,
+
+        /// DEADLINE date (YYYY-MM-DD).
+        #[arg(long)]
+        deadline: Option<String>,
+
+        /// Insert as child of this locator target.
+        #[arg(long)]
+        parent: Option<String>,
+
+        /// Print what would be changed without writing files.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Update statistic cookies ([/] and [%]) on headings.
+    AddCookie {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Insert cookies on headings that don't have one yet.
+        #[arg(long, short)]
+        recursive: bool,
+
+        /// Print what would be changed without writing files.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -304,7 +403,22 @@ fn load_config(cli_config: &Option<PathBuf>) -> Config {
 fn main() {
     let cli = Cli::parse();
 
-    let exit_code = match cli.command {
+    // Handle --completions flag.
+    if let Some(shell) = cli.completions {
+        let mut cmd = Cli::command();
+        clap_complete::generate(shell, &mut cmd, "org", &mut std::io::stdout());
+        process::exit(0);
+    }
+
+    let command = match cli.command {
+        Some(cmd) => cmd,
+        None => {
+            Cli::command().print_help().ok();
+            process::exit(0);
+        }
+    };
+
+    let exit_code = match command {
         OrgCommand::Fmt { command, config } => {
             let config = load_config(&config);
             let runner = Runner::new(config);
@@ -314,6 +428,12 @@ fn main() {
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
+        OrgCommand::Archive {
+            paths,
+            target,
+            tags,
+            dry_run,
+        } => run_archive(paths, target, tags, dry_run),
     };
 
     process::exit(exit_code);
@@ -596,6 +716,32 @@ fn run_update(command: UpdateCommand) -> i32 {
             id_format,
             id_command,
         } => run_add_id(targets, recursive, dry_run, id_format, id_command),
+        UpdateCommand::SetState {
+            state,
+            targets,
+            stdin,
+            no_closed,
+            dry_run,
+        } => run_set_state(state, targets, stdin, no_closed, dry_run),
+        UpdateCommand::AddTodo {
+            title,
+            target,
+            level,
+            keyword,
+            priority,
+            tags,
+            scheduled,
+            deadline,
+            parent,
+            dry_run,
+        } => run_add_todo(
+            title, target, level, keyword, priority, tags, scheduled, deadline, parent, dry_run,
+        ),
+        UpdateCommand::AddCookie {
+            paths,
+            recursive,
+            dry_run,
+        } => run_add_cookie(paths, recursive, dry_run),
     }
 }
 
@@ -894,4 +1040,351 @@ fn run_export(command: ExportCommand) -> i32 {
             0
         }
     }
+}
+
+/// Read locator strings from stdin (one per line).
+fn read_stdin_targets() -> Vec<String> {
+    std::io::stdin()
+        .lock()
+        .lines()
+        .map_while(|l| l.ok())
+        .filter(|l| !l.trim().is_empty())
+        .collect()
+}
+
+/// Runs `org update set-state`.
+fn run_set_state(
+    state: String,
+    mut targets: Vec<String>,
+    stdin: bool,
+    no_closed: bool,
+    dry_run: bool,
+) -> i32 {
+    if stdin {
+        targets.extend(read_stdin_targets());
+    }
+    if targets.is_empty() {
+        eprintln!("org: no targets specified");
+        return 2;
+    }
+
+    // Resolve targets to file+entry pairs.
+    let mut file_targets: std::collections::HashMap<PathBuf, Option<Vec<usize>>> =
+        std::collections::HashMap::new();
+
+    for target in &targets {
+        if let Ok(locator) = OrgLocator::parse(target) {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            match resolve_locator(&locator, &[cwd]) {
+                Ok(resolved) => {
+                    let entry = file_targets
+                        .entry(resolved.file.clone())
+                        .or_insert(Some(Vec::new()));
+                    if let Some(ref mut existing) = entry {
+                        existing.push(resolved.entry_index);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("org: {e}");
+                    return 2;
+                }
+            }
+        } else {
+            let path = PathBuf::from(target);
+            let files = collect_org_files(&[path]);
+            for file in files {
+                file_targets.insert(file, None);
+            }
+        }
+    }
+
+    let mut total_changed = 0;
+    let mut file_list: Vec<_> = file_targets.into_iter().collect();
+    file_list.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (file, indices) in file_list {
+        let source = match SourceFile::from_path(&file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("org: error reading {}: {}", file.display(), e);
+                continue;
+            }
+        };
+        let doc = OrgDocument::from_source(&source);
+
+        if !doc.todo_keywords.contains(&state) {
+            eprintln!(
+                "org: '{}' is not a recognized TODO keyword in {}",
+                state,
+                file.display()
+            );
+            continue;
+        }
+
+        let result =
+            org_tools_core::state::set_state(&source, &doc, indices.as_deref(), &state, !no_closed);
+
+        if let Some(r) = result {
+            total_changed += r.changed;
+            if dry_run {
+                println!(
+                    "Would change {} entr{} in {}",
+                    r.changed,
+                    if r.changed == 1 { "y" } else { "ies" },
+                    file.display()
+                );
+            } else {
+                if let Err(e) = std::fs::write(&file, &r.content) {
+                    eprintln!("org: error writing {}: {}", file.display(), e);
+                    continue;
+                }
+                println!(
+                    "Changed {} entr{} to {} in {}",
+                    r.changed,
+                    if r.changed == 1 { "y" } else { "ies" },
+                    state,
+                    file.display()
+                );
+            }
+        }
+    }
+
+    if total_changed == 0 && !dry_run {
+        println!("No entries to change");
+    }
+    0
+}
+
+/// Runs `org update add-todo`.
+#[allow(clippy::too_many_arguments)]
+fn run_add_todo(
+    title: String,
+    target: String,
+    level: Option<usize>,
+    keyword: String,
+    priority: Option<char>,
+    tags: Vec<String>,
+    scheduled: Option<String>,
+    deadline: Option<String>,
+    parent: Option<String>,
+    dry_run: bool,
+) -> i32 {
+    // Resolve parent if specified.
+    let (file_path, parent_idx, parent_level) = if let Some(ref parent_loc) = parent {
+        match OrgLocator::parse(parent_loc) {
+            Ok(locator) => {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                match resolve_locator(&locator, &[cwd]) {
+                    Ok(resolved) => {
+                        let source = match SourceFile::from_path(&resolved.file) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                eprintln!("org: {e}");
+                                return 2;
+                            }
+                        };
+                        let doc = OrgDocument::from_source(&source);
+                        let plevel = doc.entries[resolved.entry_index].level;
+                        (resolved.file, Some(resolved.entry_index), Some(plevel))
+                    }
+                    Err(e) => {
+                        eprintln!("org: {e}");
+                        return 2;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("org: {e}");
+                return 2;
+            }
+        }
+    } else {
+        // Target is a file path.
+        let path = PathBuf::from(&target);
+        if path.is_dir() {
+            eprintln!("org: target must be a file, not a directory");
+            return 2;
+        }
+        (path, None, None)
+    };
+
+    let entry_level = level.unwrap_or_else(|| parent_level.map(|l| l + 1).unwrap_or(1));
+
+    let opts = org_tools_core::entry::NewEntryOpts {
+        title,
+        level: entry_level,
+        keyword: Some(keyword),
+        priority,
+        tags,
+        scheduled,
+        deadline,
+    };
+
+    // Create file if it doesn't exist.
+    if !file_path.exists() {
+        if dry_run {
+            println!("Would create {} with new entry", file_path.display());
+            return 0;
+        }
+        std::fs::write(&file_path, "").ok();
+    }
+
+    let source = match SourceFile::from_path(&file_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("org: error reading {}: {}", file_path.display(), e);
+            return 2;
+        }
+    };
+    let doc = OrgDocument::from_source(&source);
+    let result = org_tools_core::entry::add_entry(&source, &doc, parent_idx, &opts);
+
+    if dry_run {
+        println!("Would add entry to {}", file_path.display());
+    } else {
+        if let Err(e) = std::fs::write(&file_path, &result.content) {
+            eprintln!("org: error writing {}: {}", file_path.display(), e);
+            return 2;
+        }
+        println!("Added entry to {}", file_path.display());
+    }
+    0
+}
+
+/// Runs `org update add-cookie`.
+fn run_add_cookie(paths: Vec<PathBuf>, recursive: bool, dry_run: bool) -> i32 {
+    let files = collect_org_files(&paths);
+    if files.is_empty() {
+        eprintln!("org: no .org files found");
+        return 2;
+    }
+
+    let mut total_updated = 0;
+    for file in &files {
+        let source = match SourceFile::from_path(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("org: error reading {}: {}", file.display(), e);
+                continue;
+            }
+        };
+        let doc = OrgDocument::from_source(&source);
+
+        if let Some(result) = org_tools_core::cookie::update_cookies(&source, &doc, recursive) {
+            total_updated += result.updated;
+            if dry_run {
+                println!(
+                    "Would update {} cookie{} in {}",
+                    result.updated,
+                    if result.updated == 1 { "" } else { "s" },
+                    file.display()
+                );
+            } else {
+                if let Err(e) = std::fs::write(file, &result.content) {
+                    eprintln!("org: error writing {}: {}", file.display(), e);
+                    continue;
+                }
+                println!(
+                    "Updated {} cookie{} in {}",
+                    result.updated,
+                    if result.updated == 1 { "" } else { "s" },
+                    file.display()
+                );
+            }
+        }
+    }
+
+    if total_updated == 0 && !dry_run {
+        println!("All cookies are up to date");
+    }
+    0
+}
+
+/// Runs `org archive`.
+fn run_archive(
+    paths: Vec<PathBuf>,
+    target_override: Option<String>,
+    tags: Vec<String>,
+    dry_run: bool,
+) -> i32 {
+    let files = collect_org_files(&paths);
+    if files.is_empty() {
+        eprintln!("org: no .org files found");
+        return 2;
+    }
+
+    let mut total_archived = 0;
+    for file in &files {
+        let source = match SourceFile::from_path(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("org: error reading {}: {}", file.display(), e);
+                continue;
+            }
+        };
+        let doc = OrgDocument::from_source(&source);
+
+        let target_str = target_override
+            .as_deref()
+            .or_else(|| doc.file_keywords.get("ARCHIVE").map(|s| s.as_str()))
+            .unwrap_or("");
+
+        let target = org_tools_core::archive::parse_archive_target(target_str, file);
+        let archivable = org_tools_core::archive::find_archivable_entries(&source, &doc, &tags);
+
+        if archivable.is_empty() {
+            continue;
+        }
+
+        if let Some(result) =
+            org_tools_core::archive::build_archive(&source, &doc, &archivable, &target)
+        {
+            total_archived += result.archived;
+            if dry_run {
+                println!(
+                    "Would archive {} entr{} from {} to {}",
+                    result.archived,
+                    if result.archived == 1 { "y" } else { "ies" },
+                    file.display(),
+                    result.archive_path.display()
+                );
+                for entry in &archivable {
+                    println!("  {} (line {})", entry.title, entry.start_line);
+                }
+            } else {
+                // Write modified source.
+                if let Err(e) = std::fs::write(file, &result.source_content) {
+                    eprintln!("org: error writing {}: {}", file.display(), e);
+                    continue;
+                }
+                // Append to archive file.
+                let mut archive_content = if result.archive_path.exists() {
+                    std::fs::read_to_string(&result.archive_path).unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                archive_content.push_str(&result.archive_content);
+                if let Err(e) = std::fs::write(&result.archive_path, &archive_content) {
+                    eprintln!(
+                        "org: error writing {}: {}",
+                        result.archive_path.display(),
+                        e
+                    );
+                    continue;
+                }
+                println!(
+                    "Archived {} entr{} from {} to {}",
+                    result.archived,
+                    if result.archived == 1 { "y" } else { "ies" },
+                    file.display(),
+                    result.archive_path.display()
+                );
+            }
+        }
+    }
+
+    if total_archived == 0 {
+        println!("No entries to archive");
+    }
+    0
 }

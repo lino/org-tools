@@ -7,9 +7,12 @@
 //! the runner pipeline, diagnostic output, file collection, and the
 //! [`OrgDocument`](document::OrgDocument) heading tree model.
 
+pub mod archive;
 pub mod config;
+pub mod cookie;
 pub mod diagnostic;
 pub mod document;
+pub mod entry;
 pub mod files;
 pub mod formatter;
 pub mod id;
@@ -18,3 +21,4 @@ pub mod output;
 pub mod rules;
 pub mod runner;
 pub mod source;
+pub mod state;

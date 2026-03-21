@@ -45,6 +45,14 @@ pub struct OrgDocument {
     ///
     /// Spec: [§4.5 Using Links Outside Org](https://orgmode.org/manual/Using-Links-Outside-Org.html)
     pub link_abbreviations: HashMap<String, String>,
+    /// Named constants from `#+CONSTANTS:` keyword lines.
+    ///
+    /// Maps constant name to value string (e.g., `"pi"` → `"3.14159"`).
+    /// Multiple `#+CONSTANTS:` lines are additive. Used in table formulas
+    /// as `$name` references.
+    ///
+    /// Spec: [§3.5.2 References](https://orgmode.org/manual/References.html)
+    pub table_constants: HashMap<String, String>,
 }
 
 /// A single heading entry in an org document.
@@ -121,6 +129,7 @@ impl OrgDocument {
         let mut default_properties: HashMap<String, String> = HashMap::new();
         let mut tags_lines: Vec<String> = Vec::new();
         let mut link_abbreviations: HashMap<String, String> = HashMap::new();
+        let mut table_constants: HashMap<String, String> = HashMap::new();
         // Owned keyword strings for the lifetime of parsing; the &str refs
         // into `kw_refs` are used by `parse_heading_with_keywords`.
         let mut kw_strs: Vec<String> = todo_kw.all().iter().map(|s| s.to_string()).collect();
@@ -147,6 +156,18 @@ impl OrgDocument {
                         // #+TAGS: lines are additive — collect all of them.
                         if key == "TAGS" {
                             tags_lines.push(val.clone());
+                        }
+                        // #+CONSTANTS: lines define named constants (additive).
+                        if key == "CONSTANTS" {
+                            for pair in val.split_whitespace() {
+                                if let Some(eq) = pair.find('=') {
+                                    let name = &pair[..eq];
+                                    let value = &pair[eq + 1..];
+                                    if !name.is_empty() && !value.is_empty() {
+                                        table_constants.insert(name.to_string(), value.to_string());
+                                    }
+                                }
+                            }
                         }
                         // #+LINK: lines define custom link abbreviations.
                         if key == "LINK" {
@@ -267,6 +288,7 @@ impl OrgDocument {
             default_properties,
             tag_spec,
             link_abbreviations,
+            table_constants,
         }
     }
 
@@ -991,5 +1013,38 @@ mod tests {
         assert!(doc.is_known_link_scheme("gh"));
         assert!(doc.is_known_link_scheme("https"));
         assert!(!doc.is_known_link_scheme("unknown"));
+    }
+
+    // --- Table constants ---
+
+    #[test]
+    fn constants_parsed() {
+        let source = make_source("#+CONSTANTS: pi=3.14159 c=299792458\n* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.table_constants.get("pi"), Some(&"3.14159".to_string()));
+        assert_eq!(doc.table_constants.get("c"), Some(&"299792458".to_string()));
+    }
+
+    #[test]
+    fn constants_multiple_lines() {
+        let source = make_source("#+CONSTANTS: pi=3.14\n#+CONSTANTS: e=2.718\n* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.table_constants.len(), 2);
+        assert!(doc.table_constants.contains_key("pi"));
+        assert!(doc.table_constants.contains_key("e"));
+    }
+
+    #[test]
+    fn constants_empty() {
+        let source = make_source("* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.table_constants.is_empty());
+    }
+
+    #[test]
+    fn constants_scientific_notation() {
+        let source = make_source("#+CONSTANTS: eps=2.4e-6\n* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.table_constants.get("eps"), Some(&"2.4e-6".to_string()));
     }
 }

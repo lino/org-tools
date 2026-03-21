@@ -37,6 +37,7 @@ const KNOWN_KEYWORDS: &[&str] = &[
     "CATEGORY",
     "CITE_EXPORT",
     "COLUMNS",
+    "CONSTANTS",
     "CREATOR",
     "CREATOR",
     "DATE",

@@ -70,7 +70,7 @@ parse and respect these to avoid false positives and produce correct results.
 |                           |         | falls back to defaults when entry lacks property |
 | =#+STARTUP: odd=          | Done    | W001 heading-level-gap respects odd mode;        |
 |                           |         | flags even levels and adjusts gap step to 2      |
-| =#+CONSTANTS:=            | Planned | Named constants for table formula validation     |
+| =#+CONSTANTS:=            | Done    | Parsed into table_constants map on OrgDocument   |
 | =#+LINK:=                 | Done    | Parsed into link_abbreviations map on            |
 |                           |         | OrgDocument; is_known_link_scheme() helper       |
 | =#+SETUPFILE:=            | Planned | Already lint for non-existent files; need to     |

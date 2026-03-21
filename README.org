@@ -1,0 +1,103 @@
+#+TITLE: orgfmt
+#+OPTIONS: toc:2
+
+Opinionated org-mode linter and formatter. Runs without Emacs.
+
+* Why
+
+For almost ten years I maintained a janky toolchain of Python scripts and
+Emacs Lisp hacks to keep my org files consistent. It worked — mostly — until
+it didn't: scripts broke on edge cases, elisp ran only inside Emacs, and
+nothing could run in CI without pulling in a full Emacs installation.
+
+orgfmt replaces all of that with a single Rust binary. It is fast, correct
+(rules are validated against the org-mode specification and Emacs source),
+and designed to run anywhere — locally, in CI, or from any editor.
+
+This project was built with the help of AI tooling (Claude Code). The rule
+set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/lisp/org-lint.el][org-lint.el]] and the [[https://orgmode.org/worg/org-syntax.html][org-mode specification]].
+
+* Features
+
+- *9 format rules* (auto-fixable): trailing whitespace, blank lines, heading
+  spacing, table alignment, property drawer alignment, keyword spacing, tag
+  alignment, list formatting, timestamp spacing
+- *37 lint rules* (report-only): structural validation, correctness checks,
+  deprecation warnings, style suggestions — covering ~35 of Emacs org-lint's
+  ~58 checks
+- *Protected regions*: source, example, export, quote, verse, center, and
+  comment blocks are never modified by format rules
+- *Configurable* via =.orgfmt.toml= with sensible defaults matching Emacs
+- *Multiple output formats*: human-readable (default) and JSON for tooling
+- *Recursive directory scanning* respecting =.gitignore=
+
+* Quick Start
+
+#+begin_src sh
+# Install
+cargo install --path .
+
+# Check files for issues
+orgfmt check file.org
+
+# Format in place
+orgfmt format file.org
+
+# Preview formatting without modifying
+orgfmt format --stdout file.org
+
+# Check formatting in CI (exit 1 if changes needed)
+orgfmt format --check .
+
+# JSON output for tooling
+orgfmt check --format json .
+#+end_src
+
+* Configuration
+
+Copy =.orgfmt.toml.example= to =.orgfmt.toml= in your project root:
+
+#+begin_src toml
+[format]
+trailing_whitespace = true
+blank_lines = false
+heading_blank_lines = false
+table_format = true
+property_drawer_align = true
+
+[lint]
+disabled_rules = []
+#+end_src
+
+orgfmt searches for =.orgfmt.toml= starting from the current directory and
+walking up to the filesystem root.
+
+See [[file:docs/user/usage.org][docs/user/usage.org]] for the full usage guide and rule reference.
+
+* Building from Source
+
+Requires Rust 1.70+ or use [[https://mise.jdx.dev/][mise]] to install the pinned version:
+
+#+begin_src sh
+mise install       # install pinned Rust
+mise run build     # cargo build
+mise run test      # cargo test
+mise run lint      # clippy + rustfmt check
+#+end_src
+
+* Documentation
+
+| Path                   | Contents                                    |
+|------------------------+---------------------------------------------|
+| [[file:docs/technical/architecture.org][docs/technical/]]        | Architecture (arc42), ADRs                  |
+| [[file:docs/operations/installation.org][docs/operations/]]       | Installation, release process               |
+| [[file:docs/product/vision.org][docs/product/]]          | Product vision and design principles        |
+| [[file:docs/user/usage.org][docs/user/]]             | Usage guide and rule reference              |
+| [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]] | Org-mode ecosystem and extension reference  |
+
+* License
+
+GPL-3.0-or-later. See [[file:LICENSE][LICENSE]].
+
+orgfmt's rule set was designed by studying org-lint.el and the org-mode
+specification. We chose GPL to respect the ecosystem that made this possible.

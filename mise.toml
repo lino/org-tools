@@ -1,0 +1,29 @@
+[tools]
+rust = "latest"
+
+[tasks.build]
+description = "Build the project"
+run = "cargo build"
+
+[tasks.dev]
+description = "Build in debug mode and run"
+run = "cargo run --"
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test"
+
+[tasks.lint]
+description = "Run clippy and check formatting"
+run = """
+cargo clippy -- -D warnings
+cargo fmt -- --check
+"""
+
+[tasks.check]
+description = "Run orgfmt check on current directory"
+run = "cargo run -- check ."
+
+[tasks.fmt]
+description = "Format Rust code"
+run = "cargo fmt"

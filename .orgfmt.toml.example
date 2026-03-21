@@ -1,0 +1,28 @@
+# orgfmt configuration
+# Copy to .orgfmt.toml to use.
+# Defaults match Emacs org-mode behavior.
+
+[format]
+# Remove trailing whitespace from all lines (default: true).
+trailing_whitespace = true
+
+# Collapse consecutive blank lines (default: false, matching Emacs).
+# Set to true for opinionated formatting.
+blank_lines = false
+max_consecutive_blank_lines = 1
+
+# Enforce blank lines before headings (default: false, matching Emacs).
+# Set to true for opinionated formatting.
+heading_blank_lines = false
+heading_blank_lines_before = 1
+
+# Align table columns and normalize separators (default: true).
+table_format = true
+
+# Align property values within PROPERTIES drawers (default: true).
+property_drawer_align = true
+
+[lint]
+# Disable rules by name or ID. Examples:
+# disabled_rules = ["W001", "heading-level-gap"]
+disabled_rules = []

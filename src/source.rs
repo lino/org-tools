@@ -1,15 +1,24 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::path::{Path, PathBuf};
 
-/// Holds the source text and provides efficient line/column lookups.
+/// In-memory representation of an org-mode source file with precomputed line index.
+///
+/// Stores the file path, raw content, and a table of line-start byte offsets for
+/// efficient `O(log n)` line/column lookups.
 #[derive(Debug)]
 pub struct SourceFile {
+    /// Path to the source file on disk (or a synthetic path for tests).
     pub path: PathBuf,
+    /// Raw file content as a UTF-8 string.
     pub content: String,
-    /// Byte offsets of each line start.
+    /// Byte offsets of each line start, computed on construction.
     line_starts: Vec<usize>,
 }
 
 impl SourceFile {
+    /// Creates a new source file from a path and content string.
     pub fn new(path: impl Into<PathBuf>, content: String) -> Self {
         let line_starts = Self::compute_line_starts(&content);
         Self {
@@ -19,6 +28,7 @@ impl SourceFile {
         }
     }
 
+    /// Reads a file from disk and constructs a `SourceFile`.
     pub fn from_path(path: &Path) -> std::io::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         Ok(Self::new(path.to_path_buf(), content))

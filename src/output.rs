@@ -1,12 +1,19 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::Diagnostic;
 use serde::Serialize;
 
+/// Output format for rendering [`Diagnostic`] messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
+    /// Human-readable format: `file:line:col: severity [id/name] message`.
     Human,
+    /// Machine-readable JSON array of diagnostic objects.
     Json,
 }
 
+/// Renders a slice of [`Diagnostic`] values into a string using the given format.
 pub fn render_diagnostics(diagnostics: &[Diagnostic], format: OutputFormat) -> String {
     match format {
         OutputFormat::Human => render_human(diagnostics),
@@ -14,6 +21,7 @@ pub fn render_diagnostics(diagnostics: &[Diagnostic], format: OutputFormat) -> S
     }
 }
 
+/// Renders diagnostics in human-readable `file:line:col: severity [id/name] message` format.
 fn render_human(diagnostics: &[Diagnostic]) -> String {
     let mut out = String::new();
     for d in diagnostics {
@@ -31,18 +39,28 @@ fn render_human(diagnostics: &[Diagnostic]) -> String {
     out
 }
 
+/// Serialisable representation of a [`Diagnostic`] for JSON output.
 #[derive(Serialize)]
 struct JsonDiagnostic {
+    /// Source file path.
     file: String,
+    /// 1-based line number.
     line: usize,
+    /// 1-based column number.
     column: usize,
+    /// Severity as a lowercase string (`"info"`, `"warning"`, `"error"`).
     severity: String,
+    /// Unique rule identifier (e.g., `"W001"`).
     rule_id: String,
+    /// Kebab-case rule name (e.g., `"heading-level-gap"`).
     rule: String,
+    /// Human-readable issue description.
     message: String,
+    /// Whether an auto-fix is available for this diagnostic.
     fixable: bool,
 }
 
+/// Renders diagnostics as a pretty-printed JSON array.
 fn render_json(diagnostics: &[Diagnostic]) -> String {
     let items: Vec<_> = diagnostics
         .iter()

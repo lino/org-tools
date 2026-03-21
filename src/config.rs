@@ -1,3 +1,6 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use serde::Deserialize;
 use std::path::Path;
 
@@ -9,7 +12,9 @@ use std::path::Path;
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Format rule configuration.
     pub format: FormatConfig,
+    /// Lint rule configuration.
     pub lint: LintConfig,
 }
 
@@ -40,10 +45,11 @@ pub struct FormatConfig {
     pub property_drawer_align: bool,
 }
 
+/// Configuration for lint rules.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct LintConfig {
-    /// List of rule names or IDs to disable.
+    /// Rule names or IDs to disable (e.g., `["W001", "heading-level-gap"]`).
     pub disabled_rules: Vec<String>,
 }
 

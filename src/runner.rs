@@ -1,3 +1,6 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::config::Config;
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::formatter::apply_fixes;
@@ -56,9 +59,17 @@ use crate::rules::lint::unknown_options_item::UnknownOptionsItem;
 use crate::rules::{FormatContext, FormatRule, LintContext, LintRule};
 use crate::source::SourceFile;
 
+/// Orchestrates the format and lint pipeline.
+///
+/// Owns all registered [`FormatRule`] and [`LintRule`] instances and provides
+/// [`check`](Self::check) (report-only) and [`format`](Self::format)
+/// (apply fixes + lint) entry points.
 pub struct Runner {
+    /// Active configuration controlling which rules are enabled.
     config: Config,
+    /// Registered format rules (F-series), filtered by config at construction.
     format_rules: Vec<Box<dyn FormatRule>>,
+    /// All lint rules (E/W/I-series); disabled ones are skipped at check time.
     lint_rules: Vec<Box<dyn LintRule>>,
 }
 
@@ -69,6 +80,7 @@ impl Default for Runner {
 }
 
 impl Runner {
+    /// Creates a new runner with rules configured according to `config`.
     pub fn new(config: Config) -> Self {
         // Build format rules list based on config.
         let mut format_rules: Vec<Box<dyn FormatRule>> = Vec::new();

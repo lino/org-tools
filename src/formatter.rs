@@ -1,7 +1,13 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use crate::diagnostic::Fix;
 
-/// Applies a list of non-overlapping fixes to produce formatted output.
-/// Fixes must be sorted by span.start ascending and must not overlap.
+/// Applies a sorted, non-overlapping list of fixes to produce formatted output.
+///
+/// Iterates left-to-right through the source, copying unmodified text and
+/// substituting fix replacements at each span. Fixes must be sorted by
+/// `span.start` ascending and must not overlap.
 pub fn apply_fixes(content: &str, fixes: &[Fix]) -> String {
     if fixes.is_empty() {
         return content.to_string();

@@ -1,3 +1,12 @@
+// Copyright (C) 2026 orgfmt contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! CLI entrypoint for orgfmt.
+//!
+//! Provides two subcommands:
+//! - `check` — lint org files and report diagnostics
+//! - `format` — auto-fix formatting issues
+
 use std::path::PathBuf;
 use std::process;
 
@@ -9,17 +18,20 @@ use orgfmt::output::{render_diagnostics, OutputFormat};
 use orgfmt::runner::Runner;
 use orgfmt::source::SourceFile;
 
+/// Top-level CLI arguments parsed by clap.
 #[derive(Parser)]
 #[command(name = "orgfmt", about = "Opinionated org-mode linter and formatter")]
 struct Cli {
+    /// Subcommand to run (`check` or `format`).
     #[command(subcommand)]
     command: Command,
 
-    /// Path to config file (default: search for .orgfmt.toml in current and parent dirs).
+    /// Path to config file (default: search for `.orgfmt.toml` in current and parent dirs).
     #[arg(long, global = true)]
     config: Option<PathBuf>,
 }
 
+/// Available subcommands.
 #[derive(Subcommand)]
 enum Command {
     /// Lint org files and report diagnostics.
@@ -50,6 +62,7 @@ enum Command {
     },
 }
 
+/// Collects all `.org` files from the given paths, recursing into directories.
 fn collect_org_files(paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut files = Vec::new();
 
@@ -72,6 +85,7 @@ fn collect_org_files(paths: &[PathBuf]) -> Vec<PathBuf> {
     files
 }
 
+/// Loads configuration from an explicit path or by searching ancestor directories.
 fn load_config(cli_config: &Option<PathBuf>) -> Config {
     if let Some(path) = cli_config {
         if path.is_file() {

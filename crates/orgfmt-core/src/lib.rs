@@ -9,6 +9,7 @@
 
 pub mod config;
 pub mod diagnostic;
+pub mod document;
 pub mod files;
 pub mod formatter;
 pub mod output;

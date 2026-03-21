@@ -3,6 +3,9 @@
 
 //! Unified CLI for org-mode: lint, format, query, clock, export.
 
+mod clock;
+mod date;
+mod export;
 mod query;
 
 use std::path::PathBuf;
@@ -53,7 +56,16 @@ enum OrgCommand {
         #[command(subcommand)]
         command: UpdateCommand,
     },
-    // TODO: Clock, Export subcommands (phases 6-7)
+    /// Clock time tracking and reports.
+    Clock {
+        #[command(subcommand)]
+        command: ClockCommand,
+    },
+    /// Export org entries to calendar formats.
+    Export {
+        #[command(subcommand)]
+        command: ExportCommand,
+    },
 }
 
 /// Subcommands for `org query`.
@@ -119,6 +131,105 @@ enum UpdateCommand {
         #[arg(long, conflicts_with = "id_format")]
         id_command: Option<String>,
     },
+}
+
+/// Subcommands for `org clock`.
+#[derive(Subcommand)]
+enum ClockCommand {
+    /// Show clock time report.
+    Report {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Start date (YYYY-MM-DD).
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End date (YYYY-MM-DD).
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: ClockOutputFormat,
+
+        /// Group time by entry, tag, or day.
+        #[arg(long, value_enum, default_value = "entry")]
+        group_by: clock::report::GroupBy,
+
+        /// Filter to entries with these tags.
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+    /// Show running clocks.
+    Status {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: ClockOutputFormat,
+    },
+}
+
+/// Subcommands for `org export`.
+#[derive(Subcommand)]
+enum ExportCommand {
+    /// Export to iCalendar (.ics) format.
+    Ical {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output file (default: stdout).
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+
+        /// Start date filter (YYYY-MM-DD).
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End date filter (YYYY-MM-DD).
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Filter to entries with these tags.
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+    /// Export to JSCalendar (JSON) format.
+    Jscal {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output file (default: stdout).
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+
+        /// Start date filter (YYYY-MM-DD).
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End date filter (YYYY-MM-DD).
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Filter to entries with these tags.
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+}
+
+/// Output format for clock commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ClockOutputFormat {
+    /// Human-readable output.
+    Human,
+    /// JSON output.
+    Json,
 }
 
 /// Output format for query results.
@@ -201,6 +312,8 @@ fn main() {
         }
         OrgCommand::Query { command } => run_query(command),
         OrgCommand::Update { command } => run_update(command),
+        OrgCommand::Clock { command } => run_clock(command),
+        OrgCommand::Export { command } => run_export(command),
     };
 
     process::exit(exit_code);
@@ -349,7 +462,7 @@ fn run_query(command: QueryCommand) -> i32 {
                 return 2;
             }
 
-            let today = current_date();
+            let today = date::current_date();
             let mut docs: Vec<OrgDocument> = Vec::new();
             for file in &files {
                 match SourceFile::from_path(file) {
@@ -407,7 +520,7 @@ fn run_query(command: QueryCommand) -> i32 {
                 }
             }
 
-            let today = current_date();
+            let today = date::current_date();
             let agenda_days = query::agenda::build_agenda(&docs, today, days);
 
             let has_items = agenda_days.iter().any(|d| !d.items.is_empty());
@@ -616,30 +729,169 @@ fn run_add_id(
     0
 }
 
-/// Get today's date as (year, month, day).
-fn current_date() -> (u16, u8, u8) {
-    // Use a simple approach without chrono dependency for now.
-    // Parse from system time.
-    let now = std::time::SystemTime::now();
-    let duration = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs() as i64;
+/// Runs the `clock` subcommand.
+fn run_clock(command: ClockCommand) -> i32 {
+    match command {
+        ClockCommand::Report {
+            paths,
+            from,
+            to,
+            format,
+            group_by,
+            tags,
+        } => {
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
 
-    // Days since epoch (1970-01-01).
-    let days = secs / 86400;
+            let from_date = from.as_deref().and_then(date::parse_date);
+            let to_date = to.as_deref().and_then(date::parse_date);
 
-    // Civil date from day count (algorithm from Howard Hinnant).
-    let z = days + 719468;
-    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = (yoe as i64) + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
+            if from.is_some() && from_date.is_none() {
+                eprintln!("org: invalid --from date (expected YYYY-MM-DD)");
+                return 2;
+            }
+            if to.is_some() && to_date.is_none() {
+                eprintln!("org: invalid --to date (expected YYYY-MM-DD)");
+                return 2;
+            }
 
-    (y as u16, m as u8, d as u8)
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let rows = clock::report::build_report(&docs, from_date, to_date, group_by, &tags);
+
+            match format {
+                ClockOutputFormat::Human => {
+                    print!("{}", clock::report::render_human(&rows, group_by))
+                }
+                ClockOutputFormat::Json => {
+                    println!("{}", clock::report::render_json(&rows, group_by))
+                }
+            }
+
+            if rows.is_empty() {
+                1
+            } else {
+                0
+            }
+        }
+        ClockCommand::Status { paths, format } => {
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
+
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let running = clock::status::find_running_clocks(&docs);
+
+            match format {
+                ClockOutputFormat::Human => print!("{}", clock::status::render_human(&running)),
+                ClockOutputFormat::Json => println!("{}", clock::status::render_json(&running)),
+            }
+
+            if running.is_empty() {
+                1
+            } else {
+                0
+            }
+        }
+    }
+}
+
+/// Runs the `export` subcommand.
+fn run_export(command: ExportCommand) -> i32 {
+    match command {
+        ExportCommand::Ical {
+            paths,
+            output,
+            from,
+            to,
+            tags,
+        } => {
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
+
+            let from_date = from.as_deref().and_then(date::parse_date);
+            let to_date = to.as_deref().and_then(date::parse_date);
+
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let ical = export::ical::export_ical(&docs, from_date, to_date, &tags);
+
+            if let Some(path) = output {
+                if let Err(e) = std::fs::write(&path, &ical) {
+                    eprintln!("org: error writing {}: {}", path.display(), e);
+                    return 2;
+                }
+                println!("Exported to {}", path.display());
+            } else {
+                print!("{ical}");
+            }
+
+            0
+        }
+        ExportCommand::Jscal {
+            paths,
+            output,
+            from,
+            to,
+            tags,
+        } => {
+            let files = collect_org_files(&paths);
+            if files.is_empty() {
+                eprintln!("org: no .org files found");
+                return 2;
+            }
+
+            let from_date = from.as_deref().and_then(date::parse_date);
+            let to_date = to.as_deref().and_then(date::parse_date);
+
+            let mut docs: Vec<OrgDocument> = Vec::new();
+            for file in &files {
+                match SourceFile::from_path(file) {
+                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
+                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+                }
+            }
+
+            let json = export::jscal::export_jscal(&docs, from_date, to_date, &tags);
+
+            if let Some(path) = output {
+                if let Err(e) = std::fs::write(&path, &json) {
+                    eprintln!("org: error writing {}: {}", path.display(), e);
+                    return 2;
+                }
+                println!("Exported to {}", path.display());
+            } else {
+                println!("{json}");
+            }
+
+            0
+        }
+    }
 }

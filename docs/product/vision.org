@@ -25,13 +25,13 @@ compose via Unix pipes.
 
 * Capabilities
 
-| Subcommand   | Purpose                      | Status      |
-|--------------+------------------------------+-------------|
-| =org fmt=    | Lint and format org files    | Done        |
-| =org query=  | Search entries, agenda view  | Done        |
-| =org update= | Add IDs, statistic cookies   | In progress |
-| =org clock=  | Clock in/out, reports        | Planned     |
-| =org export= | iCalendar, JSCalendar export | Planned     |
+| Subcommand   | Purpose                       | Status      |
+|--------------+-------------------------------+-------------|
+| =org fmt=    | Lint and format org files     | Done        |
+| =org query=  | Search entries, agenda view   | Done        |
+| =org update= | Add IDs, statistic cookies    | In progress |
+| =org clock=  | Clock reports, running status | Done        |
+| =org export= | iCalendar, JSCalendar export  | Done        |
 
 ** org fmt — Roadmap
 

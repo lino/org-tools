@@ -1,4 +1,4 @@
-#+TITLE: orgfmt — Usage Guide
+#+TITLE: org-tools — Usage Guide
 #+DATE: 2026-03-21
 
 * Quick Start
@@ -6,29 +6,29 @@
 Check an org file for issues:
 
 #+begin_src sh
-orgfmt check file.org
+org fmt check file.org
 #+end_src
 
 Format an org file in place:
 
 #+begin_src sh
-orgfmt format file.org
+org fmt format file.org
 #+end_src
 
 Preview formatting without modifying the file:
 
 #+begin_src sh
-orgfmt format --stdout file.org
+org fmt format --stdout file.org
 #+end_src
 
 * Commands
 
-** =orgfmt check=
+** =org fmt check=
 
 Lint org files and report diagnostics.
 
 #+begin_src sh
-orgfmt check [OPTIONS] <PATHS>...
+org fmt check [OPTIONS] <PATHS>...
 #+end_src
 
 | Option           | Description                              |
@@ -45,12 +45,12 @@ Exit codes:
 |    1 | Issues found                |
 |    2 | Error (missing files, etc.) |
 
-** =orgfmt format=
+** =org fmt format=
 
 Format org files.
 
 #+begin_src sh
-orgfmt format [OPTIONS] <PATHS>...
+org fmt format [OPTIONS] <PATHS>...
 #+end_src
 
 | Option      | Description                                        |
@@ -64,23 +64,23 @@ orgfmt format [OPTIONS] <PATHS>...
 | Option            | Description                               |
 |-------------------+-------------------------------------------|
 | =--config <PATH>= | Path to config file (default: search for  |
-|                   | =.orgfmt.toml= in current and parent dirs) |
+|                   | =.org-tools.toml= in current and parent dirs) |
 
 * Directory Scanning
 
-When given a directory, orgfmt recursively scans for =.org= files, respecting
+When given a directory, org-tools recursively scans for =.org= files, respecting
 =.gitignore= rules (via the =ignore= crate).
 
 #+begin_src sh
-orgfmt check .                           # check all .org files in current dir
-orgfmt check ~/org/ ~/projects/notes/    # check multiple directories
-orgfmt format docs/                      # format all .org files under docs/
+org fmt check .                           # check all .org files in current dir
+org fmt check ~/org/ ~/projects/notes/    # check multiple directories
+org fmt format docs/                      # format all .org files under docs/
 #+end_src
 
 * Configuration
 
-Create =.orgfmt.toml= in your project root (or any ancestor directory).
-See =.orgfmt.toml.example= for all available options.
+Create =.org-tools.toml= in your project root (or any ancestor directory).
+See =.org-tools.toml.example= for all available options.
 
 ** Format Options
 
@@ -116,7 +116,7 @@ file.org:12:1: error [E001/unclosed-block] #+BEGIN_SRC without matching #+END_SR
 ** JSON
 
 #+begin_src sh
-orgfmt check --format json file.org
+org fmt check --format json file.org
 #+end_src
 
 Returns a JSON array of diagnostic objects:
@@ -140,21 +140,21 @@ Returns a JSON array of diagnostic objects:
 
 ** Emacs (Flycheck / Flymake)
 
-orgfmt's output format (=file:line:col: severity message=) is compatible with
+org-tools's output format (=file:line:col: severity message=) is compatible with
 standard compilation-mode parsing. A dedicated flycheck checker can be
-configured to invoke =orgfmt check= on save.
+configured to invoke =org fmt check= on save.
 
 ** CI Usage
 
 #+begin_src sh
 # Fail CI if files need formatting
-orgfmt format --check .
+org fmt format --check .
 
 # Fail CI if lint issues exist
-orgfmt check .
+org fmt check .
 
 # Machine-readable output for custom processing
-orgfmt check --format json . | jq '.[] | select(.severity == "error")'
+org fmt check --format json . | jq '.[] | select(.severity == "error")'
 #+end_src
 
 * Rule Reference
@@ -228,9 +228,104 @@ orgfmt check --format json . | jq '.[] | select(.severity == "error")'
 | W036 | block-type-validity          | Unknown block type                        |
 | W037 | affiliated-keyword-placement | Affiliated keyword in wrong position      |
 
+* Query (=org query=)
+
+** =org query search=
+
+Search for entries matching a query expression.
+
+#+begin_src sh
+org query search [OPTIONS] <QUERY> [PATHS...]
+#+end_src
+
+| Option              | Description                                      |
+|---------------------+--------------------------------------------------|
+| =--format human=    | Human-readable output (default)                  |
+| =--format json=     | JSON output (see =schemas/org-query-output.schema.json=) |
+| =--format locator=  | One OrgLocator per line (for piping)             |
+| =--limit N=         | Maximum results to return                        |
+
+** =org query agenda=
+
+Show upcoming scheduled and deadline items grouped by day.
+
+#+begin_src sh
+org query agenda [OPTIONS] [PATHS...]
+#+end_src
+
+| Option           | Description                       |
+|------------------+-----------------------------------|
+| =--days N=       | Number of days to show (default: 7) |
+| =--format human= | Human-readable timeline (default) |
+| =--format json=  | JSON output                       |
+
+** Query Syntax
+
+Predicates are written as =key:value= pairs. Multiple terms are implicitly
+ANDed. Use =and=, =or=, =not=, and parentheses for complex queries.
+
+#+begin_src sh
+# Basic predicates
+org query search 'todo:TODO'                     # specific TODO state
+org query search 'todo'                          # any TODO state
+org query search 'done'                          # DONE entries
+org query search 'tags:work,urgent'              # both tags present
+org query search 'heading:meeting'               # title substring
+org query search 'property:CATEGORY=project'     # property match
+org query search 'priority:A'                    # exact priority
+org query search 'priority:>=B'                  # priority comparison
+org query search 'level:2'                       # heading level
+org query search 'level:<=3'                     # level comparison
+org query search 'clocked'                       # has clock entries
+
+# Date predicates
+org query search 'scheduled:today'
+org query search 'scheduled:<=today'
+org query search 'deadline:past'
+org query search 'deadline:<=+7d'                # within 7 days
+org query search 'deadline:2024-01-15'           # specific date
+
+# Boolean operators
+org query search 'todo:TODO tags:work'           # implicit AND
+org query search 'todo:TODO or todo:NEXT'        # explicit OR
+org query search 'not done'                      # negation
+org query search '(todo:TODO or todo:NEXT) and tags:work'
+
+# Bare words search heading text
+org query search 'meeting'                       # same as heading:meeting
+#+end_src
+
+Tag inheritance is supported: querying for a parent's tag matches child
+entries too.
+
+** Piping
+
+#+begin_src sh
+# Output locators for use by other commands
+org query search 'todo:TODO tags:work' --format locator ~/org/
+
+# Example output:
+# id:550e8400-e29b-41d4-a716-446655440000
+# notes.org::#meeting
+# todo.org::*/Work/Prep slides
+#+end_src
+
+** OrgLocator
+
+Every heading in an org file can be addressed by an OrgLocator string:
+
+| Pattern | Example | When used |
+|---------+---------+-----------|
+| =id:<uuid>= | =id:550e8400-...= | Entry has =:ID:= property (preferred) |
+| =<file>::#<id>= | =notes.org::#project-x= | Entry has =:CUSTOM_ID:= property |
+| =<file>::*/<path>= | =todo.org::*/Work/Meeting= | Fallback: outline path |
+| =<file>::<line>= | =inbox.org::42= | Line number (fragile) |
+
+The =::= separator mirrors org-mode's own link syntax.
+
 * Comparing with Emacs
 
-Two scripts compare orgfmt output against Emacs org-mode:
+Two scripts compare org-tools output against Emacs org-mode:
 
 #+begin_src sh
 # Compare formatting output

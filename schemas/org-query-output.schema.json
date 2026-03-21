@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://orgfmt.dev/schemas/org-query-output.schema.json",
+  "$id": "https://org-tools.dev/schemas/org-query-output.schema.json",
   "title": "org query JSON output",
   "description": "Schema for the JSON output of 'org query search --format json'",
   "type": "array",

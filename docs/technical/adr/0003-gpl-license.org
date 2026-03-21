@@ -4,7 +4,7 @@
 
 * Context
 
-orgfmt's rule set was designed by studying =org-lint.el= and the org-mode
+org-tools's rule set was designed by studying =org-lint.el= and the org-mode
 specification. The org-mode project and the wider Emacs ecosystem use the
 GNU General Public License.
 
@@ -15,9 +15,9 @@ Licensing options considered:
 
 * Decision
 
-License orgfmt under GPL-3.0-or-later.
+License org-tools under GPL-3.0-or-later.
 
-While orgfmt does not share code with Emacs or org-mode, its rule design is
+While org-tools does not share code with Emacs or org-mode, its rule design is
 directly informed by studying GPL-licensed source code. Using GPL respects
 the ecosystem that made this tool possible and ensures that improvements
 flow back to the community.

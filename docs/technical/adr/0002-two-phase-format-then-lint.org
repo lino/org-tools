@@ -4,7 +4,7 @@
 
 * Context
 
-orgfmt has two categories of rules:
+org-tools has two categories of rules:
 
 - *Format rules* produce fixes (auto-correctable changes)
 - *Lint rules* produce diagnostics (report-only)

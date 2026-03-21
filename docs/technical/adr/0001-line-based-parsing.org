@@ -4,7 +4,7 @@
 
 * Context
 
-orgfmt needs to parse org-mode files to detect formatting issues and produce
+org-tools needs to parse org-mode files to detect formatting issues and produce
 fixes. Two approaches were considered:
 
 1. Build or depend on a full org-mode AST parser

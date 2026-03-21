@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# compare-lint-with-emacs.sh — Run org-lint and orgfmt check, compare diagnostics.
+# compare-lint-with-emacs.sh — Run org-lint and org-tools check, compare diagnostics.
 #
 # Usage:
 #   ./scripts/compare-lint-with-emacs.sh file1.org [file2.org ...]
 #
 # Requirements:
 #   - emacs (with org-mode)
-#   - orgfmt binary
+#   - org binary
 
 set -euo pipefail
 
-ORGFMT="${ORGFMT:-cargo run --release --}"
+ORGFMT="${ORGFMT:-cargo run --release -p org --}"
 EMACS="${EMACS:-emacs}"
 
 if [[ $# -eq 0 ]]; then
     echo "Usage: $0 <file.org> [file2.org ...]"
     echo ""
-    echo "Runs both Emacs org-lint and orgfmt check on each file,"
+    echo "Runs both Emacs org-lint and org-tools check on each file,"
     echo "showing diagnostics side by side."
     exit 1
 fi
@@ -26,10 +26,10 @@ if ! command -v "$EMACS" &>/dev/null; then
     exit 2
 fi
 
-# Build orgfmt if needed
+# Build org if needed
 if [[ "$ORGFMT" == cargo* ]]; then
     cargo build --release 2>/dev/null
-    ORGFMT="./target/release/orgfmt"
+    ORGFMT="./target/release/org"
 fi
 
 # Emacs lisp for org-lint
@@ -72,8 +72,8 @@ for FILE in "$@"; do
         "$FILE" 2>/dev/null || echo "(org-lint returned no results or failed)"
 
     echo ""
-    echo "--- orgfmt check ---"
-    $ORGFMT check "$FILE" 2>/dev/null || true
+    echo "--- org-tools check ---"
+    $ORGFMT fmt check "$FILE" 2>/dev/null || true
 
     echo ""
 done

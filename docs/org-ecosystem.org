@@ -1,5 +1,5 @@
 #+TITLE: Org-Mode Ecosystem: Packages That Extend Syntax
-#+AUTHOR: orgfmt
+#+AUTHOR: org-tools
 #+DATE: 2026-03-21
 
 * Overview
@@ -222,9 +222,9 @@ Ref: [[https://github.com/200ok-ch/org-parser/blob/master/resources/org.ebnf][or
 - Timestamps accept AM/PM and seconds (beyond spec)
 - TODO keywords restricted to uppercase ASCII only
 
-* Implications for orgfmt
+* Implications for org-tools
 
-** What orgfmt should NOT flag as errors
+** What org-tools should NOT flag as errors
 1. Any ~#+KEYWORD:~ starting with a known package prefix (~HUGO_~,
    ~REVEAL_~, ~PANDOC_~, etc.) — treat as valid
 2. Properties starting with known package prefixes (~ROAM_~, ~DRILL_~,
@@ -233,7 +233,7 @@ Ref: [[https://github.com/200ok-ch/org-parser/blob/master/resources/org.ebnf][or
 4. Custom link types (~cite:~, ~attachment:~, ~id:~, etc.)
 5. Package-specific tags (~:crypt:~, ~:drill:~, ~:fc:~, ~:TOC:~)
 
-** What orgfmt should consider for keyword-validity rule
+** What org-tools should consider for keyword-validity rule
 The ~keyword-validity~ lint rule should maintain an allowlist of known
 keyword prefixes that covers both core org-mode and popular packages:
 - Core: ~TITLE~, ~AUTHOR~, ~DATE~, ~OPTIONS~, ~STARTUP~, etc.
@@ -244,5 +244,5 @@ keyword prefixes that covers both core org-mode and popular packages:
 - denote: ~IDENTIFIER~
 - General: ~EXPORT_*~, ~ATTR_*~, ~LATEX_*~, ~HTML_*~
 
-Properties are user-defined by nature, so orgfmt should never flag
+Properties are user-defined by nature, so org-tools should never flag
 unknown property keys — only validate syntax, not semantics.

@@ -21,7 +21,7 @@ cargo fmt -- --check
 """
 
 [tasks.check]
-description = "Run orgfmt check on current directory"
+description = "Run org-tools check on current directory"
 run = "cargo run -- check ."
 
 [tasks.fmt]

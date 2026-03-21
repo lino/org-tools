@@ -1,4 +1,4 @@
-#+TITLE: orgfmt — Release Process
+#+TITLE: org-tools — Release Process
 #+DATE: 2026-03-21
 
 * Pre-release Checklist
@@ -36,7 +36,7 @@
    #+begin_src sh
    cargo publish
    #+end_src
-   - [ ] Verify: =cargo install orgfmt= installs the new version
+   - [ ] Verify: =cargo install org-tools= installs the new version
 
 * Post-release
 

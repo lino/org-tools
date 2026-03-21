@@ -1,5 +1,5 @@
-# orgfmt configuration
-# Copy to .orgfmt.toml to use.
+# org-tools configuration
+# Copy to .org-tools.toml to use.
 # Defaults match Emacs org-mode behavior.
 
 [format]

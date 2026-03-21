@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# compare-with-emacs.sh — Format org files with both Emacs and orgfmt, show differences.
+# compare-with-emacs.sh — Format org files with both Emacs and org-tools, show differences.
 #
 # Usage:
 #   ./scripts/compare-with-emacs.sh file1.org [file2.org ...]
@@ -7,12 +7,12 @@
 #
 # Requirements:
 #   - emacs (any recent version with org-mode)
-#   - orgfmt binary (built via `cargo build --release`)
+#   - org binary (built via `cargo build --release`)
 #   - diff, colordiff (optional, for colored output)
 
 set -euo pipefail
 
-ORGFMT="${ORGFMT:-cargo run --release --}"
+ORGFMT="${ORGFMT:-cargo run --release -p org --}"
 EMACS="${EMACS:-emacs}"
 DIFF_CMD="diff"
 
@@ -24,11 +24,11 @@ fi
 if [[ $# -eq 0 ]]; then
     echo "Usage: $0 <file.org> [file2.org ...]"
     echo ""
-    echo "Formats each file with both Emacs org-mode and orgfmt,"
+    echo "Formats each file with both Emacs org-mode and org-tools,"
     echo "then shows the differences."
     echo ""
     echo "Environment variables:"
-    echo "  ORGFMT  — orgfmt command (default: cargo run --release --)"
+    echo "  ORGFMT  — org command (default: cargo run --release -p org --)"
     echo "  EMACS   — emacs binary (default: emacs)"
     exit 1
 fi
@@ -39,11 +39,11 @@ if ! command -v "$EMACS" &>/dev/null; then
     exit 2
 fi
 
-# Build orgfmt if using cargo run
+# Build org if using cargo run
 if [[ "$ORGFMT" == cargo* ]]; then
-    echo "Building orgfmt..."
+    echo "Building org-tools..."
     cargo build --release 2>/dev/null
-    ORGFMT="./target/release/orgfmt"
+    ORGFMT="./target/release/org"
 fi
 
 TMPDIR=$(mktemp -d)
@@ -84,7 +84,7 @@ for FILE in "$@"; do
     BASENAME=$(basename "$FILE")
 
     EMACS_OUT="$TMPDIR/emacs-$BASENAME"
-    ORGFMT_OUT="$TMPDIR/orgfmt-$BASENAME"
+    ORGFMT_OUT="$TMPDIR/org-tools-$BASENAME"
 
     # Format with Emacs
     if ! "$EMACS" --batch --no-init-file \
@@ -95,9 +95,9 @@ for FILE in "$@"; do
         continue
     fi
 
-    # Format with orgfmt
-    if ! $ORGFMT format --stdout "$FILE" > "$ORGFMT_OUT" 2>/dev/null; then
-        echo "[$BASENAME] ERROR: orgfmt formatting failed"
+    # Format with org-tools
+    if ! $ORGFMT fmt --stdout "$FILE" > "$ORGFMT_OUT" 2>/dev/null; then
+        echo "[$BASENAME] ERROR: org-tools formatting failed"
         ERRORS=$((ERRORS + 1))
         continue
     fi
@@ -112,10 +112,10 @@ for FILE in "$@"; do
         echo "[$BASENAME] ✗ DIFFERENCES FOUND"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "--- Emacs (left)  vs  orgfmt (right) ---"
+        echo "--- Emacs (left)  vs  org-tools (right) ---"
         $DIFF_CMD -u \
             --label "emacs: $BASENAME" "$EMACS_OUT" \
-            --label "orgfmt: $BASENAME" "$ORGFMT_OUT" \
+            --label "org-tools: $BASENAME" "$ORGFMT_OUT" \
             || true  # diff exits 1 when files differ
         echo ""
         DIFFERENT=$((DIFFERENT + 1))

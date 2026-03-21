@@ -62,10 +62,12 @@ parse and respect these to avoid false positives and produce correct results.
 | / =#+TYP_TODO:=           |         | used in heading parser, query, done-state        |
 | =#+PRIORITIES:=           | Done    | Parsed from file keywords; range stored on       |
 |                           |         | OrgDocument; ready for lint + query use          |
-| =#+TAGS:= / =#+FILETAGS:= | Planned | Tag validation lint rule; mutually exclusive     |
-|                           |         | groups; query tag inheritance respects file tags |
-| =#+PROPERTY:=             | Planned | File-wide default property values; query should  |
-|                           |         | fall back to these when entry lacks a property   |
+| =#+FILETAGS:=             | Done    | Parsed into filetags; included in inherited_tags |
+|                           |         | for query tag matching                           |
+| =#+TAGS:=                 | Planned | Tag validation lint rule; mutually exclusive     |
+|                           |         | groups (not yet parsed)                          |
+| =#+PROPERTY:=             | Done    | File-wide default properties; property() method  |
+|                           |         | falls back to defaults when entry lacks property |
 | =#+STARTUP: odd=          | Planned | Only odd heading levels valid; heading-level-gap |
 |                           |         | lint rule must respect this                      |
 | =#+CONSTANTS:=            | Planned | Named constants for table formula validation     |
@@ -156,7 +158,8 @@ fast and sufficient for most rules, but has inherent limits:
 |                           | =org-babel-load-languages= |                            |
 | TODO keyword recognition  | Reads =#+TODO:= settings   | Reads =#+TODO:= settings   |
 | Priority range validation | Reads =#+PRIORITIES:=      | Reads =#+PRIORITIES:=      |
-| Tag validation            | Reads =#+TAGS:= settings   | No validation of tag names |
+| Tag validation            | Reads =#+TAGS:= settings   | Filetags inherited; no     |
+|                           |                            | validation of tag names    |
 
 These divergences are tracked and will be addressed as in-buffer settings
 support is implemented (see roadmap above).

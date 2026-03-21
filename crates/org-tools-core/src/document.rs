@@ -32,6 +32,10 @@ pub struct OrgDocument {
     pub todo_keywords: TodoKeywords,
     /// Priority range parsed from `#+PRIORITIES:`.
     pub priority_range: PriorityRange,
+    /// File-level tags from `#+FILETAGS:` (inherited by all entries).
+    pub filetags: Vec<String>,
+    /// File-wide default properties from `#+PROPERTY:` keyword lines.
+    pub default_properties: HashMap<String, String>,
 }
 
 /// A single heading entry in an org document.
@@ -104,6 +108,8 @@ impl OrgDocument {
         let mut first_heading_seen = false;
         let mut todo_kw = TodoKeywords::default();
         let mut pri_range = PriorityRange::default();
+        let mut filetags: Vec<String> = Vec::new();
+        let mut default_properties: HashMap<String, String> = HashMap::new();
         // Owned keyword strings for the lifetime of parsing; the &str refs
         // into `kw_refs` are used by `parse_heading_with_keywords`.
         let mut kw_strs: Vec<String> = todo_kw.all().iter().map(|s| s.to_string()).collect();
@@ -121,6 +127,8 @@ impl OrgDocument {
                     kw_strs = todo_kw.all().iter().map(|s| s.to_string()).collect();
                     kw_refs = kw_strs.iter().map(|s| s.as_str()).collect();
                     pri_range = priority_range_from_file(&file_keywords);
+                    filetags = parse_filetags(file_keywords.get("FILETAGS"));
+                    default_properties = parse_default_properties(&file_keywords);
                     // Fall through to heading processing below.
                 } else {
                     if let Some((key, val)) = parse_keyword_line(line) {
@@ -227,6 +235,8 @@ impl OrgDocument {
             file_keywords,
             todo_keywords: todo_kw,
             priority_range: pri_range,
+            filetags,
+            default_properties,
         }
     }
 
@@ -270,7 +280,22 @@ impl OrgDocument {
             }
             idx = self.entries[i].parent;
         }
+        // Append file-level tags from #+FILETAGS:.
+        for tag in &self.filetags {
+            if !tags.contains(&tag.as_str()) {
+                tags.push(tag.as_str());
+            }
+        }
         tags
+    }
+
+    /// Look up a property on an entry, falling back to file-wide `#+PROPERTY:` defaults.
+    pub fn property(&self, entry_idx: usize, key: &str) -> Option<&str> {
+        self.entries[entry_idx]
+            .properties
+            .get(key)
+            .or_else(|| self.default_properties.get(key))
+            .map(|s| s.as_str())
     }
 }
 
@@ -356,6 +381,41 @@ fn parse_keyword_line(line: &str) -> Option<(String, String)> {
     let key = rest[..colon_pos].trim().to_uppercase();
     let val = rest[colon_pos + 1..].trim().to_string();
     Some((key, val))
+}
+
+/// Parse `#+FILETAGS:` value into a list of tags.
+///
+/// Format: `:tag1:tag2:tag3:` (colon-delimited, matching org heading tag syntax).
+fn parse_filetags(value: Option<&String>) -> Vec<String> {
+    let Some(val) = value else {
+        return Vec::new();
+    };
+    val.trim()
+        .trim_matches(':')
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Parse `#+PROPERTY:` keyword lines into a default property map.
+///
+/// The `file_keywords` HashMap stores only the last `#+PROPERTY:` line (since it's
+/// keyed by `"PROPERTY"`). In org-mode, multiple `#+PROPERTY:` lines are supported.
+/// For now, we handle the single-value case: `#+PROPERTY: KEY VALUE`.
+fn parse_default_properties(file_keywords: &HashMap<String, String>) -> HashMap<String, String> {
+    let mut props = HashMap::new();
+    if let Some(val) = file_keywords.get("PROPERTY") {
+        let val = val.trim();
+        if let Some(space) = val.find(|c: char| c.is_whitespace()) {
+            let key = val[..space].to_uppercase();
+            let value = val[space..].trim().to_string();
+            if !key.is_empty() {
+                props.insert(key, value);
+            }
+        }
+    }
+    props
 }
 
 /// Finds the parent index for a heading at the given level.
@@ -749,5 +809,59 @@ mod tests {
         let source = make_source("* [#B] Task\n");
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.priority_range, PriorityRange::default());
+    }
+
+    // --- FILETAGS ---
+
+    #[test]
+    fn filetags_inherited() {
+        let source = make_source("#+FILETAGS: :project:work:\n* Heading :local:\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.filetags, vec!["project", "work"]);
+        let tags = doc.inherited_tags(0);
+        assert!(tags.contains(&"local"));
+        assert!(tags.contains(&"project"));
+        assert!(tags.contains(&"work"));
+    }
+
+    #[test]
+    fn filetags_empty() {
+        let source = make_source("* Heading\n");
+        let doc = OrgDocument::from_source(&source);
+        assert!(doc.filetags.is_empty());
+    }
+
+    #[test]
+    fn filetags_without_surrounding_colons() {
+        // Some users write #+FILETAGS: tag1:tag2 without leading/trailing colons.
+        let source = make_source("#+FILETAGS: tag1:tag2\n* H\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.filetags, vec!["tag1", "tag2"]);
+    }
+
+    // --- Default properties ---
+
+    #[test]
+    fn default_property_fallback() {
+        let source = make_source("#+PROPERTY: CATEGORY work\n* Task\n");
+        let doc = OrgDocument::from_source(&source);
+        // Entry has no CATEGORY property, but the file default exists.
+        assert_eq!(doc.property(0, "CATEGORY"), Some("work"));
+    }
+
+    #[test]
+    fn entry_property_overrides_default() {
+        let source = make_source(
+            "#+PROPERTY: CATEGORY work\n* Task\n:PROPERTIES:\n:CATEGORY: personal\n:END:\n",
+        );
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.property(0, "CATEGORY"), Some("personal"));
+    }
+
+    #[test]
+    fn no_default_property() {
+        let source = make_source("* Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.property(0, "CATEGORY"), None);
     }
 }

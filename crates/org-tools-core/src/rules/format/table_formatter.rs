@@ -363,4 +363,31 @@ mod tests {
         let expected = "| a | bb |\ntext\n| ccc | d |\n";
         assert_eq!(format_it(input), expected);
     }
+
+    #[test]
+    fn preserves_tblfm_line() {
+        let input = "| a | 1 |\n| b | 2 |\n#+TBLFM: $2=$1+1\n";
+        let result = format_it(input);
+        // TBLFM line must be preserved exactly.
+        assert!(result.contains("#+TBLFM: $2=$1+1"));
+        // Table should still be formatted.
+        assert!(result.contains("| a | 1 |"));
+    }
+
+    #[test]
+    fn preserves_multiple_tblfm_lines() {
+        let input = "| x | y |\n#+TBLFM: $1=1\n#+TBLFM: $2=2\n";
+        let result = format_it(input);
+        assert!(result.contains("#+TBLFM: $1=1\n#+TBLFM: $2=2"));
+    }
+
+    #[test]
+    fn tblfm_not_included_in_table_formatting() {
+        // Ensure TBLFM doesn't get mangled as a table row.
+        let input = "| Name | Val |\n|------+-----|\n| x    |   1 |\n#+TBLFM: @2$2=1\n";
+        let result = format_it(input);
+        assert!(result.contains("#+TBLFM: @2$2=1"));
+        // Table should be properly formatted.
+        assert!(result.contains("| Name | Val |"));
+    }
 }

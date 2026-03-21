@@ -24,8 +24,8 @@ pub struct HeadingParts<'a> {
     pub tags: Vec<&'a str>,
 }
 
-/// Default TODO keywords recognized when parsing headings.
-const DEFAULT_TODO_KEYWORDS: &[&str] = &[
+/// Default TODO keywords recognized when no `#+TODO:` settings are present.
+pub const DEFAULT_TODO_KEYWORDS: &[&str] = &[
     "TODO",
     "DONE",
     "NEXT",
@@ -39,6 +39,207 @@ const DEFAULT_TODO_KEYWORDS: &[&str] = &[
     "DRAFT",
     "PUBLISHED",
 ];
+
+/// Parsed TODO keyword configuration from `#+TODO:` / `#+SEQ_TODO:` / `#+TYP_TODO:`.
+///
+/// Keywords before the `|` separator are "not done" states; keywords after are
+/// "done" states. If no `|` appears, the last keyword is treated as the done state
+/// (matching Emacs behaviour).
+///
+/// Spec: [§5.2 TODO Extensions](https://orgmode.org/manual/TODO-Extensions.html)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TodoKeywords {
+    /// Keywords representing "not done" states (e.g., `["TODO", "NEXT"]`).
+    pub todo: Vec<String>,
+    /// Keywords representing "done" states (e.g., `["DONE", "CANCELLED"]`).
+    pub done: Vec<String>,
+}
+
+impl TodoKeywords {
+    /// All keywords (todo + done) in a single list.
+    pub fn all(&self) -> Vec<&str> {
+        self.todo
+            .iter()
+            .chain(self.done.iter())
+            .map(|s| s.as_str())
+            .collect()
+    }
+
+    /// Returns true if `word` is a recognized TODO keyword (either state).
+    pub fn contains(&self, word: &str) -> bool {
+        self.todo.iter().any(|k| k == word) || self.done.iter().any(|k| k == word)
+    }
+
+    /// Returns true if `word` is a "done" keyword.
+    pub fn is_done(&self, word: &str) -> bool {
+        self.done.iter().any(|k| k == word)
+    }
+}
+
+impl Default for TodoKeywords {
+    fn default() -> Self {
+        Self {
+            todo: vec![
+                "TODO".into(),
+                "NEXT".into(),
+                "WAITING".into(),
+                "HOLD".into(),
+                "STARTED".into(),
+                "DELEGATED".into(),
+                "REVIEW".into(),
+                "DRAFT".into(),
+            ],
+            done: vec![
+                "DONE".into(),
+                "CANCELLED".into(),
+                "CANCELED".into(),
+                "PUBLISHED".into(),
+            ],
+        }
+    }
+}
+
+/// Parse a `#+TODO:` / `#+SEQ_TODO:` / `#+TYP_TODO:` value into [`TodoKeywords`].
+///
+/// Format: `KW1 KW2 | KW3 KW4` where `|` separates not-done from done states.
+/// Keywords may have fast-access chars in parens: `TODO(t)` — the `(t)` is stripped.
+/// If no `|` is present, the last keyword is the done state.
+pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return TodoKeywords::default();
+    }
+
+    let (before_pipe, after_pipe) = if let Some(pos) = spec.find('|') {
+        (&spec[..pos], Some(&spec[pos + 1..]))
+    } else {
+        (spec, None)
+    };
+
+    let strip_fast_key = |w: &str| -> String {
+        // Strip "(x)" fast-access suffix: "TODO(t)" → "TODO".
+        if let Some(paren) = w.find('(') {
+            w[..paren].to_string()
+        } else {
+            w.to_string()
+        }
+    };
+
+    let before: Vec<String> = before_pipe
+        .split_whitespace()
+        .map(strip_fast_key)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if let Some(after) = after_pipe {
+        let done: Vec<String> = after
+            .split_whitespace()
+            .map(strip_fast_key)
+            .filter(|s| !s.is_empty())
+            .collect();
+        TodoKeywords { todo: before, done }
+    } else if before.len() > 1 {
+        // No pipe: last keyword is the done state.
+        let mut todo = before;
+        let done = vec![todo.pop().unwrap()];
+        TodoKeywords { todo, done }
+    } else {
+        // Single keyword, treat as todo.
+        TodoKeywords {
+            todo: before,
+            done: Vec::new(),
+        }
+    }
+}
+
+/// Build a [`TodoKeywords`] from file keywords in an [`OrgDocument`].
+///
+/// Checks `#+TODO:`, `#+SEQ_TODO:`, and `#+TYP_TODO:` (in that order).
+/// Returns the default set if none are found.
+pub fn todo_keywords_from_file(
+    file_keywords: &std::collections::HashMap<String, String>,
+) -> TodoKeywords {
+    for key in &["TODO", "SEQ_TODO", "TYP_TODO"] {
+        if let Some(val) = file_keywords.get(*key) {
+            return parse_todo_spec(val);
+        }
+    }
+    TodoKeywords::default()
+}
+
+/// Priority range configuration from `#+PRIORITIES:`.
+///
+/// Format: `#+PRIORITIES: HIGHEST LOWEST [DEFAULT]`
+/// where HIGHEST < LOWEST alphabetically (A < C means A is highest priority).
+///
+/// Spec: [§5.4 Priorities](https://orgmode.org/manual/Priorities.html)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PriorityRange {
+    /// Highest priority letter (default: `'A'`).
+    pub highest: char,
+    /// Lowest priority letter (default: `'C'`).
+    pub lowest: char,
+    /// Default priority letter (default: `'B'`).
+    pub default: char,
+}
+
+impl Default for PriorityRange {
+    fn default() -> Self {
+        Self {
+            highest: 'A',
+            lowest: 'C',
+            default: 'B',
+        }
+    }
+}
+
+impl PriorityRange {
+    /// Returns true if `ch` is within the valid priority range.
+    pub fn is_valid(&self, ch: char) -> bool {
+        let ch = ch.to_ascii_uppercase();
+        ch >= self.highest && ch <= self.lowest
+    }
+}
+
+/// Parse a `#+PRIORITIES:` value into a [`PriorityRange`].
+///
+/// Format: `HIGHEST LOWEST [DEFAULT]` (e.g., `A E B`).
+pub fn parse_priority_spec(spec: &str) -> PriorityRange {
+    let parts: Vec<&str> = spec.split_whitespace().collect();
+    match parts.len() {
+        2 => {
+            let h = parts[0].chars().next().unwrap_or('A').to_ascii_uppercase();
+            let l = parts[1].chars().next().unwrap_or('C').to_ascii_uppercase();
+            PriorityRange {
+                highest: h,
+                lowest: l,
+                default: h, // Emacs defaults to highest when no default given.
+            }
+        }
+        3.. => {
+            let h = parts[0].chars().next().unwrap_or('A').to_ascii_uppercase();
+            let l = parts[1].chars().next().unwrap_or('C').to_ascii_uppercase();
+            let d = parts[2].chars().next().unwrap_or('B').to_ascii_uppercase();
+            PriorityRange {
+                highest: h,
+                lowest: l,
+                default: d,
+            }
+        }
+        _ => PriorityRange::default(),
+    }
+}
+
+/// Build a [`PriorityRange`] from file keywords.
+pub fn priority_range_from_file(
+    file_keywords: &std::collections::HashMap<String, String>,
+) -> PriorityRange {
+    if let Some(val) = file_keywords.get("PRIORITIES") {
+        parse_priority_spec(val)
+    } else {
+        PriorityRange::default()
+    }
+}
 
 /// Returns the heading level (number of stars) if the line is a heading.
 pub fn heading_level(line: &str) -> Option<usize> {
@@ -59,8 +260,16 @@ pub fn is_heading(line: &str) -> bool {
     heading_level(line).is_some()
 }
 
-/// Parses a heading line into its components.
+/// Parses a heading line into its components using the default keyword set.
 pub fn parse_heading(line: &str) -> Option<HeadingParts<'_>> {
+    parse_heading_with_keywords(line, DEFAULT_TODO_KEYWORDS)
+}
+
+/// Parses a heading line using a custom set of TODO keywords.
+pub fn parse_heading_with_keywords<'a>(
+    line: &'a str,
+    keywords: &[&str],
+) -> Option<HeadingParts<'a>> {
     let level = heading_level(line)?;
     let rest = line[level..].trim_start();
 
@@ -69,7 +278,7 @@ pub fn parse_heading(line: &str) -> Option<HeadingParts<'_>> {
     let rest = rest_no_tags.trim_end();
 
     // Extract TODO keyword.
-    let (rest, keyword) = extract_keyword(rest);
+    let (rest, keyword) = extract_keyword_from(rest, keywords);
 
     // Extract priority.
     let (rest, priority) = extract_priority(rest);
@@ -114,11 +323,11 @@ fn extract_tags(text: &str) -> (&str, Vec<&str>) {
     (text, Vec::new())
 }
 
-/// Extracts a TODO keyword from the start of heading text.
-fn extract_keyword(text: &str) -> (&str, Option<&str>) {
+/// Extracts a TODO keyword from the start of heading text using a keyword set.
+fn extract_keyword_from<'a>(text: &'a str, keywords: &[&str]) -> (&'a str, Option<&'a str>) {
     let first_word_end = text.find(' ').unwrap_or(text.len());
     let first_word = &text[..first_word_end];
-    if DEFAULT_TODO_KEYWORDS.contains(&first_word) {
+    if keywords.contains(&first_word) {
         let rest = if first_word_end < text.len() {
             text[first_word_end..].trim_start()
         } else {
@@ -218,5 +427,144 @@ mod tests {
         let parts = parse_heading("* [#C]").unwrap();
         assert_eq!(parts.priority, Some('C'));
         assert_eq!(parts.title, "");
+    }
+
+    // --- parse_todo_spec ---
+
+    #[test]
+    fn todo_spec_with_pipe() {
+        let kw = parse_todo_spec("TODO NEXT | DONE CANCELLED");
+        assert_eq!(kw.todo, vec!["TODO", "NEXT"]);
+        assert_eq!(kw.done, vec!["DONE", "CANCELLED"]);
+    }
+
+    #[test]
+    fn todo_spec_without_pipe() {
+        // Last keyword becomes the done state.
+        let kw = parse_todo_spec("OPEN CLOSED");
+        assert_eq!(kw.todo, vec!["OPEN"]);
+        assert_eq!(kw.done, vec!["CLOSED"]);
+    }
+
+    #[test]
+    fn todo_spec_with_fast_keys() {
+        let kw = parse_todo_spec("TODO(t) NEXT(n) | DONE(d) CANCELLED(c)");
+        assert_eq!(kw.todo, vec!["TODO", "NEXT"]);
+        assert_eq!(kw.done, vec!["DONE", "CANCELLED"]);
+    }
+
+    #[test]
+    fn todo_spec_single_keyword() {
+        let kw = parse_todo_spec("WAITING");
+        assert_eq!(kw.todo, vec!["WAITING"]);
+        assert!(kw.done.is_empty());
+    }
+
+    #[test]
+    fn todo_spec_empty() {
+        let kw = parse_todo_spec("");
+        assert_eq!(kw, TodoKeywords::default());
+    }
+
+    #[test]
+    fn todo_keywords_contains_and_done() {
+        let kw = parse_todo_spec("OPEN IN_PROGRESS | DONE WONTFIX");
+        assert!(kw.contains("OPEN"));
+        assert!(kw.contains("DONE"));
+        assert!(kw.contains("WONTFIX"));
+        assert!(!kw.contains("TODO"));
+        assert!(!kw.is_done("OPEN"));
+        assert!(kw.is_done("DONE"));
+        assert!(kw.is_done("WONTFIX"));
+    }
+
+    // --- parse_heading_with_keywords ---
+
+    #[test]
+    fn custom_keyword_recognized() {
+        let parts = parse_heading_with_keywords("* OPEN Fix the bug", &["OPEN", "CLOSED"]).unwrap();
+        assert_eq!(parts.keyword, Some("OPEN"));
+        assert_eq!(parts.title, "Fix the bug");
+    }
+
+    #[test]
+    fn default_keyword_not_in_custom_set() {
+        // "TODO" is not in the custom set, so it becomes part of the title.
+        let parts = parse_heading_with_keywords("* TODO Fix the bug", &["OPEN", "CLOSED"]).unwrap();
+        assert_eq!(parts.keyword, None);
+        assert_eq!(parts.title, "TODO Fix the bug");
+    }
+
+    // --- todo_keywords_from_file ---
+
+    #[test]
+    fn from_file_keywords_todo() {
+        let mut kw = std::collections::HashMap::new();
+        kw.insert("TODO".to_string(), "OPEN | DONE WONTFIX".to_string());
+        let result = todo_keywords_from_file(&kw);
+        assert_eq!(result.todo, vec!["OPEN"]);
+        assert_eq!(result.done, vec!["DONE", "WONTFIX"]);
+    }
+
+    #[test]
+    fn from_file_keywords_seq_todo() {
+        let mut kw = std::collections::HashMap::new();
+        kw.insert(
+            "SEQ_TODO".to_string(),
+            "DRAFT REVIEW | PUBLISHED".to_string(),
+        );
+        let result = todo_keywords_from_file(&kw);
+        assert_eq!(result.todo, vec!["DRAFT", "REVIEW"]);
+        assert_eq!(result.done, vec!["PUBLISHED"]);
+    }
+
+    #[test]
+    fn from_file_keywords_default() {
+        let kw = std::collections::HashMap::new();
+        let result = todo_keywords_from_file(&kw);
+        assert_eq!(result, TodoKeywords::default());
+    }
+
+    // --- parse_priority_spec ---
+
+    #[test]
+    fn priority_spec_three_values() {
+        let pr = parse_priority_spec("A E B");
+        assert_eq!(pr.highest, 'A');
+        assert_eq!(pr.lowest, 'E');
+        assert_eq!(pr.default, 'B');
+    }
+
+    #[test]
+    fn priority_spec_two_values() {
+        let pr = parse_priority_spec("A D");
+        assert_eq!(pr.highest, 'A');
+        assert_eq!(pr.lowest, 'D');
+    }
+
+    #[test]
+    fn priority_spec_default() {
+        let pr = parse_priority_spec("");
+        assert_eq!(pr, PriorityRange::default());
+    }
+
+    #[test]
+    fn priority_range_valid() {
+        let pr = parse_priority_spec("A E B");
+        assert!(pr.is_valid('A'));
+        assert!(pr.is_valid('C'));
+        assert!(pr.is_valid('E'));
+        assert!(!pr.is_valid('F'));
+        assert!(!pr.is_valid('Z'));
+    }
+
+    #[test]
+    fn priority_range_from_file_kw() {
+        let mut kw = std::collections::HashMap::new();
+        kw.insert("PRIORITIES".to_string(), "A F C".to_string());
+        let pr = priority_range_from_file(&kw);
+        assert_eq!(pr.highest, 'A');
+        assert_eq!(pr.lowest, 'F');
+        assert_eq!(pr.default, 'C');
     }
 }

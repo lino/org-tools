@@ -10,7 +10,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::rules::heading::parse_heading;
+use crate::rules::heading::{
+    parse_heading, parse_heading_with_keywords, priority_range_from_file, todo_keywords_from_file,
+    PriorityRange, TodoKeywords,
+};
 use crate::rules::timestamp::{parse_timestamp, OrgTimestamp};
 use crate::source::SourceFile;
 
@@ -25,6 +28,10 @@ pub struct OrgDocument {
     pub file_properties: HashMap<String, String>,
     /// File-level keywords (`#+KEY: value` before any heading).
     pub file_keywords: HashMap<String, String>,
+    /// TODO keyword configuration parsed from `#+TODO:` / `#+SEQ_TODO:` / `#+TYP_TODO:`.
+    pub todo_keywords: TodoKeywords,
+    /// Priority range parsed from `#+PRIORITIES:`.
+    pub priority_range: PriorityRange,
 }
 
 /// A single heading entry in an org document.
@@ -95,6 +102,12 @@ impl OrgDocument {
         let mut level_stack: Vec<(usize, usize)> = Vec::new();
         let mut i = 0;
         let mut first_heading_seen = false;
+        let mut todo_kw = TodoKeywords::default();
+        let mut pri_range = PriorityRange::default();
+        // Owned keyword strings for the lifetime of parsing; the &str refs
+        // into `kw_refs` are used by `parse_heading_with_keywords`.
+        let mut kw_strs: Vec<String> = todo_kw.all().iter().map(|s| s.to_string()).collect();
+        let mut kw_refs: Vec<&str> = kw_strs.iter().map(|s| s.as_str()).collect();
 
         while i < lines.len() {
             let line = lines[i];
@@ -103,6 +116,11 @@ impl OrgDocument {
             if !first_heading_seen {
                 if parse_heading(line).is_some() {
                     first_heading_seen = true;
+                    // Derive settings from file keywords collected so far.
+                    todo_kw = todo_keywords_from_file(&file_keywords);
+                    kw_strs = todo_kw.all().iter().map(|s| s.to_string()).collect();
+                    kw_refs = kw_strs.iter().map(|s| s.as_str()).collect();
+                    pri_range = priority_range_from_file(&file_keywords);
                     // Fall through to heading processing below.
                 } else {
                     if let Some((key, val)) = parse_keyword_line(line) {
@@ -121,7 +139,7 @@ impl OrgDocument {
                 }
             }
 
-            if let Some(heading) = parse_heading(line) {
+            if let Some(heading) = parse_heading_with_keywords(line, &kw_refs) {
                 let entry_idx = entries.len();
                 let heading_line = i + 1; // 1-based
                 let heading_offset = if i < source.line_count() {
@@ -207,6 +225,8 @@ impl OrgDocument {
             entries,
             file_properties,
             file_keywords,
+            todo_keywords: todo_kw,
+            priority_range: pri_range,
         }
     }
 
@@ -672,5 +692,62 @@ mod tests {
             Some(("AUTHOR".to_string(), "Me".to_string()))
         );
         assert_eq!(parse_keyword_line("not a keyword"), None);
+    }
+
+    // --- Custom TODO keywords ---
+
+    #[test]
+    fn custom_todo_keywords_recognized() {
+        let source = make_source("#+TODO: OPEN | CLOSED WONTFIX\n* OPEN A bug\n* CLOSED Fixed\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.todo_keywords.todo, vec!["OPEN"]);
+        assert_eq!(doc.todo_keywords.done, vec!["CLOSED", "WONTFIX"]);
+        assert_eq!(doc.entries[0].keyword, Some("OPEN".to_string()));
+        assert_eq!(doc.entries[1].keyword, Some("CLOSED".to_string()));
+    }
+
+    #[test]
+    fn custom_todo_default_not_recognized() {
+        // With custom keywords, "TODO" should NOT be recognized as a keyword.
+        let source = make_source("#+TODO: OPEN | CLOSED\n* TODO This is a title\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.entries[0].keyword, None);
+        assert_eq!(doc.entries[0].title, "TODO This is a title");
+    }
+
+    #[test]
+    fn no_todo_setting_uses_defaults() {
+        let source = make_source("* TODO Task\n* DONE Finished\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.entries[0].keyword, Some("TODO".to_string()));
+        assert_eq!(doc.entries[1].keyword, Some("DONE".to_string()));
+    }
+
+    #[test]
+    fn seq_todo_keyword() {
+        let source = make_source("#+SEQ_TODO: DRAFT REVIEW | PUBLISHED\n* REVIEW Article\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.entries[0].keyword, Some("REVIEW".to_string()));
+        assert!(doc.todo_keywords.is_done("PUBLISHED"));
+        assert!(!doc.todo_keywords.is_done("REVIEW"));
+    }
+
+    // --- Custom priorities ---
+
+    #[test]
+    fn custom_priority_range() {
+        let source = make_source("#+PRIORITIES: A E B\n* [#D] Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.priority_range.highest, 'A');
+        assert_eq!(doc.priority_range.lowest, 'E');
+        assert_eq!(doc.priority_range.default, 'B');
+        assert!(doc.priority_range.is_valid('D'));
+    }
+
+    #[test]
+    fn default_priority_range() {
+        let source = make_source("* [#B] Task\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.priority_range, PriorityRange::default());
     }
 }

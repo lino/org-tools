@@ -58,10 +58,10 @@ parse and respect these to avoid false positives and produce correct results.
 
 | Setting                   | Status  | Impact                                           |
 |---------------------------+---------+--------------------------------------------------|
-| =#+TODO:= / =#+SEQ_TODO:= | Planned | Replace hardcoded keyword list; propagate to     |
-| / =#+TYP_TODO:=           |         | heading parser, query predicates, done-state     |
-| =#+PRIORITIES:=           | Planned | Validate cookies against defined range;          |
-|                           |         | propagate to query priority comparisons          |
+| =#+TODO:= / =#+SEQ_TODO:= | Done    | Parsed from file keywords; custom keyword set    |
+| / =#+TYP_TODO:=           |         | used in heading parser, query, done-state        |
+| =#+PRIORITIES:=           | Done    | Parsed from file keywords; range stored on       |
+|                           |         | OrgDocument; ready for lint + query use          |
 | =#+TAGS:= / =#+FILETAGS:= | Planned | Tag validation lint rule; mutually exclusive     |
 |                           |         | groups; query tag inheritance respects file tags |
 | =#+PROPERTY:=             | Planned | File-wide default property values; query should  |
@@ -154,8 +154,8 @@ fast and sufficient for most rules, but has inherent limits:
 | Heading spacing           | No auto-formatting         | Optional blank-line rules  |
 | Babel language validation | Checks against loaded      | Checks against static list |
 |                           | =org-babel-load-languages= |                            |
-| TODO keyword recognition  | Reads =#+TODO:= settings   | Hardcoded common keywords  |
-| Priority range validation | Reads =#+PRIORITIES:=      | Accepts any A-Z            |
+| TODO keyword recognition  | Reads =#+TODO:= settings   | Reads =#+TODO:= settings   |
+| Priority range validation | Reads =#+PRIORITIES:=      | Reads =#+PRIORITIES:=      |
 | Tag validation            | Reads =#+TAGS:= settings   | No validation of tag names |
 
 These divergences are tracked and will be addressed as in-buffer settings

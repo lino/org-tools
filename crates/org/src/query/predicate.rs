@@ -8,12 +8,9 @@ use org_tools_core::rules::timestamp::OrgTimestamp;
 
 use super::parser::{CmpOp, Comparison, DateMatch, DateRef, DateUnit, Predicate, PriorityMatch};
 
-/// Known DONE keywords.
-const DONE_KEYWORDS: &[&str] = &["DONE", "CANCELLED", "CANCELED"];
-
 /// Evaluate a predicate against an entry in a document.
 ///
-/// The `doc` parameter is needed for tag inheritance.
+/// The `doc` parameter is needed for tag inheritance and TODO keyword config.
 pub fn matches(
     pred: &Predicate,
     entry: &OrgEntry,
@@ -28,7 +25,7 @@ pub fn matches(
         Predicate::Done => entry
             .keyword
             .as_deref()
-            .is_some_and(|k| DONE_KEYWORDS.contains(&k)),
+            .is_some_and(|k| doc.todo_keywords.is_done(k)),
         Predicate::Tags(tags) => {
             let entry_idx = doc
                 .entries

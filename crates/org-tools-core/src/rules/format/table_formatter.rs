@@ -161,6 +161,45 @@ fn is_numeric(s: &str) -> bool {
     has_digit && all_valid
 }
 
+/// Compute the display width of a cell, accounting for org link markup.
+///
+/// Org links like `[[target][description]]` display only the description.
+/// Links like `[[target]]` display the target. This matches Emacs
+/// `org-table-align` which uses the visible text width, not raw markup.
+fn cell_display_width(cell: &str) -> usize {
+    UnicodeWidthStr::width(cell_display_text(cell).as_str())
+}
+
+/// Extract the visible text from a cell, collapsing org links.
+fn cell_display_text(cell: &str) -> String {
+    let mut result = String::new();
+    let mut rest = cell;
+
+    while let Some(start) = rest.find("[[") {
+        // Add text before the link.
+        result.push_str(&rest[..start]);
+
+        let after_open = &rest[start + 2..];
+        if let Some(close) = after_open.find("]]") {
+            let link_inner = &after_open[..close];
+            // Check for description: [[target][description]]
+            if let Some(sep) = link_inner.find("][") {
+                result.push_str(&link_inner[sep + 2..]);
+            } else {
+                // No description: [[target]] — display the target.
+                result.push_str(link_inner);
+            }
+            rest = &after_open[close + 2..];
+        } else {
+            // Unclosed link — treat as literal text.
+            result.push_str(&rest[..start + 2]);
+            rest = after_open;
+        }
+    }
+    result.push_str(rest);
+    result
+}
+
 fn parse_data_row(line: &str) -> Vec<String> {
     let stripped = line.strip_prefix('|').unwrap_or(line);
     let stripped = stripped.strip_suffix('|').unwrap_or(stripped);
@@ -187,7 +226,7 @@ fn format_table(table: &Table) -> Option<String> {
         if let TableRow::Data(cells) = row {
             for (j, cell) in cells.iter().enumerate() {
                 if j < num_cols {
-                    col_widths[j] = col_widths[j].max(UnicodeWidthStr::width(cell.as_str()));
+                    col_widths[j] = col_widths[j].max(cell_display_width(cell));
                 }
             }
         }
@@ -251,8 +290,8 @@ fn format_table(table: &Table) -> Option<String> {
                 result.push('|');
                 for (j, &col_width) in col_widths.iter().enumerate() {
                     let cell = cells.get(j).map(|s| s.as_str()).unwrap_or("");
-                    let display_width = UnicodeWidthStr::width(cell);
-                    let padding = col_width - display_width;
+                    let display_width = cell_display_width(cell);
+                    let padding = col_width.saturating_sub(display_width);
                     result.push(' ');
                     if col_numeric[j] {
                         // Right-align numeric columns.
@@ -389,5 +428,58 @@ mod tests {
         assert!(result.contains("#+TBLFM: @2$2=1"));
         // Table should be properly formatted.
         assert!(result.contains("| Name | Val |"));
+    }
+
+    #[test]
+    fn cell_display_text_plain() {
+        assert_eq!(cell_display_text("hello"), "hello");
+    }
+
+    #[test]
+    fn cell_display_text_link_with_desc() {
+        assert_eq!(
+            cell_display_text("[[file:docs/tech.org][docs/tech/]]"),
+            "docs/tech/"
+        );
+    }
+
+    #[test]
+    fn cell_display_text_link_without_desc() {
+        assert_eq!(
+            cell_display_text("[[https://example.com]]"),
+            "https://example.com"
+        );
+    }
+
+    #[test]
+    fn cell_display_text_mixed() {
+        assert_eq!(
+            cell_display_text("See [[file:a.org][link]] here"),
+            "See link here"
+        );
+    }
+
+    #[test]
+    fn table_with_org_links_aligned_by_display_width() {
+        // Emacs aligns by visible text, not raw markup.
+        let input = "\
+| Path                                                    | Contents     |
+|---------------------------------------------------------+--------------|
+| [[file:docs/technical/architecture.org][docs/technical/]] | Architecture |
+| [[file:docs/user/usage.org][docs/user/]]                | Usage guide  |
+";
+        let result = format_it(input);
+        // Both description columns should have the same padding width.
+        // The display texts are "docs/technical/" (15) and "docs/user/" (10).
+        // Column width should be 15 (max display width), not 57 (raw markup width).
+        let lines: Vec<&str> = result.lines().collect();
+        // The separator row width indicates the column width.
+        let sep = lines[1];
+        // First column separator should be much shorter than the raw input's 57-char column.
+        assert!(
+            sep.len() < 80,
+            "separator too wide ({} chars), link markup is being counted: {sep}",
+            sep.len()
+        );
     }
 }

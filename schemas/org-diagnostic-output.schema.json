@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-diagnostic-output.schema.json",
+  "title": "org fmt check JSON output",
+  "description": "Schema for the JSON output of 'org fmt check --format json'.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["file", "line", "column", "severity", "rule_id", "rule", "message", "fixable"],
+    "properties": {
+      "file": {
+        "type": "string",
+        "description": "Path to the org file containing this diagnostic."
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "1-based line number where the diagnostic occurs."
+      },
+      "column": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "1-based column number where the diagnostic occurs."
+      },
+      "severity": {
+        "type": "string",
+        "enum": ["info", "warning", "error"],
+        "description": "Severity level of the diagnostic."
+      },
+      "rule_id": {
+        "type": "string",
+        "description": "Unique rule identifier (e.g., 'F001', 'W001', 'E001')."
+      },
+      "rule": {
+        "type": "string",
+        "description": "Human-readable rule name (e.g., 'trailing-whitespace')."
+      },
+      "message": {
+        "type": "string",
+        "description": "Diagnostic message describing the issue."
+      },
+      "fixable": {
+        "type": "boolean",
+        "description": "Whether this diagnostic can be auto-fixed by 'org fmt format'."
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-mutation-output.schema.json",
+  "title": "org mutation JSON output",
+  "description": "Schema for the JSON output of 'org update' and 'org archive' commands with '--format json'.",
+  "type": "object",
+  "required": ["command", "files_modified", "entries_affected", "dry_run", "details", "errors"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "description": "The mutation command that was executed (e.g., 'add-id', 'set-state', 'calc', 'archive')."
+    },
+    "files_modified": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of files that were modified."
+    },
+    "entries_affected": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of entries that were affected by the mutation."
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "Whether this was a dry-run (no actual changes written)."
+    },
+    "details": {
+      "type": "array",
+      "description": "Per-entry details of what was changed.",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "action", "detail"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Path to the org file."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based line number of the affected entry."
+          },
+          "action": {
+            "type": "string",
+            "description": "The specific action taken (e.g., 'added-id', 'state-changed', 'archived')."
+          },
+          "detail": {
+            "type": ["string", "null"],
+            "description": "Additional detail about the change, or null."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Error messages encountered during the operation."
+    }
+  },
+  "additionalProperties": false
+}

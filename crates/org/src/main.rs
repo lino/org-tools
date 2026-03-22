@@ -103,6 +103,15 @@ enum OrgCommand {
         /// Print what would be archived without writing files.
         #[arg(long)]
         dry_run: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: MutationOutputFormat,
+    },
+    /// Print the JSON schema for a given output type.
+    Schema {
+        /// Schema name (diagnostic, query, blocked, stuck, deps, clock-report, clock-status, mutation).
+        name: String,
     },
 }
 
@@ -269,6 +278,10 @@ enum UpdateCommand {
         /// Pipe entry metadata (JSON) to a command that outputs the ID.
         #[arg(long, conflicts_with = "id_format")]
         id_command: Option<String>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: MutationOutputFormat,
     },
     /// Change the TODO state of entries.
     SetState {
@@ -289,6 +302,10 @@ enum UpdateCommand {
         /// Print what would be changed without writing files.
         #[arg(long)]
         dry_run: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: MutationOutputFormat,
     },
     /// Add a new TODO entry.
     AddTodo {
@@ -330,6 +347,10 @@ enum UpdateCommand {
         /// Print what would be changed without writing files.
         #[arg(long)]
         dry_run: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: MutationOutputFormat,
     },
     /// Update statistic cookies ([/] and [%]) on headings.
     AddCookie {
@@ -344,6 +365,10 @@ enum UpdateCommand {
         /// Print what would be changed without writing files.
         #[arg(long)]
         dry_run: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: MutationOutputFormat,
     },
     /// Evaluate #+TBLFM: table formulas and fill in results.
     Calc {
@@ -358,6 +383,10 @@ enum UpdateCommand {
         /// Recalculate even if cells already have values.
         #[arg(long)]
         force: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: MutationOutputFormat,
     },
 }
 
@@ -449,6 +478,35 @@ enum ExportCommand {
         #[arg(long, value_delimiter = ',')]
         tags: Vec<String>,
     },
+}
+
+/// Output format for mutation commands (update, archive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum MutationOutputFormat {
+    /// Human-readable output.
+    Human,
+    /// JSON output.
+    Json,
+}
+
+/// Structured result from a mutation command.
+#[derive(serde::Serialize)]
+struct MutationResult {
+    command: String,
+    files_modified: usize,
+    entries_affected: usize,
+    dry_run: bool,
+    details: Vec<MutationDetail>,
+    errors: Vec<String>,
+}
+
+/// A single action within a mutation result.
+#[derive(serde::Serialize)]
+struct MutationDetail {
+    file: String,
+    line: usize,
+    action: String,
+    detail: Option<String>,
 }
 
 /// Output format for clock commands.
@@ -562,7 +620,9 @@ fn main() {
             target,
             tags,
             dry_run,
-        } => run_archive(paths, target, tags, dry_run),
+            format,
+        } => run_archive(paths, target, tags, dry_run, format),
+        OrgCommand::Schema { name } => run_schema(&name),
     };
 
     process::exit(exit_code);
@@ -1181,14 +1241,16 @@ fn run_update(command: UpdateCommand) -> i32 {
             dry_run,
             id_format,
             id_command,
-        } => run_add_id(targets, recursive, dry_run, id_format, id_command),
+            format,
+        } => run_add_id(targets, recursive, dry_run, id_format, id_command, format),
         UpdateCommand::SetState {
             state,
             targets,
             stdin,
             no_closed,
             dry_run,
-        } => run_set_state(state, targets, stdin, no_closed, dry_run),
+            format,
+        } => run_set_state(state, targets, stdin, no_closed, dry_run, format),
         UpdateCommand::AddTodo {
             title,
             target,
@@ -1200,19 +1262,69 @@ fn run_update(command: UpdateCommand) -> i32 {
             deadline,
             parent,
             dry_run,
+            format,
         } => run_add_todo(
             title, target, level, keyword, priority, tags, scheduled, deadline, parent, dry_run,
+            format,
         ),
         UpdateCommand::AddCookie {
             paths,
             recursive,
             dry_run,
-        } => run_add_cookie(paths, recursive, dry_run),
+            format,
+        } => run_add_cookie(paths, recursive, dry_run, format),
         UpdateCommand::Calc {
             paths,
             dry_run,
             force: _,
-        } => run_calc(paths, dry_run),
+            format,
+        } => run_calc(paths, dry_run, format),
+    }
+}
+
+/// Output a MutationResult as JSON or human text.
+fn output_mutation(result: &MutationResult, format: MutationOutputFormat) {
+    match format {
+        MutationOutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(result).unwrap_or_default()
+            );
+        }
+        MutationOutputFormat::Human => {
+            for detail in &result.details {
+                let extra = detail
+                    .detail
+                    .as_deref()
+                    .map(|d| format!(" ({d})"))
+                    .unwrap_or_default();
+                if result.dry_run {
+                    println!(
+                        "Would {}: {}:{}{}",
+                        detail.action, detail.file, detail.line, extra
+                    );
+                } else {
+                    println!(
+                        "{}: {}:{}{}",
+                        detail.action, detail.file, detail.line, extra
+                    );
+                }
+            }
+            for err in &result.errors {
+                eprintln!("org: {err}");
+            }
+            if result.entries_affected > 0 {
+                let verb = if result.dry_run {
+                    "Would affect"
+                } else {
+                    "Affected"
+                };
+                println!(
+                    "{verb} {} entries in {} files",
+                    result.entries_affected, result.files_modified
+                );
+            }
+        }
     }
 }
 
@@ -1223,6 +1335,7 @@ fn run_add_id(
     dry_run: bool,
     id_format: Option<String>,
     id_command: Option<String>,
+    _format: MutationOutputFormat,
 ) -> i32 {
     if targets.is_empty() {
         eprintln!("org: no targets specified");
@@ -1530,6 +1643,7 @@ fn run_set_state(
     stdin: bool,
     no_closed: bool,
     dry_run: bool,
+    _format: MutationOutputFormat,
 ) -> i32 {
     if stdin {
         targets.extend(read_stdin_targets());
@@ -1639,6 +1753,7 @@ fn run_add_todo(
     deadline: Option<String>,
     parent: Option<String>,
     dry_run: bool,
+    _format: MutationOutputFormat,
 ) -> i32 {
     // Resolve parent if specified.
     let (file_path, parent_idx, parent_level) = if let Some(ref parent_loc) = parent {
@@ -1723,7 +1838,12 @@ fn run_add_todo(
 }
 
 /// Runs `org update add-cookie`.
-fn run_add_cookie(paths: Vec<PathBuf>, recursive: bool, dry_run: bool) -> i32 {
+fn run_add_cookie(
+    paths: Vec<PathBuf>,
+    recursive: bool,
+    dry_run: bool,
+    _format: MutationOutputFormat,
+) -> i32 {
     let files = collect_org_files(&paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
@@ -1777,6 +1897,7 @@ fn run_archive(
     target_override: Option<String>,
     tags: Vec<String>,
     dry_run: bool,
+    _format: MutationOutputFormat,
 ) -> i32 {
     let files = collect_org_files(&paths);
     if files.is_empty() {
@@ -1861,71 +1982,106 @@ fn run_archive(
 }
 
 /// Runs `org update calc`.
-fn run_calc(paths: Vec<PathBuf>, dry_run: bool) -> i32 {
+fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutputFormat) -> i32 {
     let files = collect_org_files(&paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
         return EXIT_ERROR;
     }
 
-    let mut total_updated = 0;
+    let mut mutation = MutationResult {
+        command: "calc".to_string(),
+        files_modified: 0,
+        entries_affected: 0,
+        dry_run,
+        details: Vec::new(),
+        errors: Vec::new(),
+    };
     let mut has_emacs_error = false;
 
     for file in &files {
         match std::fs::read_to_string(file) {
             Ok(content) => {
-                // Parse constants from the file.
                 let source = match SourceFile::from_path(file) {
                     Ok(s) => s,
                     Err(e) => {
-                        eprintln!("org: error reading {}: {e}", file.display());
+                        mutation.errors.push(format!("{}: {e}", file.display()));
                         continue;
                     }
                 };
                 let doc = OrgDocument::from_source(&source);
-
                 let result = org_tools_core::tblfm::calc_file(&content, &doc.table_constants);
 
                 for err in &result.errors {
-                    match err {
-                        org_tools_core::tblfm::TblfmError::RequiresEmacs(msg) => {
-                            has_emacs_error = true;
-                            eprintln!("org: {}: requires Emacs: {msg}", file.display());
-                        }
-                        other => {
-                            eprintln!("org: {}: {other}", file.display());
-                        }
+                    let msg = format!("{}: {err}", file.display());
+                    if matches!(err, org_tools_core::tblfm::TblfmError::RequiresEmacs(_)) {
+                        has_emacs_error = true;
                     }
+                    mutation.errors.push(msg);
                 }
 
                 if result.cells_updated > 0 {
-                    if dry_run {
-                        println!(
-                            "Would update {} cells in {}",
-                            result.cells_updated,
-                            file.display()
-                        );
-                    } else if let Err(e) = std::fs::write(file, &result.content) {
-                        eprintln!("org: error writing {}: {e}", file.display());
-                    } else {
-                        println!(
-                            "Updated {} cells in {}",
-                            result.cells_updated,
-                            file.display()
-                        );
+                    mutation.files_modified += 1;
+                    mutation.entries_affected += result.cells_updated;
+                    mutation.details.push(MutationDetail {
+                        file: file.display().to_string(),
+                        line: 0,
+                        action: format!("update {} cells", result.cells_updated),
+                        detail: None,
+                    });
+
+                    if !dry_run {
+                        if let Err(e) = std::fs::write(file, &result.content) {
+                            mutation
+                                .errors
+                                .push(format!("{}: write error: {e}", file.display()));
+                        }
                     }
-                    total_updated += result.cells_updated;
                 }
             }
-            Err(e) => eprintln!("org: error reading {}: {e}", file.display()),
+            Err(e) => {
+                mutation.errors.push(format!("{}: {e}", file.display()));
+            }
         }
     }
+
+    output_mutation(&mutation, format);
 
     if has_emacs_error {
         return EXIT_REQUIRES_EMACS;
     }
-    if total_updated == 0 {
-        println!("No formulas to evaluate");
-    }
+    EXIT_OK
+}
+
+/// Runs `org schema`.
+fn run_schema(name: &str) -> i32 {
+    let schema = match name {
+        "diagnostic" | "diagnostics" => {
+            include_str!("../../../schemas/org-diagnostic-output.schema.json")
+        }
+        "query" | "entry" | "entries" => {
+            include_str!("../../../schemas/org-query-output.schema.json")
+        }
+        "blocked" => include_str!("../../../schemas/org-blocked-output.schema.json"),
+        "stuck" => include_str!("../../../schemas/org-stuck-output.schema.json"),
+        "deps" | "dependencies" => include_str!("../../../schemas/org-deps-output.schema.json"),
+        "clock-report" | "clock_report" => {
+            include_str!("../../../schemas/org-clock-report-output.schema.json")
+        }
+        "clock-status" | "clock_status" => {
+            include_str!("../../../schemas/org-clock-status-output.schema.json")
+        }
+        "mutation" | "update" | "archive" => {
+            include_str!("../../../schemas/org-mutation-output.schema.json")
+        }
+        _ => {
+            eprintln!("org: unknown schema: {name}");
+            eprintln!(
+                "Available: diagnostic, query, blocked, stuck, deps, clock-report, clock-status, mutation"
+            );
+            return EXIT_ERROR;
+        }
+    };
+    println!("{schema}");
     EXIT_OK
 }

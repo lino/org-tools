@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-deps-output.schema.json",
+  "title": "org query deps JSON output",
+  "description": "Schema for the JSON output of 'org query deps --format json'.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["source", "source_id", "source_status", "target", "target_id", "target_status", "edge_type"],
+    "properties": {
+      "source": {
+        "type": "string",
+        "description": "Title or locator of the source entry."
+      },
+      "source_id": {
+        "type": "string",
+        "description": "Identifier (ID property or locator) of the source entry."
+      },
+      "source_status": {
+        "type": ["string", "null"],
+        "description": "TODO keyword of the source entry, or null if none."
+      },
+      "target": {
+        "type": "string",
+        "description": "Title or locator of the target entry."
+      },
+      "target_id": {
+        "type": "string",
+        "description": "Identifier (ID property or locator) of the target entry."
+      },
+      "target_status": {
+        "type": ["string", "null"],
+        "description": "TODO keyword of the target entry, or null if none."
+      },
+      "edge_type": {
+        "type": "string",
+        "enum": ["blocks", "triggers"],
+        "description": "Type of dependency edge between source and target."
+      }
+    },
+    "additionalProperties": false
+  }
+}

@@ -937,7 +937,7 @@ fn calc_simple_formula() {
         .arg(file.to_str().unwrap())
         .assert()
         .success()
-        .stdout(predicate::str::contains("Updated 2 cells"));
+        .stdout(predicate::str::contains("update 2 cells"));
 
     let content = fs::read_to_string(&file).unwrap();
     assert!(content.contains("4.5"), "expected 4.5 in: {content}");
@@ -1022,4 +1022,69 @@ fn calc_with_constants() {
         content.contains("78.54") || content.contains("78.5"),
         "expected ~78.54 in: {content}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Schema output
+// ---------------------------------------------------------------------------
+
+#[test]
+fn schema_query() {
+    org()
+        .args(["schema", "query"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("$schema"))
+        .stdout(predicate::str::contains("org-query-output"));
+}
+
+#[test]
+fn schema_diagnostic() {
+    org()
+        .args(["schema", "diagnostic"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("severity"));
+}
+
+#[test]
+fn schema_mutation() {
+    org()
+        .args(["schema", "mutation"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("entries_affected"));
+}
+
+#[test]
+fn schema_unknown_exits_2() {
+    org()
+        .args(["schema", "nonexistent"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("unknown schema"));
+}
+
+#[test]
+fn calc_json_output() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("calc_json.org");
+    fs::write(
+        &file,
+        "\
+| A | B |
+|---+---|
+| 1 | 2 |
+#+TBLFM: $2=$1+1
+",
+    )
+    .unwrap();
+
+    org()
+        .args(["update", "calc", "--format", "json"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"command\""))
+        .stdout(predicate::str::contains("\"entries_affected\""));
 }

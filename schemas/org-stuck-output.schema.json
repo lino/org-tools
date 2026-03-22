@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-stuck-output.schema.json",
+  "title": "org query stuck JSON output",
+  "description": "Schema for the JSON output of 'org query stuck --format json'.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["file", "line", "locator", "keyword", "title", "tags", "children_done", "children_actionable", "children_blocked", "children_waiting"],
+    "properties": {
+      "file": {
+        "type": "string",
+        "description": "Path to the org file containing this stuck project."
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "1-based line number of the heading."
+      },
+      "locator": {
+        "type": "string",
+        "description": "OrgLocator string for this entry."
+      },
+      "keyword": {
+        "type": ["string", "null"],
+        "description": "TODO keyword or null if none."
+      },
+      "title": {
+        "type": "string",
+        "description": "Heading title text."
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Tags on this heading."
+      },
+      "children_done": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of child entries in a done state."
+      },
+      "children_actionable": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of child entries in an actionable state."
+      },
+      "children_blocked": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of child entries that are blocked."
+      },
+      "children_waiting": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of child entries in a waiting state."
+      }
+    },
+    "additionalProperties": false
+  }
+}

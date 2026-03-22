@@ -32,6 +32,7 @@ compose via Unix pipes.
 | =org clock=     | Clock reports, running status        | Done   |
 | =org export=    | iCalendar, JSCalendar export         | Done   |
 | =org archive=   | Archive done entries                 | Done   |
+| =org schema=    | Print JSON schemas for output types  | Done   |
 | /org-edna/      | Dependency lint + query              | Done   |
 | =org query= GTD | next, inbox, waiting, blocked, stuck | Done   |
 

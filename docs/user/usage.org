@@ -499,13 +499,15 @@ directories, or OrgLocator strings.
 org update add-id [OPTIONS] <TARGETS>...
 #+end_src
 
-| Option               | Description                                           |
-|----------------------+-------------------------------------------------------|
-| =--recursive, -r=    | Include descendant entries when targeting via locator |
-| =--dry-run=          | Print what would be changed without writing files     |
-| =--id-format <TMPL>= | Generate IDs from a template with ={placeholders}=    |
-| =--id-command <CMD>= | Pipe entry metadata (JSON) to a command that outputs  |
-|                      | the ID                                                |
+| Option               | Description                                                 |
+|----------------------+-------------------------------------------------------------|
+| =--recursive, -r=    | Include descendant entries when targeting via locator       |
+| =--dry-run=          | Print what would be changed without writing files           |
+| =--format human=     | Human-readable output (default)                             |
+| =--format json=      | JSON output (see =schemas/org-mutation-output.schema.json=) |
+| =--id-format <TMPL>= | Generate IDs from a template with ={placeholders}=          |
+| =--id-command <CMD>= | Pipe entry metadata (JSON) to a command that outputs        |
+|                      | the ID                                                      |
 
 The =--id-format= template supports these placeholders: ={uuid}=, ={uuid_short}=,
 ={file_stem}=, ={title_slug}=, ={level}=, ={index}=, ={ts}=.
@@ -537,11 +539,13 @@ automatically (unless =--no-closed= is passed).
 org update set-state [OPTIONS] <STATE> <TARGETS>...
 #+end_src
 
-| Option        | Description                                                |
-|---------------+------------------------------------------------------------|
-| =--stdin=     | Read additional locator targets from stdin (one per line)  |
-| =--no-closed= | Don't add/remove =CLOSED: = timestamp on state transitions |
-| =--dry-run=   | Print what would be changed without writing files          |
+| Option           | Description                                                 |
+|------------------+-------------------------------------------------------------|
+| =--stdin=        | Read additional locator targets from stdin (one per line)   |
+| =--no-closed=    | Don't add/remove =CLOSED: = timestamp on state transitions  |
+| =--dry-run=      | Print what would be changed without writing files           |
+| =--format human= | Human-readable output (default)                             |
+| =--format json=  | JSON output (see =schemas/org-mutation-output.schema.json=) |
 
 #+begin_src sh
 # Mark a specific entry as DONE
@@ -566,16 +570,18 @@ Add a new TODO entry to a file or as a child of an existing heading.
 org update add-todo [OPTIONS] <TITLE> [TARGET]
 #+end_src
 
-| Option               | Description                                           |
-|----------------------+-------------------------------------------------------|
-| =--level N=          | Heading level (default: 1, or parent+1 with --parent) |
-| =--keyword <WORD>=   | TODO keyword (default: =TODO=)                        |
-| =--priority <CHAR>=  | Priority letter (A-Z)                                 |
-| =--tags <TAGS>=      | Tags, comma-separated                                 |
-| =--scheduled <DATE>= | SCHEDULED date (YYYY-MM-DD)                           |
-| =--deadline <DATE>=  | DEADLINE date (YYYY-MM-DD)                            |
-| =--parent <LOC>=     | Insert as child of this locator target                |
-| =--dry-run=          | Print what would be changed without writing files     |
+| Option               | Description                                                 |
+|----------------------+-------------------------------------------------------------|
+| =--level N=          | Heading level (default: 1, or parent+1 with --parent)       |
+| =--keyword <WORD>=   | TODO keyword (default: =TODO=)                              |
+| =--priority <CHAR>=  | Priority letter (A-Z)                                       |
+| =--tags <TAGS>=      | Tags, comma-separated                                       |
+| =--scheduled <DATE>= | SCHEDULED date (YYYY-MM-DD)                                 |
+| =--deadline <DATE>=  | DEADLINE date (YYYY-MM-DD)                                  |
+| =--parent <LOC>=     | Insert as child of this locator target                      |
+| =--dry-run=          | Print what would be changed without writing files           |
+| =--format human=     | Human-readable output (default)                             |
+| =--format json=      | JSON output (see =schemas/org-mutation-output.schema.json=) |
 
 #+begin_src sh
 # Add a top-level TODO to a file
@@ -602,10 +608,12 @@ state of child entries.
 org update add-cookie [OPTIONS] [PATHS...]
 #+end_src
 
-| Option            | Description                                        |
-|-------------------+----------------------------------------------------|
-| =--recursive, -r= | Insert cookies on headings that don't have one yet |
-| =--dry-run=       | Print what would be changed without writing files  |
+| Option            | Description                                                 |
+|-------------------+-------------------------------------------------------------|
+| =--recursive, -r= | Insert cookies on headings that don't have one yet          |
+| =--dry-run=       | Print what would be changed without writing files           |
+| =--format human=  | Human-readable output (default)                             |
+| =--format json=   | JSON output (see =schemas/org-mutation-output.schema.json=) |
 
 #+begin_src sh
 # Recalculate all cookies in a file
@@ -627,10 +635,12 @@ basic arithmetic and common aggregation functions without requiring Emacs.
 org update calc [OPTIONS] [PATHS...]
 #+end_src
 
-| Option      | Description                                       |
-|-------------+---------------------------------------------------|
-| =--dry-run= | Print what would be changed without writing files |
-| =--force=   | Recalculate even if cells already have values     |
+| Option           | Description                                                 |
+|------------------+-------------------------------------------------------------|
+| =--dry-run=      | Print what would be changed without writing files           |
+| =--force=        | Recalculate even if cells already have values               |
+| =--format human= | Human-readable output (default)                             |
+| =--format json=  | JSON output (see =schemas/org-mutation-output.schema.json=) |
 
 *** Supported features
 
@@ -775,6 +785,39 @@ org export jscal ~/org/ > events.json
 org export jscal --output events.json --from 2026-01-01 --to 2026-12-31 ~/org/
 #+end_src
 
+* Schema (=org schema=)
+
+Print the JSON schema for any org-tools output type. Useful for validating
+JSON output in scripts or generating types for downstream tooling.
+
+#+begin_src sh
+org schema <NAME>
+#+end_src
+
+| Name           | Aliases             | Describes output of               |
+|----------------+---------------------+-----------------------------------|
+| =diagnostic=   |                     | =org fmt check --format json=     |
+| =query=        | =entry=, =entries=  | =org query search --format json=  |
+| =blocked=      |                     | =org query blocked --format json= |
+| =stuck=        |                     | =org query stuck --format json=   |
+| =deps=         | =dependencies=      | =org query deps --format json=    |
+| =clock-report= |                     | =org clock report --format json=  |
+| =clock-status= |                     | =org clock status --format json=  |
+| =mutation=     | =update=, =archive= | Mutation commands =--format json= |
+
+Schema files are also available in =schemas/= in the repository.
+
+#+begin_src sh
+# Print the diagnostic schema
+org schema diagnostic
+
+# Print the mutation schema (used by update and archive commands)
+org schema mutation
+
+# Pipe into a file for use with json-schema validators
+org schema query > org-query-output.schema.json
+#+end_src
+
 * Archive (=org archive=)
 
 Move done entries to an archive file. By default, entries are archived to
@@ -790,6 +833,8 @@ org archive [OPTIONS] [PATHS...]
 | =--target <SPEC>= | Archive target (=file::heading=). Overrides =#+ARCHIVE:= setting |
 | =--tags <TAGS>=   | Filter to entries with these tags                                |
 | =--dry-run=       | Print what would be archived without writing files               |
+| =--format human=  | Human-readable output (default)                                  |
+| =--format json=   | JSON output (see =schemas/org-mutation-output.schema.json=)      |
 
 #+begin_src sh
 # Archive done entries in the current directory (dry run first)

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-clock-status-output.schema.json",
+  "title": "org clock status JSON output",
+  "description": "Schema for the JSON output of 'org clock status --format json'.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["file", "line", "keyword", "title", "tags", "since"],
+    "properties": {
+      "file": {
+        "type": "string",
+        "description": "Path to the org file containing the actively clocked entry."
+      },
+      "line": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "1-based line number of the heading."
+      },
+      "keyword": {
+        "type": ["string", "null"],
+        "description": "TODO keyword or null if none."
+      },
+      "title": {
+        "type": "string",
+        "description": "Heading title text."
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Tags on this heading."
+      },
+      "since": {
+        "type": "string",
+        "description": "ISO 8601 or org-mode timestamp indicating when the clock started."
+      }
+    },
+    "additionalProperties": false
+  }
+}

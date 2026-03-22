@@ -1,0 +1,89 @@
+#+TITLE: GTD Test Fixture
+#+FILETAGS: :project:
+#+TODO: TODO NEXT WAITING | DONE CANCELLED
+
+* TODO Inbox item without tags
+No tags, no scheduling — should appear in inbox.
+
+* TODO Inbox item two
+Another unprocessed item.
+
+* TODO Scheduled task :@office:
+SCHEDULED: <2026-03-25 Wed>
+Has a tag and schedule — should NOT appear in inbox.
+
+* TODO Tagged task :@home:
+Has tags but no scheduling.
+
+* NEXT Actionable task :@office:work:
+This should show up in next actions under @office.
+
+* NEXT Another office task :@office:
+SCHEDULED: <2026-03-22 Sun>
+Also actionable and in @office context.
+
+* NEXT Task without context
+Actionable but no @context tag.
+
+* WAITING Response from vendor :@office:
+:PROPERTIES:
+:WAITING_FOR: John at Acme Corp
+:END:
+
+* WAITING Approval from legal
+:PROPERTIES:
+:WAITING_FOR: Legal department
+:END:
+
+* TODO Task with waiting property :work:
+:PROPERTIES:
+:WAITING_FOR: External review
+:END:
+
+* DONE Completed task :@home:
+CLOSED: [2026-03-20 Thu 14:00]
+
+* TODO Project with actionable children :project:
+** TODO Subtask A
+** NEXT Subtask B :@office:
+** DONE Subtask C
+CLOSED: [2026-03-19 Wed 10:00]
+
+* TODO Stuck project one :project:
+** DONE Phase 1
+CLOSED: [2026-03-18 Tue 09:00]
+** WAITING Phase 2
+:PROPERTIES:
+:WAITING_FOR: Vendor delivery
+:END:
+** TODO Phase 3 (blocked)
+:PROPERTIES:
+:BLOCKER: previous-sibling
+:END:
+
+* TODO Stuck project two :project:
+** DONE Step A
+CLOSED: [2026-03-17 Mon 08:00]
+** DONE Step B
+CLOSED: [2026-03-18 Tue 08:00]
+
+* TODO Blocked by dependency :work:
+:PROPERTIES:
+:BLOCKER: ids("dep-alpha")
+:END:
+
+* TODO Dependency task
+:PROPERTIES:
+:ID: dep-alpha
+:END:
+This task blocks "Blocked by dependency" above.
+
+* TODO Multi-blocked task
+:PROPERTIES:
+:BLOCKER: ids("dep-alpha" "dep-beta")
+:END:
+
+* NEXT Beta dependency
+:PROPERTIES:
+:ID: dep-beta
+:END:

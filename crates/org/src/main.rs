@@ -126,6 +126,80 @@ enum QueryCommand {
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
     },
+    /// Show blocked entries with dependency details.
+    Blocked {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+
+        /// Maximum results to return.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// GTD next actions: actionable tasks grouped by context.
+    Next {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Filter to a specific @context tag.
+        #[arg(long)]
+        context: Option<String>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+
+        /// Maximum results to return.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// GTD inbox: entries with TODO keywords but no tags and no planning dates.
+    Inbox {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+
+        /// Maximum results to return.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// GTD waiting-for: entries in a waiting state.
+    Waiting {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+
+        /// Maximum results to return.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// GTD stuck projects: projects with no actionable children.
+    Stuck {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: QueryOutputFormat,
+
+        /// Maximum results to return.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
     /// Show org-edna dependency graph.
     Deps {
         /// Files or directories to scan.
@@ -586,6 +660,23 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
     }
 }
 
+/// Load all org documents from the given paths.
+fn load_docs(paths: &[PathBuf]) -> Vec<OrgDocument> {
+    let files = collect_org_files(paths);
+    if files.is_empty() {
+        eprintln!("org: no .org files found");
+        return Vec::new();
+    }
+    let mut docs: Vec<OrgDocument> = Vec::new();
+    for file in &files {
+        match SourceFile::from_path(file) {
+            Ok(source) => docs.push(OrgDocument::from_source(&source)),
+            Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+        }
+    }
+    docs
+}
+
 /// Runs the `query` subcommand.
 fn run_query(command: QueryCommand) -> i32 {
     match command {
@@ -732,6 +823,285 @@ fn run_query(command: QueryCommand) -> i32 {
             } else {
                 1
             }
+        }
+        QueryCommand::Blocked {
+            paths,
+            format,
+            limit,
+        } => {
+            let docs = load_docs(&paths);
+            if docs.is_empty() {
+                return 2;
+            }
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
+
+            let today = date::current_date();
+            let pred = query::parser::Predicate::Blocked;
+            let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
+            for doc in &docs {
+                for (idx, entry) in doc.entries.iter().enumerate() {
+                    if query::predicate::matches(&pred, entry, doc, &doc_refs, today) {
+                        matches.push(query::output::MatchedEntry {
+                            doc,
+                            entry_idx: idx,
+                        });
+                    }
+                }
+            }
+
+            if let Some(n) = limit {
+                matches.truncate(n);
+            }
+
+            if matches.is_empty() {
+                eprintln!("org: no blocked entries found");
+                return 1;
+            }
+
+            match format {
+                QueryOutputFormat::Human => {
+                    print!(
+                        "{}",
+                        query::output::render_blocked_human(&matches, &doc_refs)
+                    )
+                }
+                QueryOutputFormat::Json => {
+                    print!(
+                        "{}",
+                        query::output::render_blocked_json(&matches, &doc_refs)
+                    )
+                }
+                QueryOutputFormat::Locator => {
+                    print!("{}", query::output::render_locators(&matches))
+                }
+            }
+
+            0
+        }
+        QueryCommand::Next {
+            paths,
+            context,
+            format,
+            limit,
+        } => {
+            let docs = load_docs(&paths);
+            if docs.is_empty() {
+                return 2;
+            }
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
+
+            let today = date::current_date();
+            let pred = query::parser::Predicate::Actionable;
+            let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
+            for doc in &docs {
+                for (idx, entry) in doc.entries.iter().enumerate() {
+                    if query::predicate::matches(&pred, entry, doc, &doc_refs, today) {
+                        // If a context filter is set, check for that tag.
+                        if let Some(ref ctx_tag) = context {
+                            let inherited = doc.inherited_tags(idx);
+                            if !inherited.iter().any(|t| t.eq_ignore_ascii_case(ctx_tag)) {
+                                continue;
+                            }
+                        }
+                        matches.push(query::output::MatchedEntry {
+                            doc,
+                            entry_idx: idx,
+                        });
+                    }
+                }
+            }
+
+            if let Some(n) = limit {
+                matches.truncate(n);
+            }
+
+            if matches.is_empty() {
+                eprintln!("org: no actionable entries found");
+                return 1;
+            }
+
+            match format {
+                QueryOutputFormat::Human => {
+                    print!("{}", query::output::render_grouped_by_context(&matches))
+                }
+                QueryOutputFormat::Json => {
+                    print!("{}", query::output::render_json(&matches, &doc_refs))
+                }
+                QueryOutputFormat::Locator => {
+                    print!("{}", query::output::render_locators(&matches))
+                }
+            }
+
+            0
+        }
+        QueryCommand::Inbox {
+            paths,
+            format,
+            limit,
+        } => {
+            let docs = load_docs(&paths);
+            if docs.is_empty() {
+                return 2;
+            }
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
+
+            let today = date::current_date();
+            let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
+            for doc in &docs {
+                for (idx, entry) in doc.entries.iter().enumerate() {
+                    // Inbox = has a TODO keyword, not done, no tags, no SCHEDULED/DEADLINE.
+                    let has_todo = entry.keyword.is_some()
+                        && !entry
+                            .keyword
+                            .as_deref()
+                            .is_some_and(|k| doc.todo_keywords.is_done(k));
+                    if !has_todo {
+                        continue;
+                    }
+                    let all_tags = doc.inherited_tags(idx);
+                    if !all_tags.is_empty() {
+                        continue;
+                    }
+                    if entry.planning.scheduled.is_some() || entry.planning.deadline.is_some() {
+                        continue;
+                    }
+                    matches.push(query::output::MatchedEntry {
+                        doc,
+                        entry_idx: idx,
+                    });
+                }
+            }
+            // Suppress unused variable warning — today is used in other branches.
+            let _ = today;
+
+            if let Some(n) = limit {
+                matches.truncate(n);
+            }
+
+            if matches.is_empty() {
+                eprintln!("org: inbox is empty");
+                return 1;
+            }
+
+            match format {
+                QueryOutputFormat::Human => print!("{}", query::output::render_human(&matches)),
+                QueryOutputFormat::Json => {
+                    print!("{}", query::output::render_json(&matches, &doc_refs))
+                }
+                QueryOutputFormat::Locator => {
+                    print!("{}", query::output::render_locators(&matches))
+                }
+            }
+
+            0
+        }
+        QueryCommand::Waiting {
+            paths,
+            format,
+            limit,
+        } => {
+            let docs = load_docs(&paths);
+            if docs.is_empty() {
+                return 2;
+            }
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
+
+            let today = date::current_date();
+            let pred = query::parser::Predicate::Waiting;
+            let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
+            for doc in &docs {
+                for (idx, entry) in doc.entries.iter().enumerate() {
+                    if query::predicate::matches(&pred, entry, doc, &doc_refs, today) {
+                        matches.push(query::output::MatchedEntry {
+                            doc,
+                            entry_idx: idx,
+                        });
+                    }
+                }
+            }
+
+            if let Some(n) = limit {
+                matches.truncate(n);
+            }
+
+            if matches.is_empty() {
+                eprintln!("org: no waiting entries found");
+                return 1;
+            }
+
+            match format {
+                QueryOutputFormat::Human => {
+                    print!("{}", query::output::render_waiting_human(&matches))
+                }
+                QueryOutputFormat::Json => {
+                    print!("{}", query::output::render_json(&matches, &doc_refs))
+                }
+                QueryOutputFormat::Locator => {
+                    print!("{}", query::output::render_locators(&matches))
+                }
+            }
+
+            0
+        }
+        QueryCommand::Stuck {
+            paths,
+            format,
+            limit,
+        } => {
+            let docs = load_docs(&paths);
+            if docs.is_empty() {
+                return 2;
+            }
+            let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
+
+            let today = date::current_date();
+            let stuck = query::output::find_stuck_projects(&docs, &doc_refs, today);
+
+            if let Some(n) = limit {
+                let stuck = &stuck[..stuck.len().min(n)];
+                if stuck.is_empty() {
+                    eprintln!("org: no stuck projects found");
+                    return 1;
+                }
+                match format {
+                    QueryOutputFormat::Human => {
+                        print!("{}", query::output::render_stuck_human(stuck))
+                    }
+                    QueryOutputFormat::Json => {
+                        print!("{}", query::output::render_stuck_json(stuck))
+                    }
+                    QueryOutputFormat::Locator => {
+                        for sp in stuck {
+                            let loc =
+                                org_tools_core::locator::locator_for_entry(sp.doc, sp.entry_idx);
+                            println!("{loc}");
+                        }
+                    }
+                }
+                return 0;
+            }
+
+            if stuck.is_empty() {
+                eprintln!("org: no stuck projects found");
+                return 1;
+            }
+
+            match format {
+                QueryOutputFormat::Human => {
+                    print!("{}", query::output::render_stuck_human(&stuck))
+                }
+                QueryOutputFormat::Json => {
+                    print!("{}", query::output::render_stuck_json(&stuck))
+                }
+                QueryOutputFormat::Locator => {
+                    for sp in &stuck {
+                        let loc = org_tools_core::locator::locator_for_entry(sp.doc, sp.entry_idx);
+                        println!("{loc}");
+                    }
+                }
+            }
+
+            0
         }
         QueryCommand::Deps {
             paths,

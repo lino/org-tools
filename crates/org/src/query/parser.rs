@@ -53,6 +53,8 @@ pub enum Predicate {
     Blocked,
     /// Match actionable entries: TODO keyword and not blocked by edna.
     Actionable,
+    /// Match entries in a waiting state (keyword contains "WAIT" or has `:WAITING_FOR:` property).
+    Waiting,
     /// Logical AND of predicates.
     And(Vec<Predicate>),
     /// Logical OR of predicates.
@@ -319,6 +321,7 @@ fn parse_term(term: &str) -> Result<Predicate, ParseError> {
         "todo" | "TODO" => return Ok(Predicate::Todo(None)),
         "blocked" => return Ok(Predicate::Blocked),
         "actionable" => return Ok(Predicate::Actionable),
+        "waiting" | "WAITING" => return Ok(Predicate::Waiting),
         _ => {}
     }
 
@@ -673,6 +676,12 @@ mod tests {
     fn parse_deadline_past() {
         let p = parse_query("deadline:past").unwrap();
         assert_eq!(p, Predicate::Deadline(DateMatch::Past));
+    }
+
+    #[test]
+    fn parse_waiting() {
+        let p = parse_query("waiting").unwrap();
+        assert_eq!(p, Predicate::Waiting);
     }
 
     #[test]

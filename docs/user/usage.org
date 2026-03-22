@@ -291,6 +291,7 @@ org query search 'level:<=3'                     # level comparison
 org query search 'clocked'                       # has clock entries
 org query search 'blocked'                       # blocked by edna BLOCKER
 org query search 'actionable'                    # not blocked, ready to work on
+org query search 'waiting'                       # in WAITING state or has WAITING_FOR
 
 # Date predicates
 org query search 'scheduled:today'
@@ -340,6 +341,132 @@ org query deps --format json ~/org/projects/
 
 # PlantUML output
 org query deps --format plantuml ~/org/projects/ > deps.puml
+#+end_src
+
+** Next Actions (=org query next=)
+
+Show actionable tasks (TODO state, not blocked) grouped by =@context= tags.
+
+#+begin_src sh
+org query next [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                              |
+|--------------------+----------------------------------------------------------|
+| =--context @tag=   | Filter to a specific context tag                         |
+| =--format human=   | Human-readable output grouped by context (default)       |
+| =--format json=    | JSON output (see =schemas/org-query-output.schema.json=) |
+| =--format locator= | One OrgLocator per line (for piping)                     |
+| =--limit N=        | Maximum results to return                                |
+
+#+begin_src sh
+# Show all next actions grouped by context
+org query next ~/org/
+
+# Filter to a specific context
+org query next --context @office ~/org/
+
+# JSON output for tooling
+org query next --format json ~/org/
+
+# Pipe to set-state
+org query next --format locator ~/org/ | org update set-state DONE --stdin
+#+end_src
+
+** Inbox (=org query inbox=)
+
+Show entries with a TODO keyword but no tags and no SCHEDULED or DEADLINE
+timestamp. These are uncategorised items that need processing.
+
+#+begin_src sh
+org query inbox [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                              |
+|--------------------+----------------------------------------------------------|
+| =--format human=   | Human-readable output (default)                          |
+| =--format json=    | JSON output (see =schemas/org-query-output.schema.json=) |
+| =--format locator= | One OrgLocator per line (for piping)                     |
+| =--limit N=        | Maximum results to return                                |
+
+#+begin_src sh
+# Show inbox items across all org files
+org query inbox ~/org/
+
+# Limit results
+org query inbox --limit 10 ~/org/
+#+end_src
+
+** Waiting (=org query waiting=)
+
+Show entries in WAITING state or with a =:WAITING_FOR:= property. Human output
+includes the waiting-for value when present.
+
+#+begin_src sh
+org query waiting [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                              |
+|--------------------+----------------------------------------------------------|
+| =--format human=   | Human-readable output with waiting-for detail (default)  |
+| =--format json=    | JSON output (see =schemas/org-query-output.schema.json=) |
+| =--format locator= | One OrgLocator per line (for piping)                     |
+| =--limit N=        | Maximum results to return                                |
+
+#+begin_src sh
+# Show all waiting entries
+org query waiting ~/org/
+
+# JSON output includes waiting_for field
+org query waiting --format json ~/org/
+#+end_src
+
+** Blocked (=org query blocked=)
+
+Show blocked tasks with dependency details. Human output shows which entries
+block each task and why. JSON output includes a =blocking_entries= array.
+
+#+begin_src sh
+org query blocked [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                          |
+|--------------------+------------------------------------------------------|
+| =--format human=   | Human-readable output with blocker details (default) |
+| =--format json=    | JSON output with =blocking_entries= array            |
+| =--format locator= | One OrgLocator per line (for piping)                 |
+| =--limit N=        | Maximum results to return                            |
+
+#+begin_src sh
+# Show all blocked tasks with dependency details
+org query blocked ~/org/
+
+# JSON output for programmatic consumption
+org query blocked --format json ~/org/projects/
+#+end_src
+
+** Stuck Projects (=org query stuck=)
+
+Show "stuck projects" — entries that have TODO children but none of them are
+actionable. Human output includes a summary of child states.
+
+#+begin_src sh
+org query stuck [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                              |
+|--------------------+----------------------------------------------------------|
+| =--format human=   | Human-readable output with child state summary (default) |
+| =--format json=    | JSON output (see =schemas/org-query-output.schema.json=) |
+| =--format locator= | One OrgLocator per line (for piping)                     |
+| =--limit N=        | Maximum results to return                                |
+
+#+begin_src sh
+# Show stuck projects
+org query stuck ~/org/
+
+# JSON output
+org query stuck --format json ~/org/projects/
 #+end_src
 
 ** Piping

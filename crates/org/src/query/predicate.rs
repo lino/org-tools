@@ -73,13 +73,22 @@ pub fn matches(
             edna::is_blocked(&ctx)
         }
         Predicate::Actionable => {
-            // Actionable = has a TODO keyword AND is not blocked.
+            // Actionable = has a TODO keyword, not done, not waiting, not blocked.
             let has_todo = entry.keyword.is_some()
                 && !entry
                     .keyword
                     .as_deref()
                     .is_some_and(|k| doc.todo_keywords.is_done(k));
             if !has_todo {
+                return false;
+            }
+            // Exclude waiting entries.
+            let is_waiting = entry
+                .keyword
+                .as_deref()
+                .is_some_and(|kw| kw.to_uppercase().contains("WAIT"))
+                || entry.properties.contains_key("WAITING_FOR");
+            if is_waiting {
                 return false;
             }
             let entry_idx = doc
@@ -93,6 +102,14 @@ pub fn matches(
                 entry_idx,
             };
             !edna::is_blocked(&ctx)
+        }
+        Predicate::Waiting => {
+            // Waiting = keyword contains "WAIT" or has :WAITING_FOR: property.
+            let kw_waiting = entry
+                .keyword
+                .as_deref()
+                .is_some_and(|kw| kw.to_uppercase().contains("WAIT"));
+            kw_waiting || entry.properties.contains_key("WAITING_FOR")
         }
         Predicate::And(preds) => preds
             .iter()
@@ -370,5 +387,25 @@ mod tests {
     fn done_entry_not_actionable() {
         let (doc, idx) = make_doc_and_entry("* DONE Task\n");
         assert!(!eval(&Predicate::Actionable, &doc, idx));
+    }
+
+    #[test]
+    fn match_waiting_keyword() {
+        let (doc, idx) =
+            make_doc_and_entry("#+TODO: TODO WAITING | DONE\n* WAITING Response from vendor\n");
+        assert!(eval(&Predicate::Waiting, &doc, idx));
+    }
+
+    #[test]
+    fn match_waiting_property() {
+        let (doc, idx) =
+            make_doc_and_entry("* TODO Follow up\n:PROPERTIES:\n:WAITING_FOR: John\n:END:\n");
+        assert!(eval(&Predicate::Waiting, &doc, idx));
+    }
+
+    #[test]
+    fn not_waiting_for_regular_todo() {
+        let (doc, idx) = make_doc_and_entry("* TODO Regular task\n");
+        assert!(!eval(&Predicate::Waiting, &doc, idx));
     }
 }

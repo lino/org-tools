@@ -15,6 +15,7 @@
 //! Ref: <https://www.nongnu.org/org-edna-el/>
 
 use crate::document::{OrgDocument, OrgEntry};
+use crate::locator::locator_for_entry;
 
 // ---------------------------------------------------------------------------
 // AST types
@@ -712,6 +713,144 @@ pub struct EdnaContext<'a> {
     pub doc: &'a OrgDocument,
     /// Index of the entry being evaluated within `doc`.
     pub entry_idx: usize,
+}
+
+/// Details about a single blocking dependency.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockerDetail {
+    /// Title of the blocking entry.
+    pub title: String,
+    /// Current TODO keyword of the blocking entry.
+    pub keyword: Option<String>,
+    /// File path of the blocking entry.
+    pub file: String,
+    /// Line number of the blocking entry.
+    pub line: usize,
+    /// Locator string for the blocking entry.
+    pub locator: String,
+    /// Human-readable description of the unsatisfied condition.
+    pub condition_desc: String,
+}
+
+/// Get structured details about why an entry is blocked.
+///
+/// Returns a list of [`BlockerDetail`] for each unsatisfied dependency.
+/// Returns an empty vec if the entry is not blocked or has no `:BLOCKER:` property.
+pub fn blocking_details(ctx: &EdnaContext<'_>) -> Vec<BlockerDetail> {
+    let entry = &ctx.doc.entries[ctx.entry_idx];
+    let blocker_value = match entry.properties.get("BLOCKER") {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+
+    let (exprs, _errors) = parse_edna(blocker_value);
+    if exprs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut targets: Vec<ResolvedEntry<'_>> = Vec::new();
+    let mut has_explicit_condition = false;
+    let mut details = Vec::new();
+
+    for expr in &exprs {
+        match expr {
+            EdnaExpr::Finder(finder) => {
+                targets = resolve_finder(finder, ctx);
+            }
+            EdnaExpr::Condition(condition) => {
+                has_explicit_condition = true;
+                let desc = condition_description(condition);
+                for t in &targets {
+                    if !evaluate_condition_single(condition, t) {
+                        details.push(make_blocker_detail(t, &desc));
+                    }
+                }
+            }
+            EdnaExpr::If { cond, then, else_ } => {
+                let branch = if evaluate_if_condition(cond, &targets) {
+                    then
+                } else {
+                    else_
+                };
+                for sub_expr in branch {
+                    if let EdnaExpr::Condition(c) = sub_expr {
+                        has_explicit_condition = true;
+                        let desc = condition_description(c);
+                        for t in &targets {
+                            if !evaluate_condition_single(c, t) {
+                                details.push(make_blocker_detail(t, &desc));
+                            }
+                        }
+                    }
+                }
+            }
+            EdnaExpr::Action(_) => {}
+        }
+    }
+
+    if !has_explicit_condition {
+        // Default condition: all targets must be done.
+        for t in &targets {
+            let is_done = t
+                .entry()
+                .keyword
+                .as_deref()
+                .is_some_and(|kw| t.doc.todo_keywords.is_done(kw));
+            if !is_done {
+                details.push(make_blocker_detail(t, "must be done"));
+            }
+        }
+    }
+
+    details
+}
+
+/// Create a [`BlockerDetail`] from a resolved entry.
+fn make_blocker_detail(target: &ResolvedEntry<'_>, condition_desc: &str) -> BlockerDetail {
+    let entry = target.entry();
+    let locator = locator_for_entry(target.doc, target.entry_idx);
+    BlockerDetail {
+        title: entry.title.clone(),
+        keyword: entry.keyword.clone(),
+        file: target.doc.file.display().to_string(),
+        line: entry.heading_line,
+        locator: locator.to_string(),
+        condition_desc: condition_desc.to_string(),
+    }
+}
+
+/// Human-readable description of what a condition requires.
+fn condition_description(condition: &Condition) -> String {
+    match condition {
+        Condition::TodoState(kw) => format!("must have state {kw}"),
+        Condition::HasProperty(key, value) => format!("must have property {key}={value}"),
+        Condition::ReSearch(re) => format!("must match regex {re}"),
+        Condition::VariableSet(var, val) => format!("variable {var} must be {val}"),
+        Condition::HasTags(tags) => format!("must have tags {}", tags.join(", ")),
+    }
+}
+
+/// Evaluate a condition against a single resolved entry.
+fn evaluate_condition_single(condition: &Condition, target: &ResolvedEntry<'_>) -> bool {
+    match condition {
+        Condition::TodoState(keyword) => target
+            .entry()
+            .keyword
+            .as_deref()
+            .is_some_and(|kw| kw.eq_ignore_ascii_case(keyword)),
+        Condition::HasProperty(key, value) => target
+            .entry()
+            .properties
+            .get(key.as_str())
+            .is_some_and(|v| v == value),
+        Condition::HasTags(required_tags) => {
+            let inherited = target.doc.inherited_tags(target.entry_idx);
+            required_tags
+                .iter()
+                .all(|req| inherited.iter().any(|tag| tag.eq_ignore_ascii_case(req)))
+        }
+        Condition::ReSearch(_) | Condition::VariableSet(_, _) => true,
+    }
 }
 
 /// Check whether an entry is blocked by its `:BLOCKER:` property.
@@ -1488,5 +1627,122 @@ mod tests {
         };
         // Dep is DONE → not blocked.
         assert!(!is_blocked(&ctx));
+    }
+
+    // -- blocking_details() tests --
+
+    #[test]
+    fn details_empty_when_not_blocked() {
+        let doc = make_doc_with_entries(&[("Task A", Some("TODO"), None)]);
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 0,
+        };
+        assert!(blocking_details(&ctx).is_empty());
+    }
+
+    #[test]
+    fn details_shows_undone_dependency() {
+        let mut doc = make_doc_with_entries(&[
+            ("Research", Some("TODO"), None),
+            ("Write", Some("TODO"), None),
+        ]);
+        doc.entries[0]
+            .properties
+            .insert("ID".to_string(), "dep-1".to_string());
+        doc.entries[1]
+            .properties
+            .insert("BLOCKER".to_string(), "ids(\"dep-1\")".to_string());
+
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 1,
+        };
+        let details = blocking_details(&ctx);
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].title, "Research");
+        assert_eq!(details[0].keyword.as_deref(), Some("TODO"));
+        assert_eq!(details[0].condition_desc, "must be done");
+    }
+
+    #[test]
+    fn details_empty_when_dependency_done() {
+        let mut doc = make_doc_with_entries(&[
+            ("Research", Some("DONE"), None),
+            ("Write", Some("TODO"), None),
+        ]);
+        doc.entries[0]
+            .properties
+            .insert("ID".to_string(), "dep-1".to_string());
+        doc.entries[1]
+            .properties
+            .insert("BLOCKER".to_string(), "ids(\"dep-1\")".to_string());
+
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 1,
+        };
+        assert!(blocking_details(&ctx).is_empty());
+    }
+
+    #[test]
+    fn details_with_explicit_condition() {
+        let mut doc = make_doc_with_entries(&[
+            ("Dep", Some("WAITING"), None),
+            ("Blocked", Some("TODO"), None),
+        ]);
+        doc.entries[0]
+            .properties
+            .insert("ID".to_string(), "dep-1".to_string());
+        doc.entries[1].properties.insert(
+            "BLOCKER".to_string(),
+            "ids(\"dep-1\") todo-state?(\"DONE\")".to_string(),
+        );
+
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 1,
+        };
+        let details = blocking_details(&ctx);
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].title, "Dep");
+        assert_eq!(details[0].condition_desc, "must have state DONE");
+    }
+
+    #[test]
+    fn details_multiple_blockers() {
+        let mut doc = make_doc_with_entries(&[
+            ("Task A", Some("TODO"), None),
+            ("Task B", Some("TODO"), None),
+            ("Blocked", Some("TODO"), None),
+        ]);
+        doc.entries[0]
+            .properties
+            .insert("ID".to_string(), "a".to_string());
+        doc.entries[1]
+            .properties
+            .insert("ID".to_string(), "b".to_string());
+        doc.entries[2]
+            .properties
+            .insert("BLOCKER".to_string(), "ids(\"a\" \"b\")".to_string());
+
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 2,
+        };
+        let details = blocking_details(&ctx);
+        assert_eq!(details.len(), 2);
+        assert_eq!(details[0].title, "Task A");
+        assert_eq!(details[1].title, "Task B");
     }
 }

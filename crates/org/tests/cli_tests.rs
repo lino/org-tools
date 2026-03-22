@@ -760,3 +760,154 @@ fn completions_zsh() {
         .success()
         .stdout(predicate::str::contains("org"));
 }
+
+// ---------------------------------------------------------------------------
+// GTD subcommands
+// ---------------------------------------------------------------------------
+
+fn gtd_file() -> (TempDir, std::path::PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("gtd.org");
+    fs::write(
+        &file,
+        "\
+#+TODO: TODO NEXT WAITING | DONE CANCELLED
+* TODO Inbox item
+* TODO Tagged task :@home:
+* NEXT Office action :@office:work:
+* NEXT Uncontexted action
+* WAITING Vendor response :work:
+:PROPERTIES:
+:WAITING_FOR: John at Acme Corp
+:END:
+* TODO Blocked task :work:
+:PROPERTIES:
+:BLOCKER: ids(\"dep-1\")
+:END:
+* TODO Dependency
+:PROPERTIES:
+:ID: dep-1
+:END:
+* TODO Project with children
+** DONE Phase 1
+CLOSED: [2026-03-18 Tue 09:00]
+** WAITING Phase 2
+:PROPERTIES:
+:WAITING_FOR: Vendor
+:END:
+* DONE Already done
+CLOSED: [2026-03-20 Thu 14:00]
+",
+    )
+    .unwrap();
+    (dir, file)
+}
+
+#[test]
+fn query_next_shows_actionable() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "next"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Office action"))
+        .stdout(predicate::str::contains("Uncontexted action"));
+}
+
+#[test]
+fn query_next_context_filter() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "next", "--context", "@office"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Office action"))
+        .stdout(predicate::str::contains("Uncontexted").not());
+}
+
+#[test]
+fn query_inbox_shows_untagged_unscheduled() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "inbox"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Inbox item"))
+        .stdout(predicate::str::contains("Tagged task").not());
+}
+
+#[test]
+fn query_waiting_shows_waiting_entries() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "waiting"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Vendor response"))
+        .stdout(predicate::str::contains("Waiting for: John at Acme Corp"));
+}
+
+#[test]
+fn query_blocked_shows_details() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "blocked"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Blocked task"))
+        .stdout(predicate::str::contains("Blocked by:"))
+        .stdout(predicate::str::contains("Dependency"));
+}
+
+#[test]
+fn query_blocked_json_has_blocking_entries() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "blocked", "--format", "json"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("blocking_entries"))
+        .stdout(predicate::str::contains("must be done"));
+}
+
+#[test]
+fn query_stuck_shows_stuck_projects() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "stuck"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Project with children"))
+        .stdout(predicate::str::contains("Children:"));
+}
+
+#[test]
+fn query_next_json_output() {
+    let (_dir, file) = gtd_file();
+    org()
+        .args(["query", "next", "--format", "json"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"title\""))
+        .stdout(predicate::str::contains("Office action"));
+}
+
+#[test]
+fn query_inbox_empty_exits_1() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("all_tagged.org");
+    fs::write(&file, "* TODO Task :work:\n* DONE Done task\n").unwrap();
+    org()
+        .args(["query", "inbox"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .code(1);
+}

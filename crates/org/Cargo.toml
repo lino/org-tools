@@ -1,9 +1,14 @@
 [package]
-name = "org"
+name = "org-tools"
 version.workspace = true
 edition.workspace = true
 description = "Unified CLI for org-mode: lint, format, query, clock, export"
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.org"
 
 [[bin]]
 name = "org"

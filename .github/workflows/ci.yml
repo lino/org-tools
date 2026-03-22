@@ -58,7 +58,7 @@ jobs:
         run: cargo build --release
 
       - name: Smoke test on edge case fixtures
-        run: cargo run --release -- check tests/fixtures/edge_cases/
+        run: cargo run --release -- fmt check tests/fixtures/edge_cases/
 
   cross-platform:
     name: Build (${{ matrix.os }})

@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  validate:
+    name: Validate before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Smoke test on edge case fixtures
+        run: cargo run --release -- fmt check tests/fixtures/edge_cases/
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          CARGO_VERSION="v$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version *= *"\(.*\)"/\1/p }' Cargo.toml)"
+          GIT_TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$CARGO_VERSION" != "$GIT_TAG" ]; then
+            echo "::error::Tag $GIT_TAG does not match Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+          echo "Version verified: $GIT_TAG"
+
+  publish-core:
+    name: Publish org-tools-core to crates.io
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish org-tools-core
+        run: cargo publish -p org-tools-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-cli:
+    name: Publish org-tools to crates.io
+    runs-on: ubuntu-latest
+    needs: publish-core
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Wait for crates.io index to propagate the core crate.
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish org-tools
+        run: cargo publish -p org-tools
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs: [publish-cli, build-binaries]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate changelog from commits
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+          GIT_TAG="${GITHUB_REF#refs/tags/}"
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$GIT_TAG" ]; then
+            RANGE="$GIT_TAG"
+          else
+            RANGE="${PREV_TAG}..${GIT_TAG}"
+          fi
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            git log --pretty=format:"- %s" "$RANGE"
+            echo ""
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Install
+
+            ```sh
+            cargo install org-tools
+            ```
+
+            Or download a prebuilt binary from the assets below.
+
+            ## Changes
+
+            ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          files: artifacts/*
+
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: org
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: org
+            use_cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: org
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: org
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: org.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@cross
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} -p org-tools
+          else
+            cargo build --release --target ${{ matrix.target }} -p org-tools
+          fi
+        shell: bash
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a ../../../org-${{ matrix.target }}.zip ${{ matrix.artifact }}
+          else
+            tar czf ../../../org-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: org-${{ matrix.target }}
+          path: org-${{ matrix.target }}.*

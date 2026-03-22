@@ -34,4 +34,4 @@ run = "bash scripts/setup-demo.sh"
 
 [tasks.release]
 description = "Bump version, commit, tag, and push to trigger release"
-run = "bash scripts/release.sh {{arg(name='version', var=true)}}"
+run = "bash scripts/release.sh {{arg(name='version', default='')}}"

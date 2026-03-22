@@ -23,3 +23,4 @@ pub mod rules;
 pub mod runner;
 pub mod source;
 pub mod state;
+pub mod tblfm;

@@ -28,7 +28,7 @@ compose via Unix pipes.
 |-----------------+--------------------------------------+--------|
 | =org fmt=       | Lint and format org files            | Done   |
 | =org query=     | Search entries, agenda view          | Done   |
-| =org update=    | IDs, state, cookies, entries         | Done   |
+| =org update=    | IDs, state, cookies, entries, calc   | Done   |
 | =org clock=     | Clock reports, running status        | Done   |
 | =org export=    | iCalendar, JSCalendar export         | Done   |
 | =org archive=   | Archive done entries                 | Done   |
@@ -49,6 +49,8 @@ compose via Unix pipes.
 | Property drawer align (F008)  | Done   |                                       |
 | Timestamp spacing (F009)      | Done   |                                       |
 | Table formulas (=#+TBLFM:=)   | Done   | Preserved; W034 validates syntax/refs |
+| Table formula calc            | Done   | =org update calc= evaluates basic     |
+|                               |        | arithmetic and common functions       |
 | Right-align numbers in tables | Done   | Matches Emacs; header rows excluded   |
 
 ** In-buffer Settings — Roadmap
@@ -127,10 +129,14 @@ org-tools cannot and will not embed a Lisp interpreter. This means:
 - *No Elisp-based export backends*: =org export= (when implemented) will
   target structured formats (iCalendar, JSCalendar) via native Rust code,
   not the Elisp export framework.
-- *No table formula evaluation*: =#+TBLFM:= lines are preserved during
-  formatting, but org-tools cannot compute formula results. Table formulas
-  that use Elisp expressions (=lisp:...=, ='(...)=) or Emacs Calc
-  syntax are opaque to org-tools.
+- *Limited table formula evaluation*: =org update calc= evaluates =#+TBLFM:=
+  formulas that use basic arithmetic (=+=, =-=, =*=, =/=, =%=) and common
+  aggregation functions (=vsum=, =vmean=, =vmin=, =vmax=, =vcount=, =abs=,
+  =round=, =ceil=, =floor=). Cell references, ranges, hgroup references, and
+  named constants from =#+CONSTANTS:= are supported. Formulas that use Elisp
+  expressions (=lisp:...=, ='(...)=), Emacs Calc functions beyond the supported
+  set, or =remote()= cross-table references are not supported and will exit
+  with code 3.
 
 ** Line-based parsing limitations
 

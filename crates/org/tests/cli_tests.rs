@@ -911,3 +911,115 @@ fn query_inbox_empty_exits_1() {
         .assert()
         .code(1);
 }
+
+// ---------------------------------------------------------------------------
+// Table formula calculation (org update calc)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn calc_simple_formula() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("calc.org");
+    fs::write(
+        &file,
+        "\
+| Item  | Price | Qty | Total |
+|-------+-------+-----+-------|
+| Apple |  1.50 |   3 |       |
+| Pear  |  2.00 |   5 |       |
+#+TBLFM: $4=$2*$3
+",
+    )
+    .unwrap();
+
+    org()
+        .args(["update", "calc"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated 2 cells"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("4.5"), "expected 4.5 in: {content}");
+    assert!(content.contains("10"), "expected 10 in: {content}");
+}
+
+#[test]
+fn calc_dry_run() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("calc_dry.org");
+    let original = "\
+| A |  B |
+|---+----|
+| 1 | 10 |
+| 2 | 20 |
+|---+----|
+|   |    |
+#+TBLFM: @>$2=vsum(@I$2..@II$2)
+";
+    fs::write(&file, original).unwrap();
+
+    org()
+        .args(["update", "calc", "--dry-run"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Would update"));
+
+    // File should be unchanged.
+    let content = fs::read_to_string(&file).unwrap();
+    assert_eq!(content, original);
+}
+
+#[test]
+fn calc_elisp_exits_3() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("calc_elisp.org");
+    fs::write(
+        &file,
+        "\
+| A | B |
+|---+---|
+| 1 |   |
+#+TBLFM: $2=lisp:(* $1 2)
+",
+    )
+    .unwrap();
+
+    org()
+        .args(["update", "calc"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("requires Emacs"));
+}
+
+#[test]
+fn calc_with_constants() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("calc_const.org");
+    fs::write(
+        &file,
+        "\
+#+CONSTANTS: pi=3.14159
+| Radius | Area |
+|--------+------|
+|      5 |      |
+#+TBLFM: $2=$1*$1*pi
+",
+    )
+    .unwrap();
+
+    org()
+        .args(["update", "calc"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(&file).unwrap();
+    // 5 * 5 * 3.14159 ≈ 78.54
+    assert!(
+        content.contains("78.54") || content.contains("78.5"),
+        "expected ~78.54 in: {content}"
+    );
+}

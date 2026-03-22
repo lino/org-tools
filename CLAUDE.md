@@ -221,6 +221,24 @@ list. When adding new lint rules, reference the corresponding org-lint checker
 name for traceability. Prioritize the 35 checks that are fully implementable
 with line-based parsing.
 
+## Exit Codes
+
+All `org` subcommands use a consistent exit code scheme:
+
+| Code | Constant             | Meaning                                                  |
+|------+----------------------+----------------------------------------------------------|
+|    0 | `EXIT_OK`            | Operation completed successfully                         |
+|    1 | `EXIT_ISSUES`        | No results found, or lint/format issues detected         |
+|    2 | `EXIT_ERROR`         | Operational error (file not found, parse error, bad args) |
+|    3 | `EXIT_REQUIRES_EMACS` | Operation requires Emacs Lisp or Emacs Calc              |
+
+Exit code 3 is used when a formula, expression, or feature requires the Emacs
+runtime (e.g. `lisp:` in `#+TBLFM:`, Emacs Calc functions not in the supported
+subset, `remote()` cross-table references). Scripts can check for this to fall
+back to Emacs-based evaluation.
+
+Constants are defined in `crates/org/src/main.rs`.
+
 ## Building and Running
 
 ```sh

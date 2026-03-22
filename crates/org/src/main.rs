@@ -8,6 +8,20 @@ mod date;
 mod export;
 mod query;
 
+// ---------------------------------------------------------------------------
+// Exit codes
+// ---------------------------------------------------------------------------
+
+/// Operation completed successfully.
+const EXIT_OK: i32 = 0;
+/// No results found, or lint/format issues detected.
+#[allow(dead_code)]
+const EXIT_ISSUES: i32 = 1;
+/// Operational error (file not found, parse error, invalid arguments).
+const EXIT_ERROR: i32 = 2;
+/// Operation requires Emacs Lisp or Emacs Calc (not supported by org-tools).
+const EXIT_REQUIRES_EMACS: i32 = 3;
+
 use std::io::BufRead;
 use std::path::PathBuf;
 use std::process;
@@ -330,6 +344,20 @@ enum UpdateCommand {
         /// Print what would be changed without writing files.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Evaluate #+TBLFM: table formulas and fill in results.
+    Calc {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Print what would be changed without writing files.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Recalculate even if cells already have values.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -1180,6 +1208,11 @@ fn run_update(command: UpdateCommand) -> i32 {
             recursive,
             dry_run,
         } => run_add_cookie(paths, recursive, dry_run),
+        UpdateCommand::Calc {
+            paths,
+            dry_run,
+            force: _,
+        } => run_calc(paths, dry_run),
     }
 }
 
@@ -1824,5 +1857,75 @@ fn run_archive(
     if total_archived == 0 {
         println!("No entries to archive");
     }
-    0
+    EXIT_OK
+}
+
+/// Runs `org update calc`.
+fn run_calc(paths: Vec<PathBuf>, dry_run: bool) -> i32 {
+    let files = collect_org_files(&paths);
+    if files.is_empty() {
+        eprintln!("org: no .org files found");
+        return EXIT_ERROR;
+    }
+
+    let mut total_updated = 0;
+    let mut has_emacs_error = false;
+
+    for file in &files {
+        match std::fs::read_to_string(file) {
+            Ok(content) => {
+                // Parse constants from the file.
+                let source = match SourceFile::from_path(file) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("org: error reading {}: {e}", file.display());
+                        continue;
+                    }
+                };
+                let doc = OrgDocument::from_source(&source);
+
+                let result = org_tools_core::tblfm::calc_file(&content, &doc.table_constants);
+
+                for err in &result.errors {
+                    match err {
+                        org_tools_core::tblfm::TblfmError::RequiresEmacs(msg) => {
+                            has_emacs_error = true;
+                            eprintln!("org: {}: requires Emacs: {msg}", file.display());
+                        }
+                        other => {
+                            eprintln!("org: {}: {other}", file.display());
+                        }
+                    }
+                }
+
+                if result.cells_updated > 0 {
+                    if dry_run {
+                        println!(
+                            "Would update {} cells in {}",
+                            result.cells_updated,
+                            file.display()
+                        );
+                    } else if let Err(e) = std::fs::write(file, &result.content) {
+                        eprintln!("org: error writing {}: {e}", file.display());
+                    } else {
+                        println!(
+                            "Updated {} cells in {}",
+                            result.cells_updated,
+                            file.display()
+                        );
+                    }
+                    total_updated += result.cells_updated;
+                }
+            }
+            Err(e) => eprintln!("org: error reading {}: {e}", file.display()),
+        }
+    }
+
+    if has_emacs_error {
+        return EXIT_REQUIRES_EMACS;
+    }
+    if total_updated == 0 {
+        println!("No formulas to evaluate");
+    }
+    EXIT_OK
 }

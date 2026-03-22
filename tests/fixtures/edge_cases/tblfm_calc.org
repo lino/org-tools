@@ -1,0 +1,53 @@
+#+TITLE: TBLFM Calculation Test Fixture
+#+CONSTANTS: tax_rate=0.19 pi=3.14159
+
+* Simple arithmetic
+
+| Item  | Price | Qty | Total |
+|-------+-------+-----+-------|
+| Apple |  1.50 |   3 |       |
+| Pear  |  2.00 |   5 |       |
+#+TBLFM: $4=$2*$3
+
+* Sum with hgroups
+
+| Item  | Amount |
+|-------+--------|
+| Alpha |     10 |
+| Beta  |     20 |
+| Gamma |     30 |
+|-------+--------|
+| Total |        |
+#+TBLFM: @>$2=vsum(@I$2..@II$2)
+
+* Multiple formulas
+
+| Item  | Price | Qty | Total |
+|-------+-------+-----+-------|
+| Bolt  |  0.50 |  10 |       |
+| Screw |  0.25 |  20 |       |
+|-------+-------+-----+-------|
+| Sum   |       |     |       |
+#+TBLFM: $4=$2*$3::@>$4=vsum(@I$4..@II$4)
+
+* Named constants
+
+| Radius | Area |
+|--------+------|
+|      5 |      |
+|     10 |      |
+#+TBLFM: $2=$1*$1*pi
+
+* Elisp formula (requires Emacs)
+
+| A | B |
+|---+---|
+| 1 |   |
+#+TBLFM: $2=lisp:(* $1 2)
+
+* Table without TBLFM (should be left alone)
+
+| Name | Score |
+|------+-------|
+| Alice |    95 |
+| Bob   |    87 |

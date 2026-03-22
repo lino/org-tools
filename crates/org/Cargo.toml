@@ -9,6 +9,11 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "../../README.org"
+include = [
+    "src/**/*",
+    "schemas/**/*",
+    "Cargo.toml",
+]
 
 [[bin]]
 name = "org"

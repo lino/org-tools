@@ -2057,22 +2057,22 @@ fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutputFormat) ->
 fn run_schema(name: &str) -> i32 {
     let schema = match name {
         "diagnostic" | "diagnostics" => {
-            include_str!("../../../schemas/org-diagnostic-output.schema.json")
+            include_str!("../schemas/org-diagnostic-output.schema.json")
         }
         "query" | "entry" | "entries" => {
-            include_str!("../../../schemas/org-query-output.schema.json")
+            include_str!("../schemas/org-query-output.schema.json")
         }
-        "blocked" => include_str!("../../../schemas/org-blocked-output.schema.json"),
-        "stuck" => include_str!("../../../schemas/org-stuck-output.schema.json"),
-        "deps" | "dependencies" => include_str!("../../../schemas/org-deps-output.schema.json"),
+        "blocked" => include_str!("../schemas/org-blocked-output.schema.json"),
+        "stuck" => include_str!("../schemas/org-stuck-output.schema.json"),
+        "deps" | "dependencies" => include_str!("../schemas/org-deps-output.schema.json"),
         "clock-report" | "clock_report" => {
-            include_str!("../../../schemas/org-clock-report-output.schema.json")
+            include_str!("../schemas/org-clock-report-output.schema.json")
         }
         "clock-status" | "clock_status" => {
-            include_str!("../../../schemas/org-clock-status-output.schema.json")
+            include_str!("../schemas/org-clock-status-output.schema.json")
         }
         "mutation" | "update" | "archive" => {
-            include_str!("../../../schemas/org-mutation-output.schema.json")
+            include_str!("../schemas/org-mutation-output.schema.json")
         }
         _ => {
             eprintln!("org: unknown schema: {name}");

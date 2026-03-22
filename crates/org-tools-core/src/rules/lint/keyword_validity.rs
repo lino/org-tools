@@ -72,6 +72,7 @@ const KNOWN_KEYWORDS: &[&str] = &[
     "STARTUP",
     "SUBTITLE",
     "TAGS",
+    "TBLFM",
     "TITLE",
     "TODO",
     "TYP_TODO",

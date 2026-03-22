@@ -35,7 +35,10 @@ jobs:
         run: cargo test --verbose
 
       - name: Smoke test on edge case fixtures
-        run: cargo run --release -- fmt check tests/fixtures/edge_cases/
+        run: |
+          # Exit 1 = diagnostics found (expected for edge case fixtures).
+          # Exit 2+ = operational error (unexpected).
+          cargo run --release -- fmt check tests/fixtures/edge_cases/ || [ $? -eq 1 ]
 
       - name: Verify tag matches Cargo.toml version
         run: |
@@ -146,7 +149,7 @@ jobs:
             artifact: org
             use_cross: true
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             artifact: org
           - target: aarch64-apple-darwin
             os: macos-latest

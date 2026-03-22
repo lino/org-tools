@@ -15,7 +15,7 @@ name = "org"
 path = "src/main.rs"
 
 [dependencies]
-org-tools-core = { path = "../org-tools-core" }
+org-tools-core = { path = "../org-tools-core", version = "0.1.0" }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 ignore = { workspace = true }

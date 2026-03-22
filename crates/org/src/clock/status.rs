@@ -16,7 +16,7 @@ pub struct RunningClock<'a> {
 }
 
 /// Find all running clocks across documents.
-pub fn find_running_clocks<'a>(docs: &'a [OrgDocument]) -> Vec<RunningClock<'a>> {
+pub fn find_running_clocks(docs: &[OrgDocument]) -> Vec<RunningClock<'_>> {
     let mut running = Vec::new();
     for doc in docs {
         for entry in &doc.entries {

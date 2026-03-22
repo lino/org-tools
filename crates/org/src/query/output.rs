@@ -16,7 +16,7 @@ pub struct MatchedEntry<'a> {
     pub entry_idx: usize,
 }
 
-impl<'a> MatchedEntry<'a> {
+impl MatchedEntry<'_> {
     /// Get the entry reference.
     pub fn entry(&self) -> &OrgEntry {
         &self.doc.entries[self.entry_idx]

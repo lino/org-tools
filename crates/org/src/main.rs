@@ -22,7 +22,7 @@ const EXIT_ERROR: i32 = 2;
 /// Operation requires Emacs Lisp or Emacs Calc (not supported by org-tools).
 const EXIT_REQUIRES_EMACS: i32 = 3;
 
-use std::io::BufRead;
+use std::io::{BufRead, IsTerminal, Read as _};
 use std::path::PathBuf;
 use std::process;
 
@@ -294,6 +294,10 @@ enum UpdateCommand {
         /// Read additional locator targets from stdin.
         #[arg(long)]
         stdin: bool,
+
+        /// Filter entries by query expression (e.g., "todo:TODO tags:work").
+        #[arg(long)]
+        query: Option<String>,
 
         /// Don't add/remove CLOSED: timestamp on state transitions.
         #[arg(long)]
@@ -632,6 +636,33 @@ fn main() {
 fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
     match command {
         FmtCommand::Check { paths, format, fix } => {
+            // Auto-detect piped stdin when no paths given.
+            if paths.is_empty() && !std::io::stdin().is_terminal() {
+                let source = match read_stdin_source() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return EXIT_ERROR;
+                    }
+                };
+                if fix {
+                    let (formatted, lint_diags) = runner.format(&source);
+                    // Can't write back to stdin — emit fixed content to stdout.
+                    print!("{formatted}");
+                    if !lint_diags.is_empty() {
+                        eprint!("{}", render_diagnostics(&lint_diags, format));
+                        return 1;
+                    }
+                    return 0;
+                }
+                let diagnostics = runner.check(&source);
+                if !diagnostics.is_empty() {
+                    print!("{}", render_diagnostics(&diagnostics, format));
+                    return 1;
+                }
+                return 0;
+            }
+
             let files = collect_org_files(&paths);
             if files.is_empty() {
                 eprintln!("org: no .org files found");
@@ -695,6 +726,31 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
             check,
             stdout,
         } => {
+            // Auto-detect piped stdin when no paths given.
+            if paths.is_empty() && !std::io::stdin().is_terminal() {
+                let source = match read_stdin_source() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return EXIT_ERROR;
+                    }
+                };
+                let (formatted, lint_diags) = runner.format(&source);
+                let changed = formatted != source.content;
+                if !lint_diags.is_empty() {
+                    eprint!("{}", render_diagnostics(&lint_diags, OutputFormat::Human));
+                }
+                if check {
+                    if changed {
+                        eprintln!("Would reformat: <stdin>");
+                    }
+                    return if changed { 1 } else { 0 };
+                }
+                // Stdin mode always writes to stdout.
+                print!("{formatted}");
+                return 0;
+            }
+
             let files = collect_org_files(&paths);
             if files.is_empty() {
                 eprintln!("org: no .org files found");
@@ -1247,10 +1303,11 @@ fn run_update(command: UpdateCommand) -> i32 {
             state,
             targets,
             stdin,
+            query,
             no_closed,
             dry_run,
             format,
-        } => run_set_state(state, targets, stdin, no_closed, dry_run, format),
+        } => run_set_state(state, targets, stdin, query, no_closed, dry_run, format),
         UpdateCommand::AddTodo {
             title,
             target,
@@ -1626,14 +1683,100 @@ fn run_export(command: ExportCommand) -> i32 {
     }
 }
 
-/// Read locator strings from stdin (one per line).
-fn read_stdin_targets() -> Vec<String> {
+/// Read org content from stdin into a `SourceFile`.
+fn read_stdin_source() -> Result<SourceFile, String> {
+    let mut content = String::new();
     std::io::stdin()
+        .lock()
+        .read_to_string(&mut content)
+        .map_err(|e| format!("org: error reading stdin: {e}"))?;
+    Ok(SourceFile::new("<stdin>", content))
+}
+
+/// Check whether a line looks like org-mode content rather than a locator/path.
+///
+/// Returns `true` for lines starting with `*`, `#+`, `- `, `: `, `|`, or common
+/// org syntax that would never be a valid locator or file path.
+fn looks_like_org_content(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with("* ")
+        || trimmed.starts_with("#+")
+        || trimmed.starts_with("- ")
+        || trimmed.starts_with("| ")
+        || trimmed.starts_with(": ")
+        || trimmed.starts_with("DEADLINE:")
+        || trimmed.starts_with("SCHEDULED:")
+        || trimmed.starts_with("CLOSED:")
+        || trimmed.starts_with(":PROPERTIES:")
+        || trimmed.starts_with(":END:")
+}
+
+/// Read locator strings from stdin (one per line), validating that they don't
+/// look like org-mode file content.
+fn read_stdin_targets() -> Result<Vec<String>, String> {
+    let lines: Vec<String> = std::io::stdin()
         .lock()
         .lines()
         .map_while(|l| l.ok())
         .filter(|l| !l.trim().is_empty())
+        .collect();
+
+    // If any line looks like org content, the user probably piped a file
+    // instead of locators.
+    if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
+        return Err(format!(
+            "org: stdin looks like org-mode content, not locator targets\n\
+             first offending line: {bad}\n\
+             hint: pipe locators (e.g. from `org query search`), not org file content"
+        ));
+    }
+
+    Ok(lines)
+}
+
+/// Filter entry indices by a query predicate.
+fn filter_entries_by_query(doc: &OrgDocument, pred: &query::parser::Predicate) -> Vec<usize> {
+    let today = date::current_date();
+    let doc_refs = [doc];
+    doc.entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| query::predicate::matches(pred, entry, doc, &doc_refs, today))
+        .map(|(idx, _)| idx)
         .collect()
+}
+
+/// Apply set-state to a single source/doc, returning the result.
+/// `indices` is `None` to process all entries, or `Some` to restrict.
+/// When `query_pred` is given, it further filters the entry set.
+fn apply_set_state(
+    source: &SourceFile,
+    doc: &OrgDocument,
+    indices: Option<&[usize]>,
+    query_pred: Option<&query::parser::Predicate>,
+    state: &str,
+    no_closed: bool,
+) -> Option<org_tools_core::state::SetStateResult> {
+    let effective_indices = match query_pred {
+        Some(pred) => {
+            let query_matches = filter_entries_by_query(doc, pred);
+            // Intersect with explicit indices if present.
+            let filtered = match indices {
+                Some(idx) => query_matches
+                    .into_iter()
+                    .filter(|i| idx.contains(i))
+                    .collect::<Vec<_>>(),
+                None => query_matches,
+            };
+            if filtered.is_empty() {
+                return None;
+            }
+            Some(filtered)
+        }
+        None => indices.map(|s| s.to_vec()),
+    };
+
+    org_tools_core::state::set_state(source, doc, effective_indices.as_deref(), state, !no_closed)
 }
 
 /// Runs `org update set-state`.
@@ -1641,16 +1784,115 @@ fn run_set_state(
     state: String,
     mut targets: Vec<String>,
     stdin: bool,
+    query_expr: Option<String>,
     no_closed: bool,
     dry_run: bool,
     _format: MutationOutputFormat,
 ) -> i32 {
-    if stdin {
-        targets.extend(read_stdin_targets());
+    // Parse --query upfront if provided.
+    let query_pred = match &query_expr {
+        Some(expr) => match query::parser::parse_query(expr) {
+            Ok(pred) => Some(pred),
+            Err(e) => {
+                eprintln!("org: invalid query: {e}");
+                return EXIT_ERROR;
+            }
+        },
+        None => None,
+    };
+
+    // Auto-detect piped stdin when no targets given.
+    let piped = !std::io::stdin().is_terminal();
+    if piped && targets.is_empty() && !stdin {
+        // Read stdin and decide: org content → process as file; locators → resolve targets.
+        let content = {
+            let mut buf = String::new();
+            if let Err(e) = std::io::stdin().lock().read_to_string(&mut buf) {
+                eprintln!("org: error reading stdin: {e}");
+                return EXIT_ERROR;
+            }
+            buf
+        };
+
+        let first_meaningful = content.lines().find(|l| !l.trim().is_empty());
+        let is_org = first_meaningful.is_some_and(looks_like_org_content);
+
+        if is_org {
+            // Org-file stdin mode: process content, write result to stdout.
+            let source = SourceFile::new("<stdin>", content);
+            let doc = OrgDocument::from_source(&source);
+
+            if !doc.todo_keywords.contains(&state) {
+                eprintln!(
+                    "org: '{}' is not a recognized TODO keyword in <stdin>",
+                    state
+                );
+                return EXIT_ERROR;
+            }
+
+            let result =
+                apply_set_state(&source, &doc, None, query_pred.as_ref(), &state, no_closed);
+
+            return match result {
+                Some(r) => {
+                    if dry_run {
+                        eprintln!(
+                            "Would change {} entr{} in <stdin>",
+                            r.changed,
+                            if r.changed == 1 { "y" } else { "ies" },
+                        );
+                        print!("{}", source.content);
+                    } else {
+                        eprintln!(
+                            "Changed {} entr{} to {}",
+                            r.changed,
+                            if r.changed == 1 { "y" } else { "ies" },
+                            state,
+                        );
+                        print!("{}", r.content);
+                    }
+                    0
+                }
+                None => {
+                    eprintln!("No entries to change");
+                    print!("{}", source.content);
+                    0
+                }
+            };
+        }
+
+        // Not org content — treat lines as locator targets.
+        let lines: Vec<String> = content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.to_string())
+            .collect();
+        // Validate that they don't look like org content (belt and suspenders).
+        if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
+            eprintln!(
+                "org: stdin looks like org-mode content, not locator targets\n\
+                 first offending line: {bad}\n\
+                 hint: pipe locators (e.g. from `org query search`), not org file content"
+            );
+            return EXIT_ERROR;
+        }
+        targets.extend(lines);
     }
+
+    // Explicit --stdin flag: read locators from stdin.
+    if stdin {
+        match read_stdin_targets() {
+            Ok(stdin_targets) => targets.extend(stdin_targets),
+            Err(e) => {
+                eprintln!("{e}");
+                return EXIT_ERROR;
+            }
+        }
+    }
+
     if targets.is_empty() {
         eprintln!("org: no targets specified");
-        return 2;
+        return EXIT_ERROR;
     }
 
     // Resolve targets to file+entry pairs.
@@ -1706,8 +1948,14 @@ fn run_set_state(
             continue;
         }
 
-        let result =
-            org_tools_core::state::set_state(&source, &doc, indices.as_deref(), &state, !no_closed);
+        let result = apply_set_state(
+            &source,
+            &doc,
+            indices.as_deref(),
+            query_pred.as_ref(),
+            &state,
+            no_closed,
+        );
 
         if let Some(r) = result {
             total_changed += r.changed;

@@ -122,12 +122,15 @@ impl LintRule for SuspiciousLanguage {
         for line in ctx.source.content.split('\n') {
             let raw = line.strip_suffix('\r').unwrap_or(line);
             let trimmed = raw.trim_start();
-            let is_src_begin = trimmed.len() > 11
-                && trimmed[..11].eq_ignore_ascii_case("#+begin_src")
-                && trimmed.as_bytes().get(11) == Some(&b' ');
+            let lower = trimmed.to_ascii_lowercase();
+            let is_src_begin =
+                lower.starts_with("#+begin_src ") || lower.starts_with("#+begin_src\t");
 
             if is_src_begin {
-                let lang = trimmed[12..].split_whitespace().next().unwrap_or("");
+                let lang = trimmed["#+begin_src".len()..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
                 if !lang.is_empty() {
                     let lower = lang.to_lowercase();
                     if !KNOWN_LANGUAGES.contains(&lower.as_str()) {

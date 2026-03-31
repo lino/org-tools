@@ -364,7 +364,7 @@ org query next --context @office ~/org/
 org query next --format json ~/org/
 
 # Pipe to set-state
-org query next --format locator ~/org/ | org update set-state DONE --stdin
+org query next --format locator ~/org/ | org update set-state DONE
 #+end_src
 
 ** Inbox (=org query inbox=)
@@ -536,16 +536,30 @@ or directories. When changing to a done state, a =CLOSED: = timestamp is added
 automatically (unless =--no-closed= is passed).
 
 #+begin_src sh
-org update set-state [OPTIONS] <STATE> <TARGETS>...
+org update set-state [OPTIONS] <STATE> [TARGETS]...
 #+end_src
 
 | Option           | Description                                                 |
 |------------------+-------------------------------------------------------------|
-| =--stdin=        | Read additional locator targets from stdin (one per line)   |
+| =--query <EXPR>= | Filter entries by query expression (same syntax as          |
+|                  | =org query search=)                                         |
+| =--stdin=        | Force reading locator targets from stdin (one per line)     |
 | =--no-closed=    | Don't add/remove =CLOSED: = timestamp on state transitions  |
 | =--dry-run=      | Print what would be changed without writing files           |
 | =--format human= | Human-readable output (default)                             |
 | =--format json=  | JSON output (see =schemas/org-mutation-output.schema.json=) |
+
+*** Stdin auto-detection
+
+When no targets are given and stdin is piped, =set-state= automatically reads
+from stdin and classifies the input:
+
+- *Org content* (lines starting with =*=, =#+=, etc.) is treated as an org file.
+  The state change is applied and the modified content is written to stdout.
+- *Locator strings* (e.g., =id:...=, =file.org::heading=) are treated as
+  targets, the same as passing =--stdin= explicitly.
+
+The =--stdin= flag forces locator mode regardless of content.
 
 #+begin_src sh
 # Mark a specific entry as DONE
@@ -557,9 +571,18 @@ org update set-state NEXT 'todo.org::*/Work/Task A' 'todo.org::*/Work/Task B'
 # Mark done without adding CLOSED timestamp
 org update set-state DONE --no-closed project.org
 
-# Pipe query results to set-state (see Piping section below)
+# Filter by query: only change entries tagged :stale:
+org update set-state DONE --query 'tags:stale' ~/org/
+
+# Pipe org content through set-state (auto-detected)
+cat todo.org | org update set-state DONE > todo-done.org
+
+# Pipe org content with query filter
+cat todo.org | org update set-state DONE --query 'tags:work'
+
+# Pipe locator targets from query (auto-detected)
 org query search 'todo:TODO tags:old' --format locator ~/org/ \
-| org update set-state DONE --stdin |
+| org update set-state DONE |
 #+end_src
 
 ** =org update add-todo=
@@ -886,9 +909,16 @@ org --completions fish > ~/.config/fish/completions/org.fish
 
 * Piping and Composing Commands
 
-Many org-tools commands accept =--stdin= or produce output suitable for piping.
-The =--format locator= output from =org query search= is the main glue: it
-emits one OrgLocator per line, which other commands accept as targets.
+Many org-tools commands auto-detect piped stdin or produce output suitable for
+piping. The =--format locator= output from =org query search= is the main glue:
+it emits one OrgLocator per line, which other commands accept as targets.
+
+Commands that read from stdin when no paths/targets are given:
+
+- =org fmt check=, =org fmt format= — read org content, output diagnostics or
+  formatted content.
+- =org update set-state= — auto-classifies stdin as org content (processes and
+  writes to stdout) or locator targets (resolves and modifies files in-place).
 
 ** Query results to state changes
 
@@ -896,7 +926,15 @@ Find entries matching a query and change their TODO state in one pipeline:
 
 #+begin_src sh
 org query search 'todo:TODO tags:stale' --format locator ~/org/ \
-| org update set-state DONE --stdin |
+| org update set-state DONE |
+#+end_src
+
+** Org content through set-state
+
+Pipe org content and filter with =--query=:
+
+#+begin_src sh
+cat inbox.org | org update set-state DONE --query 'tags:processed' > inbox-done.org
 #+end_src
 
 ** Query results to ID assignment

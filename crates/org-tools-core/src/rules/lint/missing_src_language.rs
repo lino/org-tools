@@ -36,17 +36,13 @@ impl LintRule for MissingSrcLanguage {
             let raw = line.strip_suffix('\r').unwrap_or(line);
             let trimmed = raw.trim_start();
 
-            let is_src_begin = trimmed.eq_ignore_ascii_case("#+begin_src")
-                || (trimmed.len() > 11
-                    && trimmed[..11].eq_ignore_ascii_case("#+begin_src")
-                    && trimmed.as_bytes()[11] == b' ');
+            let lower = trimmed.to_ascii_lowercase();
+            let is_src_begin = lower == "#+begin_src"
+                || lower.starts_with("#+begin_src ")
+                || lower.starts_with("#+begin_src\t");
 
             if is_src_begin {
-                let after = if trimmed.len() > 11 {
-                    trimmed[11..].trim()
-                } else {
-                    ""
-                };
+                let after = trimmed["#+begin_src".len()..].trim();
 
                 if after.is_empty() {
                     let (line_num, col) = ctx.source.line_col(offset);

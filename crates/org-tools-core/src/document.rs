@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::rules::heading::{
-    parse_heading, parse_heading_with_keywords, priority_range_from_file, tag_spec_from_values,
-    todo_keywords_from_file, PriorityRange, TagSpec, TodoKeywords,
+    is_heading, parse_heading, parse_heading_with_keywords, priority_range_from_file,
+    tag_spec_from_values, todo_keywords_from_file, PriorityRange, TagSpec, TodoKeywords,
 };
 use crate::rules::timestamp::{parse_timestamp, OrgTimestamp};
 use crate::source::SourceFile;
@@ -288,9 +288,9 @@ impl OrgDocument {
             // Subtree ends before the next heading with level <= current entry level.
             let current_level = entries[idx].level;
             let mut subtree_end = lines.len() + 1;
-            for next_idx in (idx + 1)..entries.len() {
-                if entries[next_idx].level <= current_level {
-                    subtree_end = entries[next_idx].heading_line;
+            for next_entry in entries.iter().skip(idx + 1) {
+                if next_entry.level <= current_level {
+                    subtree_end = next_entry.heading_line;
                     break;
                 }
             }
@@ -430,6 +430,10 @@ fn parse_property_drawer(lines: &[&str], start: usize) -> (HashMap<String, Strin
         let trimmed = lines[i].trim();
         if trimmed.eq_ignore_ascii_case(":END:") {
             return (props, i + 1);
+        }
+        if is_heading(trimmed) {
+            // Unclosed drawer encountered a heading - abort drawer parsing to preserve subsequent heading!
+            return (props, i);
         }
         if let Some((key, val)) = parse_property_line(trimmed) {
             props.insert(key, val);
@@ -1219,4 +1223,14 @@ mod tests {
         let doc = OrgDocument::from_source(&source);
         assert_eq!(doc.todo_keywords, TodoKeywords::default());
     }
+
+    #[test]
+    fn unclosed_property_drawer_does_not_swallow_headings() {
+        let source = make_source("* First\n:PROPERTIES:\n:ID: 123\n* Second\nBody\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.entries.len(), 2);
+        assert_eq!(doc.entries[0].title, "First");
+        assert_eq!(doc.entries[1].title, "Second");
+    }
 }
+

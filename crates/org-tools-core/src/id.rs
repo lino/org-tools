@@ -457,9 +457,9 @@ mod tests {
             let s2 = SourceFile::new("test.org", result.content.clone());
             OrgDocument::from_source(&s2)
         };
-        assert!(doc2.entries[0].properties.get("ID").is_none());
-        assert!(doc2.entries[1].properties.get("ID").is_some());
-        assert!(doc2.entries[2].properties.get("ID").is_none());
+        assert!(!doc2.entries[0].properties.contains_key("ID"));
+        assert!(doc2.entries[1].properties.contains_key("ID"));
+        assert!(!doc2.entries[2].properties.contains_key("ID"));
     }
 
     // --- collect_subtree ---
@@ -502,10 +502,10 @@ mod tests {
             let s2 = SourceFile::new("test.org", result.content.clone());
             OrgDocument::from_source(&s2)
         };
-        assert!(doc2.entries[0].properties.get("ID").is_some()); // A
-        assert!(doc2.entries[1].properties.get("ID").is_some()); // B
-        assert!(doc2.entries[2].properties.get("ID").is_some()); // C
-        assert!(doc2.entries[3].properties.get("ID").is_none()); // D
+        assert!(doc2.entries[0].properties.contains_key("ID")); // A
+        assert!(doc2.entries[1].properties.contains_key("ID")); // B
+        assert!(doc2.entries[2].properties.contains_key("ID")); // C
+        assert!(!doc2.entries[3].properties.contains_key("ID")); // D
     }
 
     // --- template expansion ---

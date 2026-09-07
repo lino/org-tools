@@ -755,7 +755,18 @@ pub fn blocking_details(ctx: &EdnaContext<'_>) -> Vec<BlockerDetail> {
     for expr in &exprs {
         match expr {
             EdnaExpr::Finder(finder) => {
-                targets = resolve_finder(finder, ctx);
+                let res = resolve_finder(finder, ctx);
+                for missing_id in &res.unresolved_ids {
+                    details.push(BlockerDetail {
+                        title: format!("Unresolved blocker target ID: {missing_id}"),
+                        keyword: None,
+                        file: String::new(),
+                        line: 0,
+                        locator: format!("id:{missing_id}"),
+                        condition_desc: "referenced blocker ID not found in documents".to_string(),
+                    });
+                }
+                targets = res.entries;
             }
             EdnaExpr::Condition(condition) => {
                 has_explicit_condition = true;
@@ -873,15 +884,19 @@ pub fn is_blocked(ctx: &EdnaContext<'_>) -> bool {
 
     // Evaluate: resolve finders to target entries, then check conditions.
     // The default condition (when no explicit condition is present) is that
-    // all target entries must be in a done state.
     let mut targets: Vec<ResolvedEntry<'_>> = Vec::new();
     let mut has_explicit_condition = false;
     let mut all_conditions_met = true;
+    let mut has_unresolved_targets = false;
 
     for expr in &exprs {
         match expr {
             EdnaExpr::Finder(finder) => {
-                targets = resolve_finder(finder, ctx);
+                let res = resolve_finder(finder, ctx);
+                if !res.unresolved_ids.is_empty() {
+                    has_unresolved_targets = true;
+                }
+                targets = res.entries;
             }
             EdnaExpr::Condition(condition) => {
                 has_explicit_condition = true;
@@ -911,6 +926,10 @@ pub fn is_blocked(ctx: &EdnaContext<'_>) -> bool {
         }
     }
 
+    if has_unresolved_targets {
+        return true;
+    }
+
     if !has_explicit_condition {
         // Default: all targets must be done.
         !targets_all_done(&targets)
@@ -931,6 +950,11 @@ impl<'a> ResolvedEntry<'a> {
     }
 }
 
+struct FinderTargets<'a> {
+    entries: Vec<ResolvedEntry<'a>>,
+    unresolved_ids: Vec<String>,
+}
+
 /// Check if all resolved target entries have a done keyword.
 fn targets_all_done(targets: &[ResolvedEntry<'_>]) -> bool {
     if targets.is_empty() {
@@ -945,8 +969,21 @@ fn targets_all_done(targets: &[ResolvedEntry<'_>]) -> bool {
     })
 }
 
-/// Resolve a finder to a list of entries.
-fn resolve_finder<'a>(finder: &Finder, ctx: &EdnaContext<'a>) -> Vec<ResolvedEntry<'a>> {
+/// Resolve a finder to a list of entries and any unresolved targets.
+fn resolve_finder<'a>(finder: &Finder, ctx: &EdnaContext<'a>) -> FinderTargets<'a> {
+    let mut unresolved_ids = Vec::new();
+    let entries = resolve_finder_entries(finder, ctx, &mut unresolved_ids);
+    FinderTargets {
+        entries,
+        unresolved_ids,
+    }
+}
+
+fn resolve_finder_entries<'a>(
+    finder: &Finder,
+    ctx: &EdnaContext<'a>,
+    unresolved_ids: &mut Vec<String>,
+) -> Vec<ResolvedEntry<'a>> {
     match finder {
         Finder::Self_ => vec![ResolvedEntry {
             doc: ctx.doc,
@@ -956,14 +993,19 @@ fn resolve_finder<'a>(finder: &Finder, ctx: &EdnaContext<'a>) -> Vec<ResolvedEnt
             let mut results = Vec::new();
             for id in ids {
                 // Search across all documents.
+                let mut found = false;
                 for doc in ctx.all_docs {
                     if let Some(idx) = doc.find_by_id(id) {
                         results.push(ResolvedEntry {
                             doc,
                             entry_idx: idx,
                         });
+                        found = true;
                         break; // IDs are unique, stop at first match.
                     }
+                }
+                if !found {
+                    unresolved_ids.push(id.clone());
                 }
             }
             results
@@ -1745,5 +1787,53 @@ mod tests {
         assert_eq!(details.len(), 2);
         assert_eq!(details[0].title, "Task A");
         assert_eq!(details[1].title, "Task B");
+    }
+
+    #[test]
+    fn unresolved_blocker_id_is_blocked() {
+        let mut doc = make_doc_with_entries(&[("Blocked", Some("TODO"), None)]);
+        doc.entries[0]
+            .properties
+            .insert("BLOCKER".to_string(), "ids(\"missing-id\")".to_string());
+
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 0,
+        };
+        assert!(is_blocked(&ctx));
+
+        let details = blocking_details(&ctx);
+        assert_eq!(details.len(), 1);
+        assert!(details[0].title.contains("missing-id"));
+        assert_eq!(details[0].locator, "id:missing-id");
+    }
+
+    #[test]
+    fn partially_unresolved_blocker_is_blocked() {
+        let mut doc = make_doc_with_entries(&[
+            ("Dep Done", Some("DONE"), None),
+            ("Blocked", Some("TODO"), None),
+        ]);
+        doc.entries[0]
+            .properties
+            .insert("ID".to_string(), "dep-done".to_string());
+        doc.entries[1].properties.insert(
+            "BLOCKER".to_string(),
+            "ids(\"dep-done\" \"missing-id\")".to_string(),
+        );
+
+        let docs: Vec<&OrgDocument> = vec![&doc];
+        let ctx = EdnaContext {
+            all_docs: &docs,
+            doc: &doc,
+            entry_idx: 1,
+        };
+        assert!(is_blocked(&ctx));
+
+        let details = blocking_details(&ctx);
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].locator, "id:missing-id");
     }
 }

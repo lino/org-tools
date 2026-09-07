@@ -19,6 +19,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::cache::CacheDb;
 use crate::document::OrgDocument;
 use crate::files::collect_org_files;
 use crate::source::SourceFile;
@@ -218,9 +219,50 @@ pub fn resolve_locator(
     locator: &OrgLocator,
     search_paths: &[PathBuf],
 ) -> Result<ResolvedEntry, LocatorError> {
+    resolve_locator_with_cache(locator, search_paths, None)
+}
+
+/// Resolves a locator, attempting fast lookup via SQLite cache if provided.
+pub fn resolve_locator_with_cache(
+    locator: &OrgLocator,
+    search_paths: &[PathBuf],
+    cache: Option<&CacheDb>,
+) -> Result<ResolvedEntry, LocatorError> {
     match locator {
-        OrgLocator::Id(id) => resolve_id(id, search_paths),
-        OrgLocator::CustomId { file, custom_id } => resolve_custom_id(file, custom_id),
+        OrgLocator::Id(id) => {
+            if let Some(cache) = cache {
+                if let Ok(Some(cached)) = cache.find_id(id) {
+                    let file_path = PathBuf::from(&cached.file_path);
+                    if file_path.exists() {
+                        return Ok(ResolvedEntry {
+                            file: file_path,
+                            line: cached.heading_line,
+                            heading_text: cached.title,
+                            level: cached.level,
+                            entry_index: cached.entry_idx,
+                        });
+                    }
+                }
+            }
+            resolve_id(id, search_paths)
+        }
+        OrgLocator::CustomId { file, custom_id } => {
+            if let Some(cache) = cache {
+                if let Ok(Some(cached)) = cache.find_custom_id(custom_id) {
+                    let file_path = PathBuf::from(&cached.file_path);
+                    if file_path == *file && file_path.exists() {
+                        return Ok(ResolvedEntry {
+                            file: file_path,
+                            line: cached.heading_line,
+                            heading_text: cached.title,
+                            level: cached.level,
+                            entry_index: cached.entry_idx,
+                        });
+                    }
+                }
+            }
+            resolve_custom_id(file, custom_id)
+        }
         OrgLocator::OutlinePath { file, path } => resolve_outline_path(file, path),
         OrgLocator::LineRef { file, line } => resolve_line_ref(file, *line),
     }
@@ -623,5 +665,45 @@ mod tests {
                 path: vec!["Work".to_string(), "Meeting".to_string()],
             }
         );
+    }
+
+    #[test]
+    fn resolve_with_cache_hit_and_miss() {
+        let mut db = CacheDb::open_in_memory().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("cached_tasks.org");
+        std::fs::write(
+            &file_path,
+            "* Task in Cache\n:PROPERTIES:\n:ID: cached-id-1\n:CUSTOM_ID: cached-cid-1\n:END:\n",
+        )
+        .unwrap();
+
+        db.sync_files(std::slice::from_ref(&file_path)).unwrap();
+
+        // 1. Hit via ID
+        let loc_id = OrgLocator::Id("cached-id-1".to_string());
+        let resolved = resolve_locator_with_cache(&loc_id, &[dir.path().to_path_buf()], Some(&db)).unwrap();
+        assert_eq!(resolved.heading_text, "Task in Cache");
+        assert_eq!(resolved.file, file_path);
+
+        // 2. Hit via Custom ID
+        let loc_cid = OrgLocator::CustomId {
+            file: file_path.clone(),
+            custom_id: "cached-cid-1".to_string(),
+        };
+        let resolved_cid = resolve_locator_with_cache(&loc_cid, &[dir.path().to_path_buf()], Some(&db)).unwrap();
+        assert_eq!(resolved_cid.heading_text, "Task in Cache");
+
+        // 3. Miss in cache falls back to search_paths scan
+        let file2 = dir.path().join("uncached.org");
+        std::fs::write(
+            &file2,
+            "* Uncached Task\n:PROPERTIES:\n:ID: uncached-id-2\n:END:\n",
+        )
+        .unwrap();
+        let loc_uncached = OrgLocator::Id("uncached-id-2".to_string());
+        let resolved_uncached = resolve_locator_with_cache(&loc_uncached, &[dir.path().to_path_buf()], Some(&db)).unwrap();
+        assert_eq!(resolved_uncached.heading_text, "Uncached Task");
+        assert_eq!(resolved_uncached.file, file2);
     }
 }

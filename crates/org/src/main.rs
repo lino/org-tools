@@ -3,10 +3,12 @@
 
 //! Unified CLI for org-mode: lint, format, query, clock, export, archive.
 
+mod cache_cmd;
 mod clock;
 mod date;
 mod export;
 mod query;
+mod watch;
 
 // ---------------------------------------------------------------------------
 // Exit codes
@@ -29,11 +31,12 @@ use std::process;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
+use org_tools_core::cache::{default_cache_path, CacheDb};
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::id::{self, IdGenerator};
-use org_tools_core::locator::{resolve_locator, OrgLocator};
+use org_tools_core::locator::{resolve_locator_with_cache, OrgLocator};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
 use org_tools_core::runner::Runner;
 use org_tools_core::source::SourceFile;
@@ -52,6 +55,26 @@ struct Cli {
     /// Generate shell completions and exit.
     #[arg(long, value_enum)]
     completions: Option<Shell>,
+
+    /// Enable persistent SQLite cache for indexing and faster queries.
+    #[arg(long, global = true)]
+    cache: bool,
+
+    /// Disable persistent SQLite cache.
+    #[arg(long, global = true, conflicts_with = "cache")]
+    no_cache: bool,
+
+    /// Custom path to SQLite cache database file.
+    #[arg(long, global = true)]
+    cache_path: Option<PathBuf>,
+
+    /// Rebuild/reindex the SQLite cache before running the command.
+    #[arg(long, global = true)]
+    reindex: bool,
+
+    /// Clear the SQLite cache.
+    #[arg(long, global = true)]
+    clear_cache: bool,
 }
 
 /// Top-level subcommands.
@@ -112,6 +135,22 @@ enum OrgCommand {
     Schema {
         /// Schema name (diagnostic, query, blocked, stuck, deps, clock-report, clock-status, mutation).
         name: String,
+    },
+    /// Synchronize the persistent SQLite cache with workspace files.
+    Sync {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+    },
+    /// Continuously watch workspace files and update the SQLite cache.
+    Watch {
+        /// Files or directories to watch.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Run an initial full sync before watching.
+        #[arg(long, default_value = "true")]
+        initial_sync: bool,
     },
 }
 
@@ -611,13 +650,44 @@ fn main() {
         }
     };
 
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let config = match Config::load(&cwd) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("org: {e}");
+            process::exit(EXIT_ERROR);
+        }
+    };
+
+    let cache_enabled = if cli.no_cache {
+        false
+    } else if cli.cache {
+        true
+    } else {
+        config.cache.enabled
+    };
+
+    let resolved_cache_path = cli
+        .cache_path
+        .clone()
+        .or_else(|| config.cache.path.clone().map(PathBuf::from))
+        .unwrap_or_else(|| default_cache_path(Some(&cwd)));
+
+    let cache_ctx = CacheContext {
+        enabled: cache_enabled,
+        path: resolved_cache_path,
+        threshold_ms: config.cache.threshold_ms,
+        reindex: cli.reindex,
+        clear: cli.clear_cache,
+    };
+
     let exit_code = match command {
         OrgCommand::Fmt { command, config } => {
             let config = load_config(&config);
             let runner = Runner::new(config);
             run_fmt(command, &runner)
         }
-        OrgCommand::Query { command } => run_query(command),
+        OrgCommand::Query { command } => run_query(command, &cache_ctx),
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
@@ -629,6 +699,17 @@ fn main() {
             format,
         } => run_archive(paths, target, tags, dry_run, format),
         OrgCommand::Schema { name } => run_schema(&name),
+        OrgCommand::Sync { paths } => {
+            cache_cmd::run_sync(&paths, Some(&cache_ctx.path), cli.reindex, cli.clear_cache)
+        }
+        OrgCommand::Watch { paths, initial_sync } => {
+            if let Err(e) = watch::run_watch(&paths, Some(&cache_ctx.path), initial_sync) {
+                eprintln!("org watch: {e}");
+                EXIT_ERROR
+            } else {
+                EXIT_OK
+            }
+        }
     };
 
     process::exit(exit_code);
@@ -768,13 +849,49 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
     }
 }
 
-/// Load all org documents from the given paths.
-fn load_docs(paths: &[PathBuf]) -> Vec<OrgDocument> {
+/// Context and configuration for the SQLite cache.
+#[derive(Debug, Clone)]
+pub struct CacheContext {
+    pub enabled: bool,
+    pub path: PathBuf,
+    pub threshold_ms: u64,
+    pub reindex: bool,
+    pub clear: bool,
+}
+
+/// Resolve a locator, checking the persistent SQLite cache if available.
+fn resolve_locator_with_optional_cache(
+    locator: &OrgLocator,
+    search_paths: &[PathBuf],
+) -> Result<org_tools_core::locator::ResolvedEntry, org_tools_core::locator::LocatorError> {
+    let cwd = search_paths
+        .first()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from("."));
+    let cache_path = default_cache_path(Some(&cwd));
+    let cache = CacheDb::open_or_create(&cache_path).ok();
+    resolve_locator_with_cache(locator, search_paths, cache.as_ref())
+}
+
+/// Load all org documents from the given paths, optionally synchronizing with SQLite cache.
+fn load_docs_with_cache(paths: &[PathBuf], cache_ctx: Option<&CacheContext>) -> Vec<OrgDocument> {
     let files = collect_org_files(paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
         return Vec::new();
     }
+
+    if let Some(ctx) = cache_ctx {
+        if ctx.enabled {
+            if let Ok(mut db) = CacheDb::open_or_create(&ctx.path) {
+                if ctx.clear || ctx.reindex {
+                    let _ = db.clear();
+                }
+                let _ = db.sync_files(&files);
+            }
+        }
+    }
+
     let mut docs: Vec<OrgDocument> = Vec::new();
     for file in &files {
         match SourceFile::from_path(file) {
@@ -785,8 +902,23 @@ fn load_docs(paths: &[PathBuf]) -> Vec<OrgDocument> {
     docs
 }
 
-/// Runs the `query` subcommand.
-fn run_query(command: QueryCommand) -> i32 {
+/// Runs the `query` subcommand with optional cache synchronization and latency tips.
+fn run_query(command: QueryCommand, cache_ctx: &CacheContext) -> i32 {
+    let start = std::time::Instant::now();
+    let code = run_query_inner(command, cache_ctx);
+    let elapsed = start.elapsed();
+
+    if !cache_ctx.enabled && elapsed.as_millis() as u64 >= cache_ctx.threshold_ms {
+        eprintln!(
+            "[tip] Query took {:.2}s. You can speed up future queries by enabling the SQLite cache with --cache or setting [cache] enabled = true in .org-tools.toml.",
+            elapsed.as_secs_f64()
+        );
+    }
+
+    code
+}
+
+fn run_query_inner(command: QueryCommand, cache_ctx: &CacheContext) -> i32 {
     match command {
         QueryCommand::Search {
             query: query_str,
@@ -802,21 +934,12 @@ fn run_query(command: QueryCommand) -> i32 {
                 }
             };
 
-            let files = collect_org_files(&paths);
-            if files.is_empty() {
-                eprintln!("org: no .org files found");
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
+            if docs.is_empty() {
                 return 2;
             }
 
             let today = date::current_date();
-            let mut docs: Vec<OrgDocument> = Vec::new();
-            for file in &files {
-                match SourceFile::from_path(file) {
-                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
-                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
-                }
-            }
-
             let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
             let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
             for doc in &docs {
@@ -855,18 +978,9 @@ fn run_query(command: QueryCommand) -> i32 {
             days,
             format,
         } => {
-            let files = collect_org_files(&paths);
-            if files.is_empty() {
-                eprintln!("org: no .org files found");
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
+            if docs.is_empty() {
                 return 2;
-            }
-
-            let mut docs: Vec<OrgDocument> = Vec::new();
-            for file in &files {
-                match SourceFile::from_path(file) {
-                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
-                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
-                }
             }
 
             let today = date::current_date();
@@ -944,7 +1058,7 @@ fn run_query(command: QueryCommand) -> i32 {
             format,
             limit,
         } => {
-            let docs = load_docs(&paths);
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
             if docs.is_empty() {
                 return 2;
             }
@@ -999,7 +1113,7 @@ fn run_query(command: QueryCommand) -> i32 {
             format,
             limit,
         } => {
-            let docs = load_docs(&paths);
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
             if docs.is_empty() {
                 return 2;
             }
@@ -1054,7 +1168,7 @@ fn run_query(command: QueryCommand) -> i32 {
             format,
             limit,
         } => {
-            let docs = load_docs(&paths);
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
             if docs.is_empty() {
                 return 2;
             }
@@ -1115,7 +1229,7 @@ fn run_query(command: QueryCommand) -> i32 {
             format,
             limit,
         } => {
-            let docs = load_docs(&paths);
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
             if docs.is_empty() {
                 return 2;
             }
@@ -1163,7 +1277,7 @@ fn run_query(command: QueryCommand) -> i32 {
             format,
             limit,
         } => {
-            let docs = load_docs(&paths);
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
             if docs.is_empty() {
                 return 2;
             }
@@ -1223,18 +1337,9 @@ fn run_query(command: QueryCommand) -> i32 {
             format,
             todo_only: _,
         } => {
-            let files = collect_org_files(&paths);
-            if files.is_empty() {
-                eprintln!("org: no .org files found");
+            let docs = load_docs_with_cache(&paths, Some(cache_ctx));
+            if docs.is_empty() {
                 return 2;
-            }
-
-            let mut docs: Vec<OrgDocument> = Vec::new();
-            for file in &files {
-                match SourceFile::from_path(file) {
-                    Ok(source) => docs.push(OrgDocument::from_source(&source)),
-                    Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
-                }
             }
 
             let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
@@ -1386,7 +1491,7 @@ fn run_add_id(
         // Try to parse as a locator first.
         if let Ok(locator) = OrgLocator::parse(target) {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            match resolve_locator(&locator, &[cwd]) {
+            match resolve_locator_with_optional_cache(&locator, &[cwd]) {
                 Ok(resolved) => {
                     let source = match SourceFile::from_path(&resolved.file) {
                         Ok(s) => s,
@@ -1695,7 +1800,7 @@ fn run_set_state(
     for target in &targets {
         if let Ok(locator) = OrgLocator::parse(target) {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            match resolve_locator(&locator, &[cwd]) {
+            match resolve_locator_with_optional_cache(&locator, &[cwd]) {
                 Ok(resolved) => {
                     let entry = file_targets
                         .entry(resolved.file.clone())
@@ -1803,7 +1908,7 @@ fn run_add_todo(
         match OrgLocator::parse(parent_loc) {
             Ok(locator) => {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                match resolve_locator(&locator, &[cwd]) {
+                match resolve_locator_with_optional_cache(&locator, &[cwd]) {
                     Ok(resolved) => {
                         let source = match SourceFile::from_path(&resolved.file) {
                             Ok(s) => s,

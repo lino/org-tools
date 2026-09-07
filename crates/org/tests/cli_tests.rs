@@ -1142,3 +1142,102 @@ fn archive_io_failure_exits_2() {
         .code(2);
 }
 
+#[test]
+fn cache_sync_and_clear_command() {
+    let dir = TempDir::new().unwrap();
+    let org_file = dir.path().join("tasks.org");
+    fs::write(
+        &org_file,
+        "* TODO Task A :work:\n:PROPERTIES:\n:ID: task-a\n:END:\n\n* DONE Task B :home:\n:PROPERTIES:\n:ID: task-b\n:END:\n",
+    )
+    .unwrap();
+
+    let cache_file = dir.path().join("test_cache.db");
+
+    // 1. Run sync
+    org()
+        .args([
+            "sync",
+            "--cache-path",
+            cache_file.to_str().unwrap(),
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("SQLite cache synchronized"))
+        .stdout(predicate::str::contains("Total entries:   2"));
+
+    assert!(cache_file.exists());
+
+    // 2. Clear cache
+    org()
+        .args([
+            "sync",
+            "--clear-cache",
+            "--cache-path",
+            cache_file.to_str().unwrap(),
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Cleared SQLite cache"));
+}
+
+#[test]
+fn query_with_cache_flag() {
+    let dir = TempDir::new().unwrap();
+    let org_file = dir.path().join("query_cached.org");
+    fs::write(
+        &org_file,
+        "* TODO Finish report :urgent:\n:PROPERTIES:\n:ID: rep-001\n:END:\n",
+    )
+    .unwrap();
+
+    let cache_file = dir.path().join(".org-cache.db");
+
+    // Query with --cache
+    org()
+        .current_dir(dir.path())
+        .args([
+            "--cache",
+            "--cache-path",
+            cache_file.to_str().unwrap(),
+            "query",
+            "search",
+            "report",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Finish report"));
+
+    assert!(cache_file.exists());
+}
+
+#[test]
+fn query_suggests_cache_when_threshold_exceeded() {
+    let dir = TempDir::new().unwrap();
+    let org_file = dir.path().join("large_note.org");
+    fs::write(&org_file, "* Task 1\n* Task 2\n").unwrap();
+
+    // Create .org-tools.toml with threshold_ms = 0 (always suggest when cache disabled)
+    let config_file = dir.path().join(".org-tools.toml");
+    fs::write(
+        &config_file,
+        "[cache]\nenabled = false\nthreshold_ms = 0\n",
+    )
+    .unwrap();
+
+    org()
+        .current_dir(dir.path())
+        .args([
+            "query",
+            "search",
+            "Task",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("[tip] Query took"));
+}
+

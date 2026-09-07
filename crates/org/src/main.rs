@@ -31,7 +31,7 @@ use clap_complete::Shell;
 
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
-use org_tools_core::files::collect_org_files;
+use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::id::{self, IdGenerator};
 use org_tools_core::locator::{resolve_locator, OrgLocator};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
@@ -647,7 +647,7 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                             let changed = formatted != source.content;
 
                             if changed {
-                                if let Err(e) = std::fs::write(file, &formatted) {
+                                if let Err(e) = write_file_atomic(file, &formatted) {
                                     eprintln!("org: error writing {}: {}", file.display(), e);
                                 } else {
                                     println!("Fixed: {}", file.display());
@@ -726,7 +726,7 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                         } else if stdout {
                             print!("{}", formatted);
                         } else if changed {
-                            if let Err(e) = std::fs::write(file, &formatted) {
+                            if let Err(e) = write_file_atomic(file, &formatted) {
                                 eprintln!("org: error writing {}: {}", file.display(), e);
                             } else {
                                 println!("Formatted: {}", file.display());
@@ -1439,7 +1439,7 @@ fn run_add_id(
                 file.display()
             );
         } else {
-            if let Err(e) = std::fs::write(&file, &result.content) {
+            if let Err(e) = write_file_atomic(&file, &result.content) {
                 eprintln!("org: error writing {}: {}", file.display(), e);
                 continue;
             }
@@ -1719,7 +1719,7 @@ fn run_set_state(
                     file.display()
                 );
             } else {
-                if let Err(e) = std::fs::write(&file, &r.content) {
+                if let Err(e) = write_file_atomic(&file, &r.content) {
                     eprintln!("org: error writing {}: {}", file.display(), e);
                     continue;
                 }
@@ -1828,7 +1828,7 @@ fn run_add_todo(
     if dry_run {
         println!("Would add entry to {}", file_path.display());
     } else {
-        if let Err(e) = std::fs::write(&file_path, &result.content) {
+        if let Err(e) = write_file_atomic(&file_path, &result.content) {
             eprintln!("org: error writing {}: {}", file_path.display(), e);
             return 2;
         }
@@ -1871,7 +1871,7 @@ fn run_add_cookie(
                     file.display()
                 );
             } else {
-                if let Err(e) = std::fs::write(file, &result.content) {
+                if let Err(e) = write_file_atomic(file, &result.content) {
                     eprintln!("org: error writing {}: {}", file.display(), e);
                     continue;
                 }
@@ -1944,26 +1944,56 @@ fn run_archive(
                     println!("  {} (line {})", entry.title, entry.start_line);
                 }
             } else {
-                // Write modified source.
-                if let Err(e) = std::fs::write(file, &result.source_content) {
-                    eprintln!("org: error writing {}: {}", file.display(), e);
-                    continue;
+                // Ensure parent directory of archive file exists.
+                if let Some(parent) = result.archive_path.parent() {
+                    if !parent.exists() {
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            eprintln!(
+                                "org: error creating directory {}: {}",
+                                parent.display(),
+                                e
+                            );
+                            continue;
+                        }
+                    }
                 }
-                // Append to archive file.
-                let mut archive_content = if result.archive_path.exists() {
-                    std::fs::read_to_string(&result.archive_path).unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                archive_content.push_str(&result.archive_content);
-                if let Err(e) = std::fs::write(&result.archive_path, &archive_content) {
+
+                // Append to archive file FIRST before modifying the source file.
+                let mut append_content = String::new();
+                if result.archive_path.exists() {
+                    if let Ok(existing) = std::fs::read_to_string(&result.archive_path) {
+                        if !existing.is_empty() && !existing.ends_with('\n') {
+                            append_content.push('\n');
+                        }
+                    }
+                }
+                append_content.push_str(&result.archive_content);
+
+                let archive_append_result = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&result.archive_path)
+                    .and_then(|mut f| {
+                        use std::io::Write;
+                        f.write_all(append_content.as_bytes())?;
+                        f.sync_all()
+                    });
+
+                if let Err(e) = archive_append_result {
                     eprintln!(
-                        "org: error writing {}: {}",
+                        "org: error writing archive {}: {}. Source file was not modified.",
                         result.archive_path.display(),
                         e
                     );
                     continue;
                 }
+
+                // Only update source file AFTER archive write is safely persisted.
+                if let Err(e) = write_file_atomic(file, &result.source_content) {
+                    eprintln!("org: error updating source file {}: {}", file.display(), e);
+                    continue;
+                }
+
                 println!(
                     "Archived {} entr{} from {} to {}",
                     result.archived,
@@ -2031,7 +2061,7 @@ fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutputFormat) ->
                     });
 
                     if !dry_run {
-                        if let Err(e) = std::fs::write(file, &result.content) {
+                        if let Err(e) = write_file_atomic(file, &result.content) {
                             mutation
                                 .errors
                                 .push(format!("{}: write error: {e}", file.display()));

@@ -1088,3 +1088,24 @@ fn calc_json_output() {
         .stdout(predicate::str::contains("\"command\""))
         .stdout(predicate::str::contains("\"entries_affected\""));
 }
+
+#[test]
+fn archive_failure_preserves_source() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("source.org");
+    let original = "* DONE Task to archive\nSome body text\n";
+    fs::write(&file, original).unwrap();
+
+    // Point archive target to an invalid location where writing will fail
+    // (e.g. treating a file as a directory: file.org/sub/archive.org)
+    let bad_target = format!("{}/cannot_create_dir/archive.org", file.display());
+
+    org()
+        .args(["archive", "--target", &bad_target])
+        .arg(file.to_str().unwrap())
+        .assert();
+
+    // Verify source file content was preserved and NOT deleted!
+    assert_eq!(fs::read_to_string(&file).unwrap(), original);
+}
+

@@ -888,6 +888,12 @@ fn run_query(command: QueryCommand) -> i32 {
                                 .items
                                 .iter()
                                 .map(|item| {
+                                    let (kind_str, overdue) = match item.kind {
+                                        query::agenda::AgendaKind::Scheduled => ("Scheduled", None),
+                                        query::agenda::AgendaKind::Deadline => ("Deadline", None),
+                                        query::agenda::AgendaKind::OverdueScheduled(d) => ("Scheduled", Some(d)),
+                                        query::agenda::AgendaKind::OverdueDeadline(d) => ("Deadline", Some(d)),
+                                    };
                                     serde_json::json!({
                                         "file": item.file.display().to_string(),
                                         "line": item.entry.heading_line,
@@ -895,7 +901,8 @@ fn run_query(command: QueryCommand) -> i32 {
                                         "priority": item.entry.priority.map(|p| p.to_string()),
                                         "title": item.entry.title,
                                         "tags": item.entry.tags,
-                                        "kind": format!("{:?}", item.kind),
+                                        "kind": kind_str,
+                                        "overdue_days": overdue,
                                         "time": match (item.timestamp.hour, item.timestamp.minute) {
                                             (Some(h), Some(m)) => Some(format!("{h:02}:{m:02}")),
                                             _ => None,

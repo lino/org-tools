@@ -216,6 +216,42 @@ pub fn now_timestamp() -> String {
         .unwrap_or_default()
         .as_secs() as i64;
 
+    #[cfg(unix)]
+    unsafe {
+        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+        let time_t = secs as libc::time_t;
+        if !libc::localtime_r(&time_t, tm.as_mut_ptr()).is_null() {
+            let tm = tm.assume_init();
+            let year = (tm.tm_year + 1900) as u16;
+            let month = (tm.tm_mon + 1) as u8;
+            let d = tm.tm_mday as u8;
+            let h = tm.tm_hour as u32;
+            let m = tm.tm_min as u32;
+            let dow = ((tm.tm_wday + 6) % 7) as u8;
+            let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            let day_name = day_names[dow as usize % 7];
+            return format!("{year:04}-{month:02}-{d:02} {day_name} {h:02}:{m:02}");
+        }
+    }
+
+    #[cfg(windows)]
+    unsafe {
+        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+        let time_t = secs as libc::time_t;
+        if libc::localtime_s(tm.as_mut_ptr(), &time_t) == 0 {
+            let tm = tm.assume_init();
+            let year = (tm.tm_year + 1900) as u16;
+            let month = (tm.tm_mon + 1) as u8;
+            let d = tm.tm_mday as u8;
+            let h = tm.tm_hour as u32;
+            let m = tm.tm_min as u32;
+            let dow = ((tm.tm_wday + 6) % 7) as u8;
+            let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            let day_name = day_names[dow as usize % 7];
+            return format!("{year:04}-{month:02}-{d:02} {day_name} {h:02}:{m:02}");
+        }
+    }
+
     let days = secs / 86400;
     let time_of_day = secs % 86400;
     let h = time_of_day / 3600;

@@ -26,6 +26,10 @@ pub enum AgendaKind {
     Scheduled,
     /// Deadline on this day.
     Deadline,
+    /// Scheduled in the past but not completed. Number of days overdue.
+    OverdueScheduled(i64),
+    /// Deadline in the past but not completed. Number of days overdue.
+    OverdueDeadline(i64),
 }
 
 /// A day in the agenda with its items.
@@ -61,6 +65,11 @@ pub fn build_agenda<'a>(
 
     for doc in docs {
         for entry in &doc.entries {
+            let is_done = entry
+                .keyword
+                .as_deref()
+                .is_some_and(|kw| doc.todo_keywords.is_done(kw));
+
             if let Some(ts) = &entry.planning.scheduled {
                 let ts_days = date_to_days(ts.year, ts.month, ts.day);
                 let offset = ts_days - start_days;
@@ -69,6 +78,13 @@ pub fn build_agenda<'a>(
                         entry,
                         file: &doc.file,
                         kind: AgendaKind::Scheduled,
+                        timestamp: ts,
+                    });
+                } else if offset < 0 && !is_done && !days.is_empty() {
+                    days[0].items.push(AgendaItem {
+                        entry,
+                        file: &doc.file,
+                        kind: AgendaKind::OverdueScheduled(-offset),
                         timestamp: ts,
                     });
                 }
@@ -81,6 +97,13 @@ pub fn build_agenda<'a>(
                         entry,
                         file: &doc.file,
                         kind: AgendaKind::Deadline,
+                        timestamp: ts,
+                    });
+                } else if offset < 0 && !is_done && !days.is_empty() {
+                    days[0].items.push(AgendaItem {
+                        entry,
+                        file: &doc.file,
+                        kind: AgendaKind::OverdueDeadline(-offset),
                         timestamp: ts,
                     });
                 }
@@ -130,8 +153,10 @@ pub fn render_agenda_human(days: &[AgendaDay<'_>]) -> String {
                 _ => String::new(),
             };
             let kind_str = match item.kind {
-                AgendaKind::Scheduled => "Scheduled",
-                AgendaKind::Deadline => "DEADLINE",
+                AgendaKind::Scheduled => "Scheduled".to_string(),
+                AgendaKind::Deadline => "DEADLINE".to_string(),
+                AgendaKind::OverdueScheduled(d) => format!("Sched. {d}x: Scheduled"),
+                AgendaKind::OverdueDeadline(d) => format!("In -{d} d.: DEADLINE"),
             };
 
             out.push_str(&format!(
@@ -249,4 +274,34 @@ mod tests {
         assert_eq!(days[2].items.len(), 1);
         assert_eq!(days[2].items[0].kind, AgendaKind::Deadline);
     }
+
+    #[test]
+    fn build_agenda_overdue_tasks() {
+        use org_tools_core::document::OrgDocument;
+        use org_tools_core::source::SourceFile;
+
+        let content = "\
+* TODO Overdue Sched
+SCHEDULED: <2024-06-14 Fri>
+* TODO Overdue Deadline
+DEADLINE: <2024-06-12 Wed>
+* DONE Completed Past
+SCHEDULED: <2024-06-14 Fri>
+";
+        let source = SourceFile::new("test.org", content.to_string());
+        let doc = OrgDocument::from_source(&source);
+        let docs = [doc];
+        let days = build_agenda(&docs, (2024, 6, 15), 7);
+
+        // Day 0 (June 15) should have the 2 overdue tasks, completed task excluded
+        assert_eq!(days[0].items.len(), 2);
+        assert_eq!(days[0].items[0].kind, AgendaKind::OverdueScheduled(1));
+        assert_eq!(days[0].items[1].kind, AgendaKind::OverdueDeadline(3));
+
+        let rendered = render_agenda_human(&days);
+        assert!(rendered.contains("Sched. 1x: Scheduled"));
+        assert!(rendered.contains("In -3 d.: DEADLINE"));
+        assert!(!rendered.contains("Completed Past"));
+    }
 }
+

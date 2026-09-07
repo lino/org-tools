@@ -25,3 +25,4 @@ uuid = { version = "1", features = ["v4"] }
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+libc = "0.2"

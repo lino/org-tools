@@ -3,13 +3,40 @@
 
 //! Shared date utilities for org-tools CLI commands.
 
-/// Get today's date as (year, month, day).
+/// Get today's local date as (year, month, day).
 pub fn current_date() -> (u16, u8, u8) {
     let now = std::time::SystemTime::now();
     let duration = now
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     let secs = duration.as_secs() as i64;
+
+    #[cfg(unix)]
+    unsafe {
+        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+        let time_t = secs as libc::time_t;
+        if !libc::localtime_r(&time_t, tm.as_mut_ptr()).is_null() {
+            let tm = tm.assume_init();
+            let year = (tm.tm_year + 1900) as u16;
+            let month = (tm.tm_mon + 1) as u8;
+            let day = tm.tm_mday as u8;
+            return (year, month, day);
+        }
+    }
+
+    #[cfg(windows)]
+    unsafe {
+        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+        let time_t = secs as libc::time_t;
+        if libc::localtime_s(tm.as_mut_ptr(), &time_t) == 0 {
+            let tm = tm.assume_init();
+            let year = (tm.tm_year + 1900) as u16;
+            let month = (tm.tm_mon + 1) as u8;
+            let day = tm.tm_mday as u8;
+            return (year, month, day);
+        }
+    }
+
     let days = secs / 86400;
     days_to_date(days)
 }

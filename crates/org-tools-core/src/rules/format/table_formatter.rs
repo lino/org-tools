@@ -53,12 +53,14 @@ impl FormatRule for TableFormatter {
 
     fn format(&self, ctx: &FormatContext) -> Vec<Fix> {
         let content = &ctx.source.content;
+        let newline = if content.contains("\r\n") { "\r\n" } else { "\n" };
         let tables = find_tables(content);
         let mut fixes = Vec::new();
 
         for table in tables {
-            if let Some(formatted) = format_table(&table) {
-                let original = &content[table.start..table.end];
+            let original = &content[table.start..table.end];
+            let ends_with_nl = original.ends_with('\n');
+            if let Some(formatted) = format_table(&table, newline, ends_with_nl) {
                 if formatted != original {
                     fixes.push(Fix::new(Span::new(table.start, table.end), formatted));
                 }
@@ -92,10 +94,12 @@ fn find_tables(content: &str) -> Vec<Table> {
             }
 
             let start: usize = lines[..table_start_line].iter().map(|l| l.len() + 1).sum();
+            let start = start.min(content.len());
             let end: usize = lines[..table_start_line + table_lines.len()]
                 .iter()
                 .map(|l| l.len() + 1)
                 .sum();
+            let end = end.min(content.len());
 
             let rows = parse_table_rows(&table_lines);
             tables.push(Table { start, end, rows });
@@ -209,7 +213,7 @@ fn parse_data_row(line: &str) -> Vec<String> {
         .collect()
 }
 
-fn format_table(table: &Table) -> Option<String> {
+fn format_table(table: &Table, newline: &str, ends_with_newline: bool) -> Option<String> {
     // Determine the number of columns.
     let num_cols = table
         .rows
@@ -284,7 +288,7 @@ fn format_table(table: &Table) -> Option<String> {
                     }
                 }
                 result.push('|');
-                result.push('\n');
+                result.push_str(newline);
             }
             TableRow::Data(cells) => {
                 result.push('|');
@@ -309,9 +313,13 @@ fn format_table(table: &Table) -> Option<String> {
                     result.push(' ');
                     result.push('|');
                 }
-                result.push('\n');
+                result.push_str(newline);
             }
         }
+    }
+
+    if !ends_with_newline && result.ends_with(newline) {
+        result.truncate(result.len() - newline.len());
     }
 
     Some(result)
@@ -482,4 +490,19 @@ mod tests {
             sep.len()
         );
     }
+
+    #[test]
+    fn table_at_eof_without_newline() {
+        let input = "| a | b |\n| 1 | 2 |";
+        let result = format_it(input);
+        assert_eq!(result, "| a | b |\n| 1 | 2 |");
+    }
+
+    #[test]
+    fn table_with_crlf() {
+        let input = "| a | b |\r\n| 1 | 2 |\r\n";
+        let result = format_it(input);
+        assert_eq!(result, "| a | b |\r\n| 1 | 2 |\r\n");
+    }
 }
+

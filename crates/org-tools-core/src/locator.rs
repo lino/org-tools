@@ -262,6 +262,10 @@ fn resolve_id(id: &str, search_paths: &[PathBuf]) -> Result<ResolvedEntry, Locat
     for file_path in &files {
         let source =
             SourceFile::from_path(file_path).map_err(|e| LocatorError::IoError(e.to_string()))?;
+        // Fast pre-filter: avoid expensive document parsing if the ID string isn't in the file.
+        if !source.content.contains(id) {
+            continue;
+        }
         let doc = OrgDocument::from_source(&source);
         if let Some(idx) = doc.find_by_id(id) {
             let entry = &doc.entries[idx];

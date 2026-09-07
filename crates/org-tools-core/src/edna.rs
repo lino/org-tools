@@ -1533,6 +1533,8 @@ mod tests {
             tag_spec: Default::default(),
             link_abbreviations: HashMap::new(),
             table_constants: HashMap::new(),
+            id_index: HashMap::new(),
+            custom_id_index: HashMap::new(),
         }
     }
 

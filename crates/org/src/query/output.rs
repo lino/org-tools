@@ -408,7 +408,7 @@ pub fn find_stuck_projects<'a>(
 
                 // Check actionable.
                 let pred = super::parser::Predicate::Actionable;
-                if super::predicate::matches(&pred, child, doc, doc_refs, today) {
+                if super::predicate::matches_at_idx(&pred, child, Some(ci), doc, doc_refs, today) {
                     actionable_count += 1;
                 }
             }

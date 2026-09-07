@@ -14,13 +14,34 @@ use super::parser::{CmpOp, Comparison, DateMatch, DateRef, DateUnit, Predicate, 
 /// The `doc` parameter is needed for tag inheritance and TODO keyword config.
 /// The `all_docs` parameter enables cross-file resolution for edna blockers.
 pub fn matches(
-    pred: &Predicate,
+    predicate: &Predicate,
     entry: &OrgEntry,
     doc: &OrgDocument,
     all_docs: &[&OrgDocument],
     today: (u16, u8, u8),
 ) -> bool {
-    match pred {
+    matches_at_idx(predicate, entry, None, doc, all_docs, today)
+}
+
+/// Evaluates a predicate against an entry with an optional known entry index.
+pub fn matches_at_idx(
+    predicate: &Predicate,
+    entry: &OrgEntry,
+    entry_idx: Option<usize>,
+    doc: &OrgDocument,
+    all_docs: &[&OrgDocument],
+    today: (u16, u8, u8),
+) -> bool {
+    let get_idx = || {
+        entry_idx.unwrap_or_else(|| {
+            doc.entries
+                .iter()
+                .position(|e| std::ptr::eq(e, entry))
+                .unwrap_or(0)
+        })
+    };
+
+    match predicate {
         Predicate::Todo(kw) => match kw {
             None => entry.keyword.is_some(),
             Some(k) => entry.keyword.as_deref() == Some(k.as_str()),
@@ -30,12 +51,8 @@ pub fn matches(
             .as_deref()
             .is_some_and(|k| doc.todo_keywords.is_done(k)),
         Predicate::Tags(tags) => {
-            let entry_idx = doc
-                .entries
-                .iter()
-                .position(|e| std::ptr::eq(e, entry))
-                .unwrap_or(0);
-            let inherited = doc.inherited_tags(entry_idx);
+            let idx = get_idx();
+            let inherited = doc.inherited_tags(idx);
             tags.iter()
                 .all(|t| inherited.iter().any(|it| it.eq_ignore_ascii_case(t)))
         }
@@ -60,15 +77,11 @@ pub fn matches(
         Predicate::Closed(dm) => match_date_opt(&entry.planning.closed, dm, today),
         Predicate::Clocked => !entry.clocks.is_empty(),
         Predicate::Blocked => {
-            let entry_idx = doc
-                .entries
-                .iter()
-                .position(|e| std::ptr::eq(e, entry))
-                .unwrap_or(0);
+            let idx = get_idx();
             let ctx = EdnaContext {
                 all_docs,
                 doc,
-                entry_idx,
+                entry_idx: idx,
             };
             edna::is_blocked(&ctx)
         }
@@ -91,15 +104,11 @@ pub fn matches(
             if is_waiting {
                 return false;
             }
-            let entry_idx = doc
-                .entries
-                .iter()
-                .position(|e| std::ptr::eq(e, entry))
-                .unwrap_or(0);
+            let idx = get_idx();
             let ctx = EdnaContext {
                 all_docs,
                 doc,
-                entry_idx,
+                entry_idx: idx,
             };
             !edna::is_blocked(&ctx)
         }
@@ -113,11 +122,11 @@ pub fn matches(
         }
         Predicate::And(preds) => preds
             .iter()
-            .all(|p| matches(p, entry, doc, all_docs, today)),
+            .all(|p| matches_at_idx(p, entry, entry_idx, doc, all_docs, today)),
         Predicate::Or(preds) => preds
             .iter()
-            .any(|p| matches(p, entry, doc, all_docs, today)),
-        Predicate::Not(inner) => !matches(inner, entry, doc, all_docs, today),
+            .any(|p| matches_at_idx(p, entry, entry_idx, doc, all_docs, today)),
+        Predicate::Not(inner) => !matches_at_idx(inner, entry, entry_idx, doc, all_docs, today),
     }
 }
 

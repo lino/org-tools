@@ -821,7 +821,7 @@ fn run_query(command: QueryCommand) -> i32 {
             let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
             for doc in &docs {
                 for (idx, entry) in doc.entries.iter().enumerate() {
-                    if query::predicate::matches(&pred, entry, doc, &doc_refs, today) {
+                    if query::predicate::matches_at_idx(&pred, entry, Some(idx), doc, &doc_refs, today) {
                         matches.push(query::output::MatchedEntry {
                             doc,
                             entry_idx: idx,

@@ -53,6 +53,10 @@ pub struct OrgDocument {
     ///
     /// Spec: [§3.5.2 References](https://orgmode.org/manual/References.html)
     pub table_constants: HashMap<String, String>,
+    /// Index mapping entry ID to entry index in `entries`.
+    pub id_index: HashMap<String, usize>,
+    /// Index mapping CUSTOM_ID to entry index in `entries`.
+    pub custom_id_index: HashMap<String, usize>,
 }
 
 /// A single heading entry in an org document.
@@ -299,6 +303,17 @@ impl OrgDocument {
 
         let tag_spec = tag_spec_from_values(&tags_lines);
 
+        let mut id_index = HashMap::new();
+        let mut custom_id_index = HashMap::new();
+        for (i, entry) in entries.iter().enumerate() {
+            if let Some(id) = entry.properties.get("ID") {
+                id_index.entry(id.clone()).or_insert(i);
+            }
+            if let Some(cid) = entry.properties.get("CUSTOM_ID") {
+                custom_id_index.entry(cid.clone()).or_insert(i);
+            }
+        }
+
         Self {
             file: source.path.clone(),
             entries,
@@ -311,11 +326,16 @@ impl OrgDocument {
             tag_spec,
             link_abbreviations,
             table_constants,
+            id_index,
+            custom_id_index,
         }
     }
 
     /// Find an entry by its `:ID:` property.
     pub fn find_by_id(&self, id: &str) -> Option<usize> {
+        if let Some(&idx) = self.id_index.get(id) {
+            return Some(idx);
+        }
         self.entries
             .iter()
             .position(|e| e.properties.get("ID").is_some_and(|v| v == id))
@@ -323,6 +343,9 @@ impl OrgDocument {
 
     /// Find an entry by its `:CUSTOM_ID:` property.
     pub fn find_by_custom_id(&self, custom_id: &str) -> Option<usize> {
+        if let Some(&idx) = self.custom_id_index.get(custom_id) {
+            return Some(idx);
+        }
         self.entries.iter().position(|e| {
             e.properties
                 .get("CUSTOM_ID")

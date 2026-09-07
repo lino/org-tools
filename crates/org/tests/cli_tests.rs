@@ -1100,7 +1100,7 @@ fn archive_failure_preserves_source() {
     // (e.g. treating a file as a directory: file.org/sub/archive.org)
     let bad_target = format!("{}/cannot_create_dir/archive.org", file.display());
 
-    org()
+    let _ = org()
         .args(["archive", "--target", &bad_target])
         .arg(file.to_str().unwrap())
         .assert();

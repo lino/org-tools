@@ -80,6 +80,8 @@ pub struct OrgEntry {
     pub heading_offset: usize,
     /// Line number where this entry's content ends (exclusive, 1-based).
     pub content_end_line: usize,
+    /// Line number where this entry's full subtree ends (exclusive, 1-based).
+    pub subtree_end_line: usize,
     /// Index of parent entry in [`OrgDocument::entries`], or `None` for top-level.
     pub parent: Option<usize>,
     /// Indices of direct children in [`OrgDocument::entries`].
@@ -240,7 +242,8 @@ impl OrgDocument {
                     clocks: Vec::new(),
                     heading_line,
                     heading_offset,
-                    content_end_line: lines.len(), // Will be fixed later.
+                    content_end_line: lines.len() + 1, // Will be fixed later.
+                    subtree_end_line: lines.len() + 1, // Will be fixed later.
                     parent,
                     children: Vec::new(),
                     raw_heading,
@@ -273,7 +276,7 @@ impl OrgDocument {
             }
         }
 
-        // Fix content_end_line for each entry.
+        // Fix content_end_line and subtree_end_line for each entry.
         for idx in 0..entries.len() {
             let end = if idx + 1 < entries.len() {
                 entries[idx + 1].heading_line
@@ -281,6 +284,17 @@ impl OrgDocument {
                 lines.len() + 1
             };
             entries[idx].content_end_line = end;
+
+            // Subtree ends before the next heading with level <= current entry level.
+            let current_level = entries[idx].level;
+            let mut subtree_end = lines.len() + 1;
+            for next_idx in (idx + 1)..entries.len() {
+                if entries[next_idx].level <= current_level {
+                    subtree_end = entries[next_idx].heading_line;
+                    break;
+                }
+            }
+            entries[idx].subtree_end_line = subtree_end;
         }
 
         let tag_spec = tag_spec_from_values(&tags_lines);

@@ -1464,6 +1464,7 @@ mod tests {
                 heading_line: i + 1,
                 heading_offset: 0,
                 content_end_line: i + 2,
+                subtree_end_line: i + 2,
                 parent: *parent,
                 children: Vec::new(),
                 raw_heading: format!("* {title}"),

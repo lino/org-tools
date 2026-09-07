@@ -76,9 +76,9 @@ pub fn add_entry(
 
     match parent_idx {
         Some(pidx) => {
-            // Insert after the parent's last content line (before next sibling or EOF).
+            // Insert after the parent's full subtree (after existing children, before next sibling or EOF).
             let entry = &doc.entries[pidx];
-            let insert_line = entry.content_end_line - 1; // content_end_line is 1-based exclusive
+            let insert_line = entry.subtree_end_line - 1; // subtree_end_line is 1-based exclusive
             let lines: Vec<&str> = content.split('\n').collect();
             let insert_line = insert_line.min(lines.len());
             let insert_offset: usize = lines[..insert_line].iter().map(|l| l.len() + 1).sum();
@@ -205,4 +205,29 @@ mod tests {
         assert!(result.content.contains("* Parent\n"));
         assert!(result.content.contains("** TODO Child\n"));
     }
+
+    #[test]
+    fn add_entry_as_second_child() {
+        let (source, doc) = make_doc("* Parent\n** First Child\nBody of first child\n* Sibling\n");
+        let result = add_entry(
+            &source,
+            &doc,
+            Some(0),
+            &NewEntryOpts {
+                title: "Second Child".to_string(),
+                level: 2,
+                keyword: Some("TODO".to_string()),
+                priority: None,
+                tags: vec![],
+                scheduled: None,
+                deadline: None,
+            },
+        );
+        let first_pos = result.content.find("** First Child").unwrap();
+        let second_pos = result.content.find("** TODO Second Child").unwrap();
+        let sibling_pos = result.content.find("* Sibling").unwrap();
+        assert!(first_pos < second_pos);
+        assert!(second_pos < sibling_pos);
+    }
 }
+

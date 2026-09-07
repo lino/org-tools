@@ -53,6 +53,8 @@ pub struct Config {
     pub format: FormatConfig,
     /// Lint rule configuration.
     pub lint: LintConfig,
+    /// Persistent SQLite cache configuration.
+    pub cache: CacheConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +104,35 @@ impl Default for FormatConfig {
             heading_blank_lines_before: 1,
             table_format: true,
             property_drawer_align: true,
+        }
+    }
+}
+
+fn default_threshold_ms() -> u64 {
+    500
+}
+
+/// Cache configuration loaded from `[cache]` section in `.org-tools.toml`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct CacheConfig {
+    /// Enable persistent SQLite cache for ID resolution, search, and indexing.
+    /// Default: false (disabled).
+    pub enabled: bool,
+    /// Path to the SQLite cache database file.
+    /// If None, defaults to `.org-cache.db` in workspace root or `$XDG_CACHE_HOME/org-tools/cache.db`.
+    pub path: Option<String>,
+    /// Latency threshold in milliseconds after which slow queries suggest enabling cache.
+    /// Default: 500 ms. Set to 0 to disable suggestions.
+    pub threshold_ms: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: None,
+            threshold_ms: default_threshold_ms(),
         }
     }
 }
@@ -221,6 +252,22 @@ blank_lines = true
         let result = Config::load(dir.path());
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ConfigError::Parse { .. }));
+    }
+
+    #[test]
+    fn load_cache_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_file = dir.path().join(".org-tools.toml");
+        std::fs::write(
+            &config_file,
+            "[cache]\nenabled = true\npath = \"/tmp/my-cache.db\"\nthreshold_ms = 250\n",
+        )
+        .unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.cache.enabled);
+        assert_eq!(config.cache.path.as_deref(), Some("/tmp/my-cache.db"));
+        assert_eq!(config.cache.threshold_ms, 250);
     }
 }
 

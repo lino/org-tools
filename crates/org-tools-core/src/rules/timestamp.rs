@@ -34,6 +34,26 @@ pub struct OrgTimestamp {
     pub active: bool,
 }
 
+impl std::fmt::Display for OrgTimestamp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (open, close) = if self.active { ('<', '>') } else { ('[', ']') };
+        write!(f, "{open}{:04}-{:02}-{:02}", self.year, self.month, self.day)?;
+        if let Some(ref d) = self.dayname {
+            write!(f, " {d}")?;
+        }
+        if let (Some(h), Some(m)) = (self.hour, self.minute) {
+            write!(f, " {h:02}:{m:02}")?;
+        }
+        if let Some(ref r) = self.repeater {
+            write!(f, " {r}")?;
+        }
+        if let Some(ref w) = self.warning {
+            write!(f, " {w}")?;
+        }
+        write!(f, "{close}")
+    }
+}
+
 /// Attempts to parse an org timestamp starting at position `pos` in `text`.
 /// Returns the parsed timestamp and the byte position after it.
 pub fn parse_timestamp(text: &str, pos: usize) -> Option<(OrgTimestamp, usize)> {

@@ -8,6 +8,7 @@
 //! [`OrgDocument`](document::OrgDocument) heading tree model.
 
 pub mod archive;
+pub mod cache;
 pub mod config;
 pub mod cookie;
 pub mod diagnostic;

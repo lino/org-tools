@@ -85,7 +85,7 @@ fn main() {
     let large_text = generate_sample_org(500);
 
     let small_source = SourceFile::new(PathBuf::from("small.org"), small_text);
-    let large_source = SourceFile::new(PathBuf::from("large.org"), large_text);
+    let large_source = SourceFile::new(PathBuf::from("large.org"), large_text.clone());
 
     // 1. Parsing benchmarks
     run_bench("parse_document_20_headings", 2_000, || {
@@ -171,6 +171,38 @@ fn main() {
 
     run_bench("edna_is_blocked_none", 50_000, || {
         is_blocked(&unblocked_ctx)
+    });
+
+    // 6. SQLite persistent cache benchmarks
+    use org_tools_core::cache::CacheDb;
+    let mut cache_db = CacheDb::open_in_memory().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let sample_file = temp_dir.path().join("bench_500.org");
+    std::fs::write(&sample_file, &large_text).unwrap();
+
+    let sample_files = std::slice::from_ref(&sample_file);
+
+    // Initial indexing
+    run_bench("sqlite_cache_sync_500_entries", 20, || {
+        let mut db = CacheDb::open_in_memory().unwrap();
+        db.sync_files(sample_files).unwrap()
+    });
+
+    // Populate for query benchmarks
+    cache_db.sync_files(sample_files).unwrap();
+
+    // Cache hit check (stat / fast check)
+    run_bench("sqlite_cache_sync_hit", 5_000, || {
+        cache_db.sync_files(sample_files).unwrap()
+    });
+
+    // Cache ID lookups
+    run_bench("sqlite_cache_find_id_hit", 20_000, || {
+        cache_db.find_id(target_id_mid).unwrap()
+    });
+
+    run_bench("sqlite_cache_find_id_miss", 20_000, || {
+        cache_db.find_id(target_id_missing).unwrap()
     });
 
     println!("-------------------------------------------------------------------------------");

@@ -75,7 +75,7 @@ pub fn update_cookies(
         // Find existing cookie in the heading.
         if let Some((cookie_start, cookie_end, is_percent)) = find_cookie(heading_line) {
             let new_cookie = if is_percent {
-                let pct = if total > 0 { (done * 100) / total } else { 0 };
+                let pct = (done * 100).checked_div(total).unwrap_or(0);
                 format!("[{pct}%]")
             } else {
                 format!("[{done}/{total}]")

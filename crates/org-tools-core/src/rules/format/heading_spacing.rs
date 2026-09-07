@@ -90,7 +90,11 @@ impl FormatRule for HeadingSpacing {
                         lines[..i - blank_count].iter().map(|l| l.len() + 1).sum();
                     let blank_region_end = offset;
 
-                    let newline = if content.contains("\r\n") { "\r\n" } else { "\n" };
+                    let newline = if content.contains("\r\n") {
+                        "\r\n"
+                    } else {
+                        "\n"
+                    };
                     let replacement = newline.repeat(desired);
                     fixes.push(Fix::new(
                         Span::new(blank_region_start, blank_region_end),

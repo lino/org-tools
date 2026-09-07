@@ -69,16 +69,10 @@ mod tests {
 
         // Write to new file (creates subdirectories automatically)
         write_file_atomic(&file, "initial content\n").unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&file).unwrap(),
-            "initial content\n"
-        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "initial content\n");
 
         // Overwrite atomically
         write_file_atomic(&file, "updated content\n").unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&file).unwrap(),
-            "updated content\n"
-        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "updated content\n");
     }
 }

@@ -16,9 +16,14 @@ run = "cargo test"
 [tasks.lint]
 description = "Run clippy and check formatting"
 run = """
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo fmt -- --check
 """
+
+[tasks."hooks:install"]
+description = "Install git pre-commit and pre-push hooks"
+run = "pre-commit install --hook-type pre-commit --hook-type pre-push"
+
 
 [tasks.check]
 description = "Run org-tools check on edge case fixtures"

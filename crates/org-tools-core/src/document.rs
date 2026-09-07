@@ -1265,4 +1265,3 @@ mod tests {
         assert_eq!(doc.entries[1].title, "Second");
     }
 }
-

@@ -1222,22 +1222,12 @@ fn query_suggests_cache_when_threshold_exceeded() {
 
     // Create .org-tools.toml with threshold_ms = 0 (always suggest when cache disabled)
     let config_file = dir.path().join(".org-tools.toml");
-    fs::write(
-        &config_file,
-        "[cache]\nenabled = false\nthreshold_ms = 0\n",
-    )
-    .unwrap();
+    fs::write(&config_file, "[cache]\nenabled = false\nthreshold_ms = 0\n").unwrap();
 
     org()
         .current_dir(dir.path())
-        .args([
-            "query",
-            "search",
-            "Task",
-            dir.path().to_str().unwrap(),
-        ])
+        .args(["query", "search", "Task", dir.path().to_str().unwrap()])
         .assert()
         .success()
         .stderr(predicate::str::contains("[tip] Query took"));
 }
-

@@ -682,7 +682,8 @@ mod tests {
 
         // 1. Hit via ID
         let loc_id = OrgLocator::Id("cached-id-1".to_string());
-        let resolved = resolve_locator_with_cache(&loc_id, &[dir.path().to_path_buf()], Some(&db)).unwrap();
+        let resolved =
+            resolve_locator_with_cache(&loc_id, &[dir.path().to_path_buf()], Some(&db)).unwrap();
         assert_eq!(resolved.heading_text, "Task in Cache");
         assert_eq!(resolved.file, file_path);
 
@@ -691,7 +692,8 @@ mod tests {
             file: file_path.clone(),
             custom_id: "cached-cid-1".to_string(),
         };
-        let resolved_cid = resolve_locator_with_cache(&loc_cid, &[dir.path().to_path_buf()], Some(&db)).unwrap();
+        let resolved_cid =
+            resolve_locator_with_cache(&loc_cid, &[dir.path().to_path_buf()], Some(&db)).unwrap();
         assert_eq!(resolved_cid.heading_text, "Task in Cache");
 
         // 3. Miss in cache falls back to search_paths scan
@@ -702,7 +704,9 @@ mod tests {
         )
         .unwrap();
         let loc_uncached = OrgLocator::Id("uncached-id-2".to_string());
-        let resolved_uncached = resolve_locator_with_cache(&loc_uncached, &[dir.path().to_path_buf()], Some(&db)).unwrap();
+        let resolved_uncached =
+            resolve_locator_with_cache(&loc_uncached, &[dir.path().to_path_buf()], Some(&db))
+                .unwrap();
         assert_eq!(resolved_uncached.heading_text, "Uncached Task");
         assert_eq!(resolved_uncached.file, file2);
     }

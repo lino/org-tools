@@ -244,8 +244,21 @@ Constants are defined in `crates/org/src/main.rs`.
 ```sh
 cargo build                              # build
 cargo test                               # run all tests
-cargo clippy -- -D warnings              # lint
+cargo clippy --all-targets -- -D warnings # lint
 cargo run -- fmt check file.org              # check a file
 cargo run -- fmt format --stdout file.org    # preview formatting
 cargo run -- fmt check tests/fixtures/edge_cases/  # check all edge case files
 ```
+
+### Pre-commit Hooks
+
+Git hooks run format and lint checks before commit, and test suites before push:
+
+```sh
+# Install hooks into .git/hooks/
+pre-commit install --hook-type pre-commit --hook-type pre-push
+
+# Run manually across all files
+pre-commit run --all-files
+```
+

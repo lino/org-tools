@@ -304,4 +304,3 @@ SCHEDULED: <2024-06-14 Fri>
         assert!(!rendered.contains("Completed Past"));
     }
 }
-

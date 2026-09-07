@@ -230,4 +230,3 @@ mod tests {
         assert!(second_pos < sibling_pos);
     }
 }
-

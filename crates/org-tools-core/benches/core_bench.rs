@@ -51,7 +51,11 @@ fn generate_sample_org(heading_count: usize) -> String {
         let level = (i % 3) + 1;
         let stars = "*".repeat(level);
         let kw = if i % 2 == 0 { "TODO " } else { "DONE " };
-        let tag = if i % 4 == 0 { " :work:urgent:" } else { " :notes:" };
+        let tag = if i % 4 == 0 {
+            " :work:urgent:"
+        } else {
+            " :notes:"
+        };
         s.push_str(&format!("{stars} {kw}Task {i}{tag}\n"));
         if i % 3 == 0 {
             s.push_str("SCHEDULED: <2026-09-01 Mon 10:00> DEADLINE: <2026-09-10 Wed>\n");
@@ -59,7 +63,10 @@ fn generate_sample_org(heading_count: usize) -> String {
         s.push_str(":PROPERTIES:\n");
         s.push_str(&format!(":ID: id-{i:05}\n"));
         if i % 5 == 0 {
-            s.push_str(&format!(":BLOCKER: id-{:05}\n", (i.saturating_sub(1)).max(1)));
+            s.push_str(&format!(
+                ":BLOCKER: id-{:05}\n",
+                (i.saturating_sub(1)).max(1)
+            ));
         }
         s.push_str(":END:\n");
         s.push_str(&format!("Body paragraph content for task {i}.\n\n"));
@@ -72,7 +79,11 @@ fn generate_sample_table(rows: usize) -> String {
     s.push_str("| Item | Qty | Unit Price | Total |\n");
     s.push_str("|---+---+---+---|\n");
     for i in 1..=rows {
-        s.push_str(&format!("| Widget {i} | {} | ${:.2} | |\n", i * 2, (i as f64) * 1.5));
+        s.push_str(&format!(
+            "| Widget {i} | {} | ${:.2} | |\n",
+            i * 2,
+            (i as f64) * 1.5
+        ));
     }
     s
 }
@@ -165,9 +176,7 @@ fn main() {
         entry_idx: 0, // task 1 (no blocker)
     };
 
-    run_bench("edna_is_blocked_hit", 10_000, || {
-        is_blocked(&blocked_ctx)
-    });
+    run_bench("edna_is_blocked_hit", 10_000, || is_blocked(&blocked_ctx));
 
     run_bench("edna_is_blocked_none", 50_000, || {
         is_blocked(&unblocked_ctx)

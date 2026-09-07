@@ -10,12 +10,7 @@ use org_tools_core::cache::{default_cache_path, CacheDb};
 use org_tools_core::files::collect_org_files;
 
 /// Synchronizes the SQLite cache immediately with workspace files.
-pub fn run_sync(
-    paths: &[PathBuf],
-    cache_path: Option<&Path>,
-    reindex: bool,
-    clear: bool,
-) -> i32 {
+pub fn run_sync(paths: &[PathBuf], cache_path: Option<&Path>, reindex: bool, clear: bool) -> i32 {
     let resolved_path = cache_path
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| default_cache_path(Some(Path::new("."))));

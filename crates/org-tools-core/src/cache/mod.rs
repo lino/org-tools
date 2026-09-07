@@ -173,10 +173,7 @@ impl CacheDb {
         let mut conn = Connection::open_in_memory()?;
         Self::configure_pragmas(&conn)?;
         Self::apply_migrations(&mut conn)?;
-        Ok(Self {
-            conn,
-            path: None,
-        })
+        Ok(Self { conn, path: None })
     }
 
     fn try_open(db_path: &Path) -> Result<Self, CacheError> {
@@ -339,11 +336,21 @@ impl CacheDb {
                 .query_row(
                     "SELECT id, size, mtime_sec, mtime_nsec, hash FROM files WHERE path = ?1",
                     params![&path_str],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    },
                 )
                 .optional()?;
 
-            if let Some((_file_id, old_size, old_mtime_sec, old_mtime_nsec, old_hash)) = existing_record {
+            if let Some((_file_id, old_size, old_mtime_sec, old_mtime_nsec, old_hash)) =
+                existing_record
+            {
                 if old_size == size && old_mtime_sec == mtime_sec && old_mtime_nsec == mtime_nsec {
                     // Cache hit: stat matches completely
                     stats.cache_hits += 1;
@@ -368,7 +375,9 @@ impl CacheDb {
                 }
 
                 // Content changed: update document
-                self.index_file_content(&path_str, size, mtime_sec, mtime_nsec, &new_hash, &content)?;
+                self.index_file_content(
+                    &path_str, size, mtime_sec, mtime_nsec, &new_hash, &content,
+                )?;
                 stats.updated_files += 1;
             } else {
                 // New file: read and index
@@ -377,7 +386,9 @@ impl CacheDb {
                     Err(_) => continue,
                 };
                 let new_hash = compute_content_hash(content.as_bytes());
-                self.index_file_content(&path_str, size, mtime_sec, mtime_nsec, &new_hash, &content)?;
+                self.index_file_content(
+                    &path_str, size, mtime_sec, mtime_nsec, &new_hash, &content,
+                )?;
                 stats.updated_files += 1;
             }
         }
@@ -573,7 +584,11 @@ impl CacheDb {
         )
     }
 
-    fn query_single_entry(&self, sql: &str, params: &[&dyn rusqlite::ToSql]) -> Result<Option<CachedEntry>, CacheError> {
+    fn query_single_entry(
+        &self,
+        sql: &str,
+        params: &[&dyn rusqlite::ToSql],
+    ) -> Result<Option<CachedEntry>, CacheError> {
         let mut stmt = self.conn.prepare(sql)?;
         let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))?;
 
@@ -596,7 +611,9 @@ impl CacheDb {
 
             let priority = priority_str.and_then(|s| s.chars().next());
 
-            let mut tag_stmt = self.conn.prepare("SELECT tag FROM tags WHERE entry_id = ?1")?;
+            let mut tag_stmt = self
+                .conn
+                .prepare("SELECT tag FROM tags WHERE entry_id = ?1")?;
             let tag_rows = tag_stmt.query_map(params![entry_id], |r| r.get::<_, String>(0))?;
             let mut tags = Vec::new();
             for t in tag_rows {
@@ -627,11 +644,21 @@ impl CacheDb {
 
     /// Retrieves statistics about the database.
     pub fn stats(&self) -> Result<CacheStats, CacheError> {
-        let file_count: i64 = self.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-        let entry_count: i64 = self.conn.query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))?;
-        let tag_count: i64 = self.conn.query_row("SELECT COUNT(*) FROM tags", [], |r| r.get(0))?;
-        let dependency_count: i64 = self.conn.query_row("SELECT COUNT(*) FROM dependencies", [], |r| r.get(0))?;
-        let schema_version: i32 = self.conn.query_row("PRAGMA user_version;", [], |r| r.get(0))?;
+        let file_count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
+        let entry_count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))?;
+        let tag_count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM tags", [], |r| r.get(0))?;
+        let dependency_count: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM dependencies", [], |r| r.get(0))?;
+        let schema_version: i32 = self
+            .conn
+            .query_row("PRAGMA user_version;", [], |r| r.get(0))?;
 
         Ok(CacheStats {
             file_count: file_count as usize,
@@ -713,13 +740,19 @@ mod tests {
         assert_eq!(stats2.updated_files, 0);
 
         // Find by ID
-        let found_id = db.find_id("task-123").unwrap().expect("should find task-123");
+        let found_id = db
+            .find_id("task-123")
+            .unwrap()
+            .expect("should find task-123");
         assert_eq!(found_id.title, "Buy groceries");
         assert_eq!(found_id.keyword.as_deref(), Some("TODO"));
         assert_eq!(found_id.tags, vec!["errand"]);
 
         // Find by CUSTOM_ID
-        let found_custom = db.find_custom_id("clean-kitchen").unwrap().expect("should find clean-kitchen");
+        let found_custom = db
+            .find_custom_id("clean-kitchen")
+            .unwrap()
+            .expect("should find clean-kitchen");
         assert_eq!(found_custom.title, "Clean kitchen");
         assert_eq!(found_custom.keyword.as_deref(), Some("DONE"));
 
@@ -738,10 +771,17 @@ mod tests {
         assert_eq!(db.find_id("id-1").unwrap().unwrap().title, "Heading 1");
 
         // Modify content
-        fs::write(&file1, "* Heading Renamed\n:PROPERTIES:\n:ID: id-1\n:END:\n").unwrap();
+        fs::write(
+            &file1,
+            "* Heading Renamed\n:PROPERTIES:\n:ID: id-1\n:END:\n",
+        )
+        .unwrap();
         let stats = db.sync_files(std::slice::from_ref(&file1)).unwrap();
         assert_eq!(stats.updated_files, 1);
-        assert_eq!(db.find_id("id-1").unwrap().unwrap().title, "Heading Renamed");
+        assert_eq!(
+            db.find_id("id-1").unwrap().unwrap().title,
+            "Heading Renamed"
+        );
     }
 
     #[test]

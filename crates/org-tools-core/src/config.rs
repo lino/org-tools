@@ -145,18 +145,16 @@ impl Config {
         loop {
             let config_path = dir.join(".org-tools.toml");
             if config_path.is_file() {
-                let contents = std::fs::read_to_string(&config_path).map_err(|source| {
-                    ConfigError::Read {
+                let contents =
+                    std::fs::read_to_string(&config_path).map_err(|source| ConfigError::Read {
                         path: config_path.clone(),
                         source,
-                    }
-                })?;
-                let config = toml::from_str::<Config>(&contents).map_err(|source| {
-                    ConfigError::Parse {
+                    })?;
+                let config =
+                    toml::from_str::<Config>(&contents).map_err(|source| ConfigError::Parse {
                         path: config_path.clone(),
                         source,
-                    }
-                })?;
+                    })?;
                 return Ok(config);
             }
             match dir.parent() {
@@ -270,4 +268,3 @@ blank_lines = true
         assert_eq!(config.cache.threshold_ms, 250);
     }
 }
-

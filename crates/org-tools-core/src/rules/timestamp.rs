@@ -37,7 +37,11 @@ pub struct OrgTimestamp {
 impl std::fmt::Display for OrgTimestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (open, close) = if self.active { ('<', '>') } else { ('[', ']') };
-        write!(f, "{open}{:04}-{:02}-{:02}", self.year, self.month, self.day)?;
+        write!(
+            f,
+            "{open}{:04}-{:02}-{:02}",
+            self.year, self.month, self.day
+        )?;
         if let Some(ref d) = self.dayname {
             write!(f, " {d}")?;
         }

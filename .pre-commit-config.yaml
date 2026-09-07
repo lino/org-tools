@@ -1,4 +1,11 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+
   # Rust: formatting and linting
   - repo: local
     hooks:
@@ -11,10 +18,18 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --all-targets -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
 
       # org-tools: format org files in docs/ and README.org
       - id: org-fmt
@@ -23,3 +38,4 @@ repos:
         language: system
         files: ^(docs/.*\.org|README\.org)$
         types_or: [file]
+

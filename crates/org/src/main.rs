@@ -702,7 +702,10 @@ fn main() {
         OrgCommand::Sync { paths } => {
             cache_cmd::run_sync(&paths, Some(&cache_ctx.path), cli.reindex, cli.clear_cache)
         }
-        OrgCommand::Watch { paths, initial_sync } => {
+        OrgCommand::Watch {
+            paths,
+            initial_sync,
+        } => {
             if let Err(e) = watch::run_watch(&paths, Some(&cache_ctx.path), initial_sync) {
                 eprintln!("org watch: {e}");
                 EXIT_ERROR
@@ -944,7 +947,14 @@ fn run_query_inner(command: QueryCommand, cache_ctx: &CacheContext) -> i32 {
             let mut matches: Vec<query::output::MatchedEntry<'_>> = Vec::new();
             for doc in &docs {
                 for (idx, entry) in doc.entries.iter().enumerate() {
-                    if query::predicate::matches_at_idx(&pred, entry, Some(idx), doc, &doc_refs, today) {
+                    if query::predicate::matches_at_idx(
+                        &pred,
+                        entry,
+                        Some(idx),
+                        doc,
+                        &doc_refs,
+                        today,
+                    ) {
                         matches.push(query::output::MatchedEntry {
                             doc,
                             entry_idx: idx,
@@ -1005,8 +1015,12 @@ fn run_query_inner(command: QueryCommand, cache_ctx: &CacheContext) -> i32 {
                                     let (kind_str, overdue) = match item.kind {
                                         query::agenda::AgendaKind::Scheduled => ("Scheduled", None),
                                         query::agenda::AgendaKind::Deadline => ("Deadline", None),
-                                        query::agenda::AgendaKind::OverdueScheduled(d) => ("Scheduled", Some(d)),
-                                        query::agenda::AgendaKind::OverdueDeadline(d) => ("Deadline", Some(d)),
+                                        query::agenda::AgendaKind::OverdueScheduled(d) => {
+                                            ("Scheduled", Some(d))
+                                        }
+                                        query::agenda::AgendaKind::OverdueDeadline(d) => {
+                                            ("Deadline", Some(d))
+                                        }
                                     };
                                     serde_json::json!({
                                         "file": item.file.display().to_string(),
@@ -2105,11 +2119,7 @@ fn run_archive(
                 if let Some(parent) = result.archive_path.parent() {
                     if !parent.exists() {
                         if let Err(e) = std::fs::create_dir_all(parent) {
-                            eprintln!(
-                                "org: error creating directory {}: {}",
-                                parent.display(),
-                                e
-                            );
+                            eprintln!("org: error creating directory {}: {}", parent.display(), e);
                             has_io_error = true;
                             continue;
                         }

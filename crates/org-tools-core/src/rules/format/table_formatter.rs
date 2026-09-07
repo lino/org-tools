@@ -53,7 +53,11 @@ impl FormatRule for TableFormatter {
 
     fn format(&self, ctx: &FormatContext) -> Vec<Fix> {
         let content = &ctx.source.content;
-        let newline = if content.contains("\r\n") { "\r\n" } else { "\n" };
+        let newline = if content.contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
         let tables = find_tables(content);
         let mut fixes = Vec::new();
 
@@ -505,4 +509,3 @@ mod tests {
         assert_eq!(result, "| a | b |\r\n| 1 | 2 |\r\n");
     }
 }
-

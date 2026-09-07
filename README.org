@@ -145,11 +145,13 @@ See [[file:docs/user/usage.org][docs/user/usage.org]] for the full usage guide a
 Requires Rust 1.70+ or use [[https://mise.jdx.dev/][mise]] to install the pinned version:
 
 #+begin_src sh
-mise install       # install pinned Rust
-mise run build     # cargo build
-mise run test      # cargo test
-mise run lint      # clippy + rustfmt check
+mise install           # install pinned Rust
+mise run build         # cargo build
+mise run test          # cargo test
+mise run lint          # clippy + rustfmt check
+mise run hooks:install # install git pre-commit and pre-push hooks
 #+end_src
+
 
 * Project Structure
 

@@ -584,7 +584,13 @@ fn load_config(cli_config: &Option<PathBuf>) -> Config {
     }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    Config::load(&cwd)
+    match Config::load(&cwd) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("org: {e}");
+            process::exit(EXIT_ERROR);
+        }
+    }
 }
 
 fn main() {
@@ -635,11 +641,12 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
             let files = collect_org_files(&paths);
             if files.is_empty() {
                 eprintln!("org: no .org files found");
-                return 2;
+                return EXIT_ERROR;
             }
 
             if fix {
                 let mut has_issues = false;
+                let mut has_io_error = false;
                 for file in &files {
                     match SourceFile::from_path(file) {
                         Ok(source) => {
@@ -649,6 +656,7 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                             if changed {
                                 if let Err(e) = write_file_atomic(file, &formatted) {
                                     eprintln!("org: error writing {}: {}", file.display(), e);
+                                    has_io_error = true;
                                 } else {
                                     println!("Fixed: {}", file.display());
                                 }
@@ -661,16 +669,20 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                         }
                         Err(e) => {
                             eprintln!("org: error reading {}: {}", file.display(), e);
+                            has_io_error = true;
                         }
                     }
                 }
-                if has_issues {
-                    1
+                if has_io_error {
+                    EXIT_ERROR
+                } else if has_issues {
+                    EXIT_ISSUES
                 } else {
-                    0
+                    EXIT_OK
                 }
             } else {
                 let mut all_diagnostics = Vec::new();
+                let mut has_io_error = false;
                 for file in &files {
                     match SourceFile::from_path(file) {
                         Ok(source) => {
@@ -678,15 +690,18 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                         }
                         Err(e) => {
                             eprintln!("org: error reading {}: {}", file.display(), e);
+                            has_io_error = true;
                         }
                     }
                 }
 
-                if !all_diagnostics.is_empty() {
+                if has_io_error {
+                    EXIT_ERROR
+                } else if !all_diagnostics.is_empty() {
                     print!("{}", render_diagnostics(&all_diagnostics, format));
-                    1
+                    EXIT_ISSUES
                 } else {
-                    0
+                    EXIT_OK
                 }
             }
         }
@@ -698,11 +713,12 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
             let files = collect_org_files(&paths);
             if files.is_empty() {
                 eprintln!("org: no .org files found");
-                return 2;
+                return EXIT_ERROR;
             }
 
             let mut has_changes = false;
             let mut has_lint_issues = false;
+            let mut has_io_error = false;
 
             for file in &files {
                 match SourceFile::from_path(file) {
@@ -728,6 +744,7 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                         } else if changed {
                             if let Err(e) = write_file_atomic(file, &formatted) {
                                 eprintln!("org: error writing {}: {}", file.display(), e);
+                                has_io_error = true;
                             } else {
                                 println!("Formatted: {}", file.display());
                             }
@@ -735,14 +752,17 @@ fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
                     }
                     Err(e) => {
                         eprintln!("org: error reading {}: {}", file.display(), e);
+                        has_io_error = true;
                     }
                 }
             }
 
-            if (check && has_changes) || has_lint_issues {
-                1
+            if has_io_error {
+                EXIT_ERROR
+            } else if (check && has_changes) || has_lint_issues {
+                EXIT_ISSUES
             } else {
-                0
+                EXIT_OK
             }
         }
     }
@@ -1405,6 +1425,7 @@ fn run_add_id(
     }
 
     let mut total_added = 0;
+    let mut has_io_error = false;
 
     // Sort file paths for deterministic output order.
     let mut file_list: Vec<_> = file_targets.into_iter().collect();
@@ -1415,6 +1436,7 @@ fn run_add_id(
             Ok(s) => s,
             Err(e) => {
                 eprintln!("org: error reading {}: {}", file.display(), e);
+                has_io_error = true;
                 continue;
             }
         };
@@ -1425,6 +1447,7 @@ fn run_add_id(
             Ok(None) => continue,
             Err(e) => {
                 eprintln!("org: error processing {}: {}", file.display(), e);
+                has_io_error = true;
                 continue;
             }
         };
@@ -1441,6 +1464,7 @@ fn run_add_id(
         } else {
             if let Err(e) = write_file_atomic(&file, &result.content) {
                 eprintln!("org: error writing {}: {}", file.display(), e);
+                has_io_error = true;
                 continue;
             }
             println!(
@@ -1452,11 +1476,15 @@ fn run_add_id(
         }
     }
 
+    if has_io_error {
+        return EXIT_ERROR;
+    }
+
     if total_added == 0 && !dry_run {
         println!("All entries already have IDs");
     }
 
-    0
+    EXIT_OK
 }
 
 /// Runs the `clock` subcommand.
@@ -1684,6 +1712,7 @@ fn run_set_state(
     }
 
     let mut total_changed = 0;
+    let mut has_error = false;
     let mut file_list: Vec<_> = file_targets.into_iter().collect();
     file_list.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -1692,6 +1721,7 @@ fn run_set_state(
             Ok(s) => s,
             Err(e) => {
                 eprintln!("org: error reading {}: {}", file.display(), e);
+                has_error = true;
                 continue;
             }
         };
@@ -1703,6 +1733,7 @@ fn run_set_state(
                 state,
                 file.display()
             );
+            has_error = true;
             continue;
         }
 
@@ -1721,6 +1752,7 @@ fn run_set_state(
             } else {
                 if let Err(e) = write_file_atomic(&file, &r.content) {
                     eprintln!("org: error writing {}: {}", file.display(), e);
+                    has_error = true;
                     continue;
                 }
                 println!(
@@ -1734,10 +1766,14 @@ fn run_set_state(
         }
     }
 
+    if has_error {
+        return EXIT_ERROR;
+    }
+
     if total_changed == 0 && !dry_run {
         println!("No entries to change");
     }
-    0
+    EXIT_OK
 }
 
 /// Runs `org update add-todo`.
@@ -1851,11 +1887,13 @@ fn run_add_cookie(
     }
 
     let mut total_updated = 0;
+    let mut has_io_error = false;
     for file in &files {
         let source = match SourceFile::from_path(file) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("org: error reading {}: {}", file.display(), e);
+                has_io_error = true;
                 continue;
             }
         };
@@ -1873,6 +1911,7 @@ fn run_add_cookie(
             } else {
                 if let Err(e) = write_file_atomic(file, &result.content) {
                     eprintln!("org: error writing {}: {}", file.display(), e);
+                    has_io_error = true;
                     continue;
                 }
                 println!(
@@ -1885,10 +1924,14 @@ fn run_add_cookie(
         }
     }
 
+    if has_io_error {
+        return EXIT_ERROR;
+    }
+
     if total_updated == 0 && !dry_run {
         println!("All cookies are up to date");
     }
-    0
+    EXIT_OK
 }
 
 /// Runs `org archive`.
@@ -1902,15 +1945,17 @@ fn run_archive(
     let files = collect_org_files(&paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
-        return 2;
+        return EXIT_ERROR;
     }
 
     let mut total_archived = 0;
+    let mut has_io_error = false;
     for file in &files {
         let source = match SourceFile::from_path(file) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("org: error reading {}: {}", file.display(), e);
+                has_io_error = true;
                 continue;
             }
         };
@@ -1953,6 +1998,7 @@ fn run_archive(
                                 parent.display(),
                                 e
                             );
+                            has_io_error = true;
                             continue;
                         }
                     }
@@ -1985,12 +2031,14 @@ fn run_archive(
                         result.archive_path.display(),
                         e
                     );
+                    has_io_error = true;
                     continue;
                 }
 
                 // Only update source file AFTER archive write is safely persisted.
                 if let Err(e) = write_file_atomic(file, &result.source_content) {
                     eprintln!("org: error updating source file {}: {}", file.display(), e);
+                    has_io_error = true;
                     continue;
                 }
 
@@ -2003,6 +2051,10 @@ fn run_archive(
                 );
             }
         }
+    }
+
+    if has_io_error {
+        return EXIT_ERROR;
     }
 
     if total_archived == 0 {
@@ -2079,6 +2131,9 @@ fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutputFormat) ->
 
     if has_emacs_error {
         return EXIT_REQUIRES_EMACS;
+    }
+    if !mutation.errors.is_empty() {
+        return EXIT_ERROR;
     }
     EXIT_OK
 }

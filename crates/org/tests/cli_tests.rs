@@ -1109,3 +1109,36 @@ fn archive_failure_preserves_source() {
     assert_eq!(fs::read_to_string(&file).unwrap(), original);
 }
 
+#[test]
+fn invalid_config_file_exits_2() {
+    let dir = TempDir::new().unwrap();
+    let config_file = dir.path().join(".org-tools.toml");
+    let org_file = dir.path().join("test.org");
+    fs::write(&config_file, "invalid toml = [[[").unwrap();
+    fs::write(&org_file, "* TODO Test\n").unwrap();
+
+    org()
+        .current_dir(dir.path())
+        .args(["fmt", "check"])
+        .arg(org_file.to_str().unwrap())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error parsing"));
+}
+
+#[test]
+fn archive_io_failure_exits_2() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("source.org");
+    let original = "* DONE Task to archive\nSome body text\n";
+    fs::write(&file, original).unwrap();
+
+    let bad_target = format!("{}/cannot_create_dir/archive.org", file.display());
+
+    org()
+        .args(["archive", "--target", &bad_target])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .code(2);
+}
+

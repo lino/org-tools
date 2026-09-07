@@ -2,7 +2,44 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Error encountered when loading configuration from `.org-tools.toml`.
+#[derive(Debug)]
+pub enum ConfigError {
+    /// Failed to read the configuration file.
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    /// Failed to parse the TOML content.
+    Parse {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::Read { path, source } => {
+                write!(f, "error reading {}: {}", path.display(), source)
+            }
+            ConfigError::Parse { path, source } => {
+                write!(f, "error parsing {}: {}", path.display(), source)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ConfigError::Read { source, .. } => Some(source),
+            ConfigError::Parse { source, .. } => Some(source),
+        }
+    }
+}
 
 /// Configuration for org-tools, loaded from `.org-tools.toml`.
 ///
@@ -71,32 +108,32 @@ impl Default for FormatConfig {
 
 impl Config {
     /// Load config from `.org-tools.toml` in the given directory or its ancestors.
-    /// Returns default config if no file is found.
-    pub fn load(start_dir: &Path) -> Self {
+    /// Returns default config if no file is found, or an error if a config file is present but invalid.
+    pub fn load(start_dir: &Path) -> Result<Self, ConfigError> {
         let mut dir = start_dir;
         loop {
             let config_path = dir.join(".org-tools.toml");
             if config_path.is_file() {
-                match std::fs::read_to_string(&config_path) {
-                    Ok(contents) => match toml::from_str::<Config>(&contents) {
-                        Ok(config) => return config,
-                        Err(e) => {
-                            eprintln!("org-tools: error parsing {}: {}", config_path.display(), e);
-                            return Self::default();
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("org-tools: error reading {}: {}", config_path.display(), e);
-                        return Self::default();
+                let contents = std::fs::read_to_string(&config_path).map_err(|source| {
+                    ConfigError::Read {
+                        path: config_path.clone(),
+                        source,
                     }
-                }
+                })?;
+                let config = toml::from_str::<Config>(&contents).map_err(|source| {
+                    ConfigError::Parse {
+                        path: config_path.clone(),
+                        source,
+                    }
+                })?;
+                return Ok(config);
             }
             match dir.parent() {
                 Some(parent) => dir = parent,
                 None => break,
             }
         }
-        Self::default()
+        Ok(Self::default())
     }
 
     /// Check if a rule is disabled by name or ID.
@@ -157,4 +194,33 @@ blank_lines = true
         assert!(!config.format.heading_blank_lines);
         assert!(config.format.trailing_whitespace);
     }
+
+    #[test]
+    fn load_default_when_no_file_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert!(!config.format.blank_lines);
+    }
+
+    #[test]
+    fn load_valid_config_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_file = dir.path().join(".org-tools.toml");
+        std::fs::write(&config_file, "[format]\nblank_lines = true\n").unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert!(config.format.blank_lines);
+    }
+
+    #[test]
+    fn load_invalid_toml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_file = dir.path().join(".org-tools.toml");
+        std::fs::write(&config_file, "this is not valid toml = [[[").unwrap();
+
+        let result = Config::load(dir.path());
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ConfigError::Parse { .. }));
+    }
 }
+

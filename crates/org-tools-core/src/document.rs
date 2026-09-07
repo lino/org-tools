@@ -336,9 +336,14 @@ impl OrgDocument {
         if let Some(&idx) = self.id_index.get(id) {
             return Some(idx);
         }
-        self.entries
-            .iter()
-            .position(|e| e.properties.get("ID").is_some_and(|v| v == id))
+        // Fallback for manually constructed test fixtures that populate `entries` directly.
+        if self.id_index.is_empty() {
+            return self
+                .entries
+                .iter()
+                .position(|e| e.properties.get("ID").is_some_and(|v| v == id));
+        }
+        None
     }
 
     /// Find an entry by its `:CUSTOM_ID:` property.
@@ -346,11 +351,15 @@ impl OrgDocument {
         if let Some(&idx) = self.custom_id_index.get(custom_id) {
             return Some(idx);
         }
-        self.entries.iter().position(|e| {
-            e.properties
-                .get("CUSTOM_ID")
-                .is_some_and(|v| v == custom_id)
-        })
+        // Fallback for manually constructed test fixtures that populate `entries` directly.
+        if self.custom_id_index.is_empty() {
+            return self.entries.iter().position(|e| {
+                e.properties
+                    .get("CUSTOM_ID")
+                    .is_some_and(|v| v == custom_id)
+            });
+        }
+        None
     }
 
     /// Get the outline path for an entry (ancestor titles from root to entry).

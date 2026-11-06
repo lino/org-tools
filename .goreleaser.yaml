@@ -1,0 +1,140 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# GoReleaser OSS v2 multi-architecture release specification for org-tools.
+# Builds Darwin, static musl Linux, and Windows MSVC binaries, bundles shell
+# completions into .tar.gz/.zip archives and .deb/.rpm packages, and renders
+# the lino/homebrew-tap Homebrew Cask with macOS quarantine removal.
+
+# region Metadata & Hooks
+version: 2
+project_name: org-tools
+
+before:
+  hooks:
+    - bash scripts/build-completions.sh
+# endregion
+
+# region Rust Cross-Compilation Builds
+builds:
+  - id: org-darwin
+    builder: rust
+    tool: cargo
+    command: build
+    binary: org
+    dir: .
+    flags:
+      - "--release"
+      - "--locked"
+      - "-p=org-tools"
+    targets:
+      - aarch64-apple-darwin
+      - x86_64-apple-darwin
+
+  - id: org-linux
+    builder: rust
+    tool: cargo-zigbuild
+    command: zigbuild
+    binary: org
+    dir: .
+    flags:
+      - "--release"
+      - "--locked"
+      - "-p=org-tools"
+    targets:
+      - x86_64-unknown-linux-musl
+      - aarch64-unknown-linux-musl
+
+  - id: org-windows
+    builder: rust
+    tool: cargo-xwin
+    command: build
+    binary: org
+    dir: .
+    flags:
+      - "--release"
+      - "--locked"
+      - "-p=org-tools"
+    targets:
+      - x86_64-pc-windows-msvc
+      - aarch64-pc-windows-msvc
+# endregion
+
+# region Release Archives
+archives:
+  - id: org-archives
+    ids:
+      - org-darwin
+      - org-linux
+      - org-windows
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.org
+      - completions/org.bash
+      - completions/_org
+      - completions/org.fish
+# endregion
+
+# region Checksums
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+# endregion
+
+# region Linux Packages (nFPM)
+nfpms:
+  - id: org-linux-packages
+    ids:
+      - org-linux
+    package_name: org-tools
+    bindir: /usr/bin
+    homepage: https://github.com/lino/org-tools
+    license: GPL-3.0-or-later
+    maintainer: Lino Helms <lino@lino.io>
+    description: "Unified pure-Rust CLI for Org-mode: lint, format, query, roam, edna, clock, export"
+    formats:
+      - deb
+      - rpm
+    contents:
+      - src: completions/org.bash
+        dst: /usr/share/bash-completion/completions/org
+      - src: completions/_org
+        dst: /usr/share/zsh/site-functions/_org
+      - src: completions/org.fish
+        dst: /usr/share/fish/vendor_completions.d/org.fish
+      - src: LICENSE
+        dst: /usr/share/doc/org-tools/LICENSE
+      - src: README.org
+        dst: /usr/share/doc/org-tools/README.org
+# endregion
+
+# region Homebrew Cask
+homebrew_casks:
+  - name: org-tools
+    binaries:
+      - org
+    homepage: https://github.com/lino/org-tools
+    license: GPL-3.0-or-later
+    description: "Unified pure-Rust CLI for Org-mode: lint, format, query, roam, edna, clock, export"
+    repository:
+      owner: lino
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    skip_upload: "{{ if .Env.HOMEBREW_TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}"
+    completions:
+      bash: completions/org.bash
+      zsh: completions/_org
+      fish: completions/org.fish
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/org"]
+          end
+# endregion

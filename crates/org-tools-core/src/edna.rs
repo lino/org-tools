@@ -1,5 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=1800 reason="Legacy edna module scheduled for ORGFMT-WP-03"
 
 //! Parser and evaluator for the org-edna task dependency mini-language.
 //!
@@ -1461,6 +1462,7 @@ mod tests {
                 properties: HashMap::new(),
                 planning: crate::document::Planning::default(),
                 clocks: Vec::new(),
+                checklist: Vec::new(),
                 heading_line: i + 1,
                 heading_offset: 0,
                 content_end_line: i + 2,
@@ -1482,6 +1484,7 @@ mod tests {
             file: std::path::PathBuf::from("test.org"),
             entries,
             file_properties: HashMap::new(),
+            file_properties_line: None,
             file_keywords: HashMap::new(),
             todo_keywords: Default::default(),
             priority_range: Default::default(),

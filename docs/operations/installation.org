@@ -1,47 +1,154 @@
 #+TITLE: org-tools — Installation
+#+OPTIONS: toc:2
 
-* From Source
+=org-tools= ships the standalone =org= CLI binary across macOS, Linux (static =musl=), and Windows with zero Emacs or runtime dependencies. Choose the installation method that matches your operating system and workflow.
 
-Requires Rust 1.83+ (or use =mise= to install the pinned version).
+* Homebrew Tap (macOS & Linux — Recommended)
+
+Install the prebuilt =org= binary and shell completions (=bash=, =zsh=, =fish=) directly from the official Homebrew tap — no Rust toolchain required:
 
 #+begin_src sh
-git clone https://github.com/org-tools/org-tools.git
+brew install --cask lino/tap/org-tools
+#+end_src
+
+To upgrade to the latest release:
+
+#+begin_src sh
+brew upgrade --cask lino/tap/org-tools
+#+end_src
+
+On macOS, the Cask post-install hook automatically clears the =com.apple.quarantine= extended attribute so the unsigned open-source binary runs immediately without Gatekeeper prompts. Operators maintaining the tap can consult [[file:homebrew-tap.org]].
+
+* Linux System Packages (=.deb= & =.rpm=)
+
+Every [[https://github.com/lino/org-tools/releases][GitHub Release]] publishes static =musl= Linux packages containing =/usr/bin/org=, shell completions, and license documentation.
+
+** Debian & Ubuntu (=.deb=)
+
+Download the =.deb= package for your CPU architecture (=amd64= or =arm64=) alongside =checksums.txt=, verify the SHA-256 digest, and install with =dpkg=:
+
+#+begin_src sh
+# Verify SHA-256 checksum before installing
+sha256sum --ignore-missing -c checksums.txt
+
+# x86_64 (amd64)
+sudo dpkg -i org-tools_<ver>_linux_amd64.deb
+
+# ARM64 (aarch64)
+sudo dpkg -i org-tools_<ver>_linux_arm64.deb
+#+end_src
+
+** Fedora, RHEL & openSUSE (=.rpm=)
+
+Download the =.rpm= package for your CPU architecture alongside =checksums.txt=, verify the SHA-256 digest, and install with =rpm= (or =dnf=):
+
+#+begin_src sh
+# Verify SHA-256 checksum before installing
+sha256sum --ignore-missing -c checksums.txt
+
+# x86_64
+sudo rpm -Uvh org-tools-<ver>-1.x86_64.rpm
+
+# ARM64 (aarch64)
+sudo rpm -Uvh org-tools-<ver>-1.aarch64.rpm
+#+end_src
+
+Note: Depending on the GoReleaser nFPM archive naming convention in a given release, the RPM asset may also appear as =org-tools_<ver>_linux_amd64.rpm= or =org-tools_<ver>_linux_arm64.rpm=; always verify against =checksums.txt=.
+
+* Prebuilt Archives (macOS, Linux & Windows)
+
+Prebuilt release archives bundle =org= (or =org.exe=), =LICENSE=, =README.org=, and =completions/= for all six supported targets:
+
+| Platform              | Target Triple                | Archive Asset                         |
+|-----------------------+------------------------------+---------------------------------------|
+| macOS (Apple Silicon) | =aarch64-apple-darwin=       | =org-tools_<ver>_darwin_arm64.tar.gz= |
+| macOS (Intel)         | =x86_64-apple-darwin=        | =org-tools_<ver>_darwin_amd64.tar.gz= |
+| Linux (x86_64 musl)   | =x86_64-unknown-linux-musl=  | =org-tools_<ver>_linux_amd64.tar.gz=  |
+| Linux (ARM64 musl)    | =aarch64-unknown-linux-musl= | =org-tools_<ver>_linux_arm64.tar.gz=  |
+| Windows (x86_64 MSVC) | =x86_64-pc-windows-msvc=     | =org-tools_<ver>_windows_amd64.zip=   |
+| Windows (ARM64 MSVC)  | =aarch64-pc-windows-msvc=    | =org-tools_<ver>_windows_arm64.zip=   |
+
+** Verify Checksums & Extract on Linux / macOS
+
+#+begin_src sh
+# Verify downloaded archive(s) against checksums.txt (Linux)
+sha256sum -c checksums.txt
+
+# Or on macOS when verifying a single downloaded archive
+shasum -a 256 --ignore-missing -c checksums.txt
+
+# Extract and place `org` on your PATH (override INSTALL_BIN_DIR as needed)
+INSTALL_BIN_DIR="${INSTALL_BIN_DIR:-$HOME/.local/bin}"
+mkdir -p "$INSTALL_BIN_DIR"
+tar -xzf org-tools_<ver>_<os>_<arch>.tar.gz
+install -m 0755 org "$INSTALL_BIN_DIR/org"
+#+end_src
+
+If you downloaded a macOS =.tar.gz= in a browser, clear the quarantine attribute before first execution:
+
+#+begin_src sh
+xattr -dr com.apple.quarantine "$INSTALL_BIN_DIR/org"
+#+end_src
+
+** Verify Checksums & Extract on Windows (PowerShell)
+
+#+begin_src powershell
+# Compare SHA-256 hash against checksums.txt
+Get-FileHash .\org-tools_<ver>_windows_amd64.zip -Algorithm SHA256
+Get-Content .\checksums.txt | Select-String "windows_amd64.zip"
+
+# Extract into a directory on your user PATH
+Expand-Archive .\org-tools_<ver>_windows_amd64.zip -DestinationPath "$HOME\bin\org-tools"
+#+end_src
+
+* From Crates.io
+
+When =org-tools= is published to crates.io and you have Rust 1.83+ installed:
+
+#+begin_src sh
+cargo install org-tools
+#+end_src
+
+* From Source (=mise= & Cargo)
+
+Requires Rust 1.83+ (or [[https://mise.jdx.dev/][mise]] to manage the pinned toolchain automatically).
+
+#+begin_src sh
+git clone https://github.com/lino/org-tools.git
 cd org-tools
 cargo install --locked --path crates/org
 #+end_src
 
-Or with mise:
+Or with =mise=:
 
 #+begin_src sh
-mise install        # installs pinned Rust version
+mise install        # installs pinned Rust toolchain
 mise run build      # cargo build
-mise run install    # installs org into ~/.cargo/bin (override with CARGO_INSTALL_ROOT)
-#+end_src
-
-* From Cargo
-
-#+begin_src sh
-cargo install org
+mise run install    # installs `org` into ~/.cargo/bin (override with CARGO_INSTALL_ROOT)
 #+end_src
 
 * Shell Completions
 
-Generate and install shell completions:
+Homebrew Cask and =.deb=/=.rpm= packages install shell completions automatically. When installing from Cargo, source, or a standalone archive, generate completions directly from the =org= binary into your preferred completion directory:
 
 #+begin_src sh
-# Bash
-org --completions bash > /etc/bash_completion.d/org
+# Bash (user-local completion path)
+mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+org --completions bash > "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/org"
 
-# Zsh
-org --completions zsh > ~/.zsh/completions/_org
+# Zsh (ensure ~/.zsh/completions is in $fpath before compinit)
+mkdir -p "$HOME/.zsh/completions"
+org --completions zsh > "$HOME/.zsh/completions/_org"
 
 # Fish
-org --completions fish > ~/.config/fish/completions/org.fish
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
+org --completions fish > "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/org.fish"
 #+end_src
 
 * Verify Installation
 
 #+begin_src sh
+org --version
 org --help
 org fmt check --help
 org query search --help

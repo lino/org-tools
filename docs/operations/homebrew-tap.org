@@ -1,0 +1,171 @@
+#+TITLE: org-tools — Homebrew Tap & Release Pipeline Runbook
+#+OPTIONS: toc:2
+
+Operational runbook for bootstrapping and maintaining the =lino/homebrew-tap= repository, rotating least-privilege tokens, running pre-release snapshot checks, and troubleshooting =org-tools= release telemetry. End-user installation commands are documented in [[file:installation.org]].
+
+* Release Pipeline Architecture
+
+Pushing a =v*= tag (or triggering a manual =workflow_dispatch= snapshot run) executes =.github/workflows/release.yml=. The =release-packages= job and the optional =publish-crates= gate run in parallel after =validate= succeeds, ensuring missing or unconfigured crates.io credentials never block GitHub Releases, Linux =.deb=/=.rpm= packages, or Homebrew Cask updates.
+
+#+begin_src mermaid :file release-pipeline.png
+flowchart TD
+    Trigger["Trigger: git tag v* or workflow_dispatch"] --> Validate["Job: validate (ubuntu-latest: fmt, clippy, test, org fmt check)"]
+    Validate --> ReleasePackages["Job: release-packages (macos-latest: 6 Rust targets + GoReleaser v2)"]
+    Validate --> PublishCrates["Job: publish-crates (ubuntu-latest: optional CARGO_REGISTRY_TOKEN gate)"]
+    ReleasePackages --> VerifyDist["scripts/verify-release-packages.sh (SHA-256, .deb/.rpm, Cask)"]
+    VerifyDist --> GitHubRelease["GitHub Release Assets + checksums.txt"]
+    VerifyDist --> HomebrewTap["lino/homebrew-tap (Casks/org-tools.rb)"]
+    VerifyDist --> Telemetry["GITHUB_STEP_SUMMARY + release-telemetry (Prometheus & JSONL)"]
+    PublishCrates -->|"Token empty"| SkipNotice["Emit ::notice:: and exit 0"]
+    PublishCrates -->|"Token set on v* tag"| CratesIo["Publish org-tools-core then org-tools"]
+#+end_src
+
+* Bootstrapping =lino/homebrew-tap=
+
+Homebrew resolves =brew install --cask lino/tap/org-tools= to the GitHub repository =https://github.com/lino/homebrew-tap= and looks up =Casks/org-tools.rb=.
+
+Perform this one-time bootstrap if =lino/homebrew-tap= does not yet exist:
+
+1. Create the public repository under the =lino= GitHub account:
+   #+begin_src sh
+   gh repo create lino/homebrew-tap --public \
+     --description "Homebrew tap for org-tools and companion CLI utilities" \
+     --clone
+   cd homebrew-tap
+   #+end_src
+
+2. Seed an initial =README.md= and =Casks/= directory on =main=:
+   #+begin_src sh
+   mkdir -p Casks
+   cat > README.md <<'EOF'
+   # lino/homebrew-tap
+
+   Install `org-tools`:
+
+   ```sh
+   brew install --cask lino/tap/org-tools
+   ```
+   EOF
+   git add README.md
+   git commit -m "chore: initialize homebrew-tap repository"
+   git branch -M main
+   git push -u origin main
+   #+end_src
+
+During tagged releases, GoReleaser renders =Casks/org-tools.rb= from =.goreleaser.yaml= (=homebrew_casks=) and commits it directly to =lino/homebrew-tap=.
+
+* Least-Privilege =HOMEBREW_TAP_GITHUB_TOKEN= Setup & Rotation
+
+** Creating a Scoped Fine-Grained PAT
+
+Never use a classic =repo=-scoped Personal Access Token. Create a GitHub Fine-Grained PAT restricted to a single repository:
+
+1. Open *GitHub Settings -> Developer settings -> Personal access tokens -> Fine-grained tokens -> Generate new token*.
+2. Set *Resource owner* to =lino= and set an expiration window (recommended: =90 days=).
+3. Under *Repository access*, select *Only select repositories* and choose *strictly* =lino/homebrew-tap=.
+4. Under *Permissions -> Repository permissions*, grant:
+   - *Contents: Read and write* (required for GoReleaser to commit =Casks/org-tools.rb=).
+   - *Metadata: Read-only* (automatically selected by GitHub).
+   - Leave all workflow, administration, pull-request, and organization permissions set to *No access*.
+5. Save the generated token into =lino/org-tools= repository Actions secrets:
+   #+begin_src sh
+   gh secret set HOMEBREW_TAP_GITHUB_TOKEN --repo lino/org-tools
+   #+end_src
+
+When =HOMEBREW_TAP_GITHUB_TOKEN= is empty or unset, =.goreleaser.yaml= evaluates =skip_upload= to =true=: GoReleaser still renders and validates =dist/homebrew/Casks/org-tools.rb= locally and uploads GitHub Release archives, while cleanly skipping the remote push to =lino/homebrew-tap=.
+
+** Zero-Downtime Token Rotation
+
+1. Mint a replacement fine-grained PAT with *Contents: Read and write* on =lino/homebrew-tap= before the active token expires.
+2. Overwrite the secret on =lino/org-tools=:
+   #+begin_src sh
+   gh secret set HOMEBREW_TAP_GITHUB_TOKEN --repo lino/org-tools
+   #+end_src
+3. Run a =workflow_dispatch= snapshot verification (see below) or verify on the next release tag.
+4. Revoke the superseded fine-grained PAT in GitHub Developer settings.
+
+* Optional =CARGO_REGISTRY_TOKEN= & Pipeline Configuration
+
+Crates.io publishing is isolated in the =publish-crates= job (=needs: validate=), completely decoupled from =release-packages=:
+
+- *When =CARGO_REGISTRY_TOKEN= is unset or empty*: =publish-crates= emits =::notice::CARGO_REGISTRY_TOKEN is not configured; skipping crates.io publish.= and exits =0=.
+- *When =CARGO_REGISTRY_TOKEN= is configured on a =v*= tag*: =publish-crates= publishes =org-tools-core= first and then =org-tools=.
+- *When triggered via =workflow_dispatch=*: live crates.io publishing is skipped automatically so snapshot dry-runs never publish untagged commits.
+
+| Variable / Secret             | Kind            | Default                                 | Purpose                                                              |
+|-------------------------------+-----------------+-----------------------------------------+----------------------------------------------------------------------|
+| =HOMEBREW_TAP_GITHUB_TOKEN=   | Actions Secret  | /(empty — skips remote tap push)/       | Fine-grained PAT (=Contents: Read and write= on =lino/homebrew-tap=) |
+| =CARGO_REGISTRY_TOKEN=        | Actions Secret  | /(empty — emits notice & exits 0)/      | Optional crates.io API token for =org-tools-core= & =org-tools=      |
+| =ORGFMT_GORELEASER_VERSION=   | Actions Var/Env | =v2.18.0=                               | GoReleaser OSS v2 minor release constraint (=~> v2.18.0=)            |
+| =ORGFMT_RELEASE_METRICS_FILE= | Actions Var/Env | =dist/telemetry/release-metrics.prom=   | Output file for Prometheus textfile release metrics                  |
+| =ORGFMT_RELEASE_EVENTS_FILE=  | Actions Var/Env | =dist/telemetry/release-events.jsonl=   | Output file for structured JSONL release verification events         |
+| =FRITZ_TRACE_ID=              | Actions Var/Env | =github.run_id= (or =untraced= locally) | W3C trace correlation ID written to every JSONL telemetry event      |
+
+* Pre-Release Dry-Run & =workflow_dispatch= Verification
+
+Before cutting a production =vX.Y.Z= tag, validate both local manifest state and the full 6-target cross-compilation matrix:
+
+1. *Local manifest & GoReleaser config dry-run* (never mutates tracked files or creates tags):
+   #+begin_src sh
+   ./scripts/release.sh --dry-run
+   ./scripts/release.sh --dry-run 0.2.0
+   #+end_src
+
+2. *Remote =workflow_dispatch= snapshot build* on =main= (runs =goreleaser release --snapshot --clean= across all 6 Darwin, Linux =musl=, and Windows MSVC targets, then validates =dist/= via =scripts/verify-release-packages.sh=):
+   #+begin_src sh
+   gh workflow run release.yml --repo lino/org-tools -f snapshot_note="pre-release verification"
+   #+end_src
+
+3. Inspect the workflow run summary and download =release-telemetry= artifacts:
+   #+begin_src sh
+   gh run list --workflow=release.yml --repo lino/org-tools --limit 1
+   gh run download <run-id> --name release-telemetry --dir ./release-telemetry
+   #+end_src
+
+* Observability (=Uhrenmaschine=): Metrics & JSONL Telemetry
+
+=scripts/verify-release-packages.sh= instruments every release and snapshot run with Prometheus exposition metrics and W3C-correlated JSONL events. Both are rendered directly in =$GITHUB_STEP_SUMMARY= and archived in the =release-telemetry= workflow artifact.
+
+** Prometheus Metrics (=orgfmt_release_*=)
+
+| Metric                                         | Type      | Labels           | Alert Condition / Operational Meaning                         |
+|------------------------------------------------+-----------+------------------+---------------------------------------------------------------|
+| =orgfmt_release_verification_success=          | =gauge=   | /(none)/         | Must equal =1=; =0= indicates missing package or bad checksum |
+| =orgfmt_release_artifacts_verified_total=      | =counter= | =status=         | Expected =status="verified" 12= and =status="failed" 0=       |
+| =orgfmt_release_artifact_size_bytes=           | =gauge=   | =target=, =kind= | Per-artifact byte size across =archive=, =deb=, =rpm=, =cask= |
+| =orgfmt_release_verification_duration_seconds= | =gauge=   | /(none)/         | Wall-clock verification latency in seconds                    |
+
+** Inspecting =FRITZ_TRACE_ID= JSONL Events
+
+Every event in =release-events.jsonl= carries =timestamp=, =event=, =package=, =tap=, =trace_id= (populated from =FRITZ_TRACE_ID=), =status=, =verified_count=, =failed_count=, =duration_seconds=, and =message=:
+
+#+begin_src sh
+# Filter failed checks or correlate by FRITZ_TRACE_ID
+jq 'select(.status != "ok")' ./release-telemetry/release-events.jsonl
+jq --arg tid "$FRITZ_TRACE_ID" 'select(.trace_id == $tid)' ./release-telemetry/release-events.jsonl
+#+end_src
+
+* Alert & Troubleshooting Playbook
+
+** Checksum Mismatch or Missing Artifact (=orgfmt_release_verification_success == 0=)
+
+- *Symptom*: =release-packages= fails during =verify-release-packages.sh=; =orgfmt_release_artifacts_verified_total{status="failed"} > 0=.
+- *Diagnosis*: Inspect =release.check.failed= lines in =release-events.jsonl= or stderr output in the GitHub Actions log to identify whether a target archive/=.deb=/=.rpm= is missing or a SHA-256 digest in =checksums.txt= failed verification.
+- *Resolution*: Ensure =.goreleaser.yaml= builder IDs (=org-darwin=, =org-linux=, =org-windows=) match =archives.ids= and =nfpms.ids=, verify =zig= / =cargo-zigbuild= / =cargo-xwin= step logs, and re-run from a clean =dist/= directory (=--clean=).
+
+** Expired or Mis-Scoped =HOMEBREW_TAP_GITHUB_TOKEN= (=401= / =403= on Tap Push)
+
+- *Symptom*: GoReleaser builds and uploads GitHub Release archives, then fails while pushing =Casks/org-tools.rb= to =lino/homebrew-tap= with =401 Bad credentials= or =403 Resource not accessible by personal access token=.
+- *Diagnosis*: The fine-grained PAT in =HOMEBREW_TAP_GITHUB_TOKEN= has expired, targets the wrong repository, or lacks *Contents: Read and write*.
+- *Resolution*: Rotate =HOMEBREW_TAP_GITHUB_TOKEN= following *Zero-Downtime Token Rotation* above, then re-run the failed =release-packages= job (or commit the verified =Casks/org-tools.rb= from =dist/homebrew/Casks/org-tools.rb= to =lino/homebrew-tap=).
+
+** macOS Gatekeeper Quarantine (=com.apple.quarantine=)
+
+- *Symptom*: macOS blocks execution with ="org" cannot be opened because Apple cannot check it for malicious software=.
+- *Diagnosis*: Either the user downloaded a raw =.tar.gz= archive via a web browser (which attaches =com.apple.quarantine=), or the Cask =hooks.post.install= block in =.goreleaser.yaml= was altered.
+- *Resolution*:
+  1. For Homebrew users, verify =dist/homebrew/Casks/org-tools.rb= contains ~xattr -dr com.apple.quarantine "#{staged_path}/org"~ (enforced automatically by =verify-release-packages.sh=) and run =brew reinstall --cask lino/tap/org-tools=.
+  2. For manual archive installs, clear the extended attribute directly:
+     #+begin_src sh
+     xattr -dr com.apple.quarantine "$(command -v org)"
+     #+end_src

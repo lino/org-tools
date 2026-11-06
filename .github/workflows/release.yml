@@ -1,38 +1,68 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Multi-target GoReleaser v2 release pipeline, decoupled optional crates.io
+# publish gate, and Uhrenmaschine Prometheus/JSONL release verification.
+
 name: Release
 
+# region Triggers & Permissions
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      snapshot_note:
+        description: "Optional operator note for snapshot dry-run verification"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
+# endregion
 
+# region Environment & Observability Defaults
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
+  ORGFMT_GORELEASER_VERSION: "${{ vars.ORGFMT_GORELEASER_VERSION || 'v2.18.0' }}"
+  ORGFMT_RELEASE_METRICS_FILE: "${{ vars.ORGFMT_RELEASE_METRICS_FILE || 'dist/telemetry/release-metrics.prom' }}"
+  ORGFMT_RELEASE_EVENTS_FILE: "${{ vars.ORGFMT_RELEASE_EVENTS_FILE || 'dist/telemetry/release-events.jsonl' }}"
+  FRITZ_TRACE_ID: "${{ vars.FRITZ_TRACE_ID || github.run_id }}"
+# endregion
 
 jobs:
+  # region Validate Job
   validate:
     name: Validate before release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache Cargo build artifacts
+        uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
         run: cargo fmt -- --check
 
-      - name: Clippy
-        run: cargo clippy -- -D warnings
+      - name: Run Clippy lints
+        run: |
+          cargo clippy -p org-tools --all-targets -- -D warnings
+          cargo clippy -- -D warnings
 
-      - name: Run tests
+      - name: Run test suite
         run: cargo test --verbose
+
+      - name: Check operations documentation formatting
+        run: cargo run --release -- fmt check docs/operations/installation.org docs/operations/homebrew-tap.org
 
       - name: Smoke test on edge case fixtures
         run: |
@@ -41,158 +71,123 @@ jobs:
           cargo run --release -- fmt check tests/fixtures/edge_cases/ || [ $? -eq 1 ]
 
       - name: Verify tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          CARGO_VERSION="v$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version *= *"\(.*\)"/\1/p }' Cargo.toml)"
+          WORKSPACE_RAW="$(sed -n '/\[workspace\.package\]/,/^\[/{ s/^version *= *"\(.*\)"/\1/p }' Cargo.toml)"
+          CLI_DEP_RAW="$(sed -n 's/^org-tools-core *=.*version *= *"\([^"]*\)".*/\1/p' crates/org/Cargo.toml)"
+          CARGO_VERSION="v${WORKSPACE_RAW}"
           GIT_TAG="${GITHUB_REF#refs/tags/}"
+          if [ "$WORKSPACE_RAW" != "$CLI_DEP_RAW" ]; then
+            echo "::error::Cargo.toml ($WORKSPACE_RAW) and crates/org/Cargo.toml ($CLI_DEP_RAW) are out of sync"
+            exit 1
+          fi
           if [ "$CARGO_VERSION" != "$GIT_TAG" ]; then
             echo "::error::Tag $GIT_TAG does not match Cargo.toml version $CARGO_VERSION"
             exit 1
           fi
           echo "Version verified: $GIT_TAG"
+  # endregion
 
-  publish-core:
-    name: Publish org-tools-core to crates.io
-    runs-on: ubuntu-latest
+  # region Release Packages Job
+  release-packages:
+    name: Build & publish multi-arch packages
+    runs-on: macos-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Publish org-tools-core
-        run: cargo publish -p org-tools-core
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-  publish-cli:
-    name: Publish org-tools to crates.io
-    runs-on: ubuntu-latest
-    needs: publish-core
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      # Wait for crates.io index to propagate the core crate.
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish org-tools
-        run: cargo publish -p org-tools
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-  github-release:
-    name: Create GitHub release
-    runs-on: ubuntu-latest
-    needs: [publish-cli, build-binaries]
-    steps:
-      - uses: actions/checkout@v4
+      - name: Checkout full git history for GoReleaser
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Install Rust stable with all 6 release targets
+        uses: dtolnay/rust-toolchain@stable
         with:
-          path: artifacts
-          merge-multiple: true
+          targets: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
 
-      - name: Generate changelog from commits
-        id: changelog
+      - name: Cache Cargo cross-compilation artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Zig toolchain for static musl linking
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@cargo-zigbuild
+
+      - name: Install cargo-xwin
+        uses: taiki-e/install-action@cargo-xwin
+
+      - name: Run GoReleaser multi-target build and package pipeline
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> ${{ env.ORGFMT_GORELEASER_VERSION }}"
+          args: "${{ startsWith(github.ref, 'refs/tags/v') && 'release --clean' || 'release --snapshot --clean' }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Verify release packages and append telemetry summary
         run: |
-          PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
-          GIT_TAG="${GITHUB_REF#refs/tags/}"
-          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$GIT_TAG" ]; then
-            RANGE="$GIT_TAG"
-          else
-            RANGE="${PREV_TAG}..${GIT_TAG}"
-          fi
+          SUMMARY_JSON="$(bash scripts/verify-release-packages.sh --dist-dir dist)"
+          echo "$SUMMARY_JSON"
           {
-            echo "changelog<<CHANGELOG_EOF"
-            git log --pretty=format:"- %s" "$RANGE"
+            echo "## Release Package Verification Summary"
+            if [ -n "${SNAPSHOT_NOTE:-}" ]; then
+              echo ""
+              echo "Snapshot note: \`${SNAPSHOT_NOTE}\`"
+            fi
             echo ""
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
+            echo '```json'
+            echo "$SUMMARY_JSON"
+            echo '```'
+            echo ""
+            echo "### Prometheus Release Metrics"
+            echo ""
+            echo '```prometheus'
+            cat "$ORGFMT_RELEASE_METRICS_FILE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          SNAPSHOT_NOTE: ${{ inputs.snapshot_note }}
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: |
-            ## Install
-
-            ```sh
-            cargo install org-tools
-            ```
-
-            Or download a prebuilt binary from the assets below.
-
-            ## Changes
-
-            ${{ steps.changelog.outputs.changelog }}
-          draft: false
-          prerelease: false
-          files: artifacts/*
-
-  build-binaries:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    needs: validate
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: org
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: org
-            use_cross: true
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            artifact: org
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            artifact: org
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact: org.exe
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: Install cross
-        if: matrix.use_cross
-        uses: taiki-e/install-action@cross
-
-      - name: Build
-        run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }} -p org-tools
-          else
-            cargo build --release --target ${{ matrix.target }} -p org-tools
-          fi
-        shell: bash
-
-      - name: Package
-        run: |
-          cd target/${{ matrix.target }}/release
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a ../../../org-${{ matrix.target }}.zip ${{ matrix.artifact }}
-          else
-            tar czf ../../../org-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
-          fi
-        shell: bash
-
-      - name: Upload artifact
+      - name: Upload release Prometheus metrics and JSONL telemetry
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: org-${{ matrix.target }}
-          path: org-${{ matrix.target }}.*
+          name: release-telemetry
+          path: |
+            ${{ env.ORGFMT_RELEASE_METRICS_FILE }}
+            ${{ env.ORGFMT_RELEASE_EVENTS_FILE }}
+          if-no-files-found: warn
+  # endregion
+
+  # region Crates.io Publish Gate Job
+  publish-crates:
+    name: Publish crates to crates.io (optional gate)
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build state
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish org-tools-core and org-tools when token is configured
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "::notice::CARGO_REGISTRY_TOKEN is not configured; skipping crates.io publish."
+            exit 0
+          fi
+          if [[ "${GITHUB_REF:-}" != refs/tags/v* ]]; then
+            echo "::notice::Non-tag ref (${GITHUB_REF:-unknown}); skipping live crates.io publish during snapshot dry-run."
+            exit 0
+          fi
+          cargo publish -p org-tools-core
+          cargo publish -p org-tools
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  # endregion

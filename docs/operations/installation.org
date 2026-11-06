@@ -7,7 +7,7 @@ Requires Rust 1.83+ (or use =mise= to install the pinned version).
 #+begin_src sh
 git clone https://github.com/org-tools/org-tools.git
 cd org-tools
-cargo install --path crates/org
+cargo install --locked --path crates/org
 #+end_src
 
 Or with mise:
@@ -15,6 +15,7 @@ Or with mise:
 #+begin_src sh
 mise install        # installs pinned Rust version
 mise run build      # cargo build
+mise run install    # installs org into ~/.cargo/bin (override with CARGO_INSTALL_ROOT)
 #+end_src
 
 * From Cargo

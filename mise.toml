@@ -5,6 +5,10 @@ rust = "1.85"
 description = "Build the project"
 run = "cargo build"
 
+[tasks.install]
+description = "Install the org binary into local PATH"
+run = "cargo install --locked --path crates/org"
+
 [tasks.dev]
 description = "Build in debug mode and run"
 run = "cargo run --"

@@ -150,6 +150,7 @@ Requires Rust 1.70+ or use [[https://mise.jdx.dev/][mise]] to install the pinned
 #+begin_src sh
 mise install       # install pinned Rust
 mise run build     # cargo build
+mise run install   # install org binary into ~/.cargo/bin
 mise run test      # cargo test
 mise run lint      # clippy + rustfmt check
 #+end_src

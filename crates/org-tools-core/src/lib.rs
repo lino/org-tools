@@ -19,6 +19,7 @@ pub mod formatter;
 pub mod id;
 pub mod locator;
 pub mod output;
+pub mod property;
 pub mod rules;
 pub mod runner;
 pub mod source;

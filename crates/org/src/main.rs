@@ -1,5 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=3100 reason="Unified CLI entrypoint housing all top-level clap subcommands"
 
 //! Unified CLI for org-mode: lint, format, query, clock, export, archive.
 
@@ -23,18 +24,23 @@ const EXIT_ERROR: i32 = 2;
 const EXIT_REQUIRES_EMACS: i32 = 3;
 
 use std::io::{BufRead, IsTerminal, Read as _};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
+use std::time::Instant;
 
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 use org_tools_core::id::{self, IdGenerator};
-use org_tools_core::locator::{resolve_locator, OrgLocator};
+use org_tools_core::locator::{resolve_locator, OrgLocator, ResolvedEntry};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
+use org_tools_core::property::{
+    self, DeterministicIdOptions, FinalizeTodoOptions, NewTodoPropertySpec, StempelamtConfig,
+    TodoIdentityMode,
+};
 use org_tools_core::runner::Runner;
 use org_tools_core::source::SourceFile;
 
@@ -252,110 +258,280 @@ enum DepsOutputFormat {
     Json,
 }
 
+/// CLI mode for `:ID:` generation on `org update add-todo`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum TodoIdArg {
+    /// Do not automatically mint an `:ID:` property.
+    None,
+    /// Mint a random UUIDv4 `:ID:` property.
+    Auto,
+    /// Mint a deterministic Stempelamt UUIDv5 `:ID:` and `:ID_SEED:` pair.
+    Deterministic,
+}
+
+impl TodoIdArg {
+    /// Converts the CLI flag value into the core [`TodoIdentityMode`].
+    fn into_core(self) -> TodoIdentityMode {
+        match self {
+            Self::None => TodoIdentityMode::None,
+            Self::Auto => TodoIdentityMode::Auto,
+            Self::Deterministic => TodoIdentityMode::Deterministic,
+        }
+    }
+}
+
+/// CLI arguments for `org update add-id`.
+#[derive(Args)]
+struct AddIdArgs {
+    /// Targets: file paths, directory paths, or org locator strings.
+    targets: Vec<String>,
+
+    /// Include descendant entries when targeting via locator.
+    #[arg(long, short)]
+    recursive: bool,
+
+    /// Print what would be changed without writing files.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Generate IDs from a template with {placeholders}.
+    #[arg(long, conflicts_with_all = ["id_command", "deterministic"])]
+    id_format: Option<String>,
+
+    /// Pipe entry metadata (JSON) to a command that outputs the ID.
+    #[arg(long, conflicts_with_all = ["id_format", "deterministic"])]
+    id_command: Option<String>,
+
+    /// Mint deterministic RFC 9562 UUIDv5 `:ID:` and `:ID_SEED:` properties.
+    #[arg(long)]
+    deterministic: bool,
+
+    /// Root namespace UUID override for deterministic Stempelamt minting.
+    #[arg(long)]
+    namespace: Option<String>,
+
+    /// URN prefix override for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    urn_prefix: Option<String>,
+
+    /// Explicit Stempelamt seed URN override.
+    #[arg(long)]
+    seed: Option<String>,
+
+    /// Scope slug for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    scope: Option<String>,
+
+    /// Artifact kind for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    kind: Option<String>,
+
+    /// Optional author handle for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    author: Option<String>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    format: MutationOutputFormat,
+}
+
+/// CLI arguments for `org update set-state`.
+#[derive(Args)]
+struct SetStateArgs {
+    /// New TODO keyword (e.g., DONE, TODO, NEXT).
+    state: String,
+
+    /// Targets: file paths, directory paths, or org locator strings.
+    targets: Vec<String>,
+
+    /// Read additional locator targets from stdin.
+    #[arg(long)]
+    stdin: bool,
+
+    /// Filter entries by query expression (e.g., "todo:TODO tags:work").
+    #[arg(long)]
+    query: Option<String>,
+
+    /// Don't add/remove CLOSED: timestamp on state transitions.
+    #[arg(long)]
+    no_closed: bool,
+
+    /// Print what would be changed without writing files.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    format: MutationOutputFormat,
+}
+
+/// CLI arguments for `org update add-todo`.
+#[derive(Args)]
+struct AddTodoArgs {
+    /// Title for the new entry.
+    title: String,
+
+    /// Target file or locator for parent entry.
+    #[arg(default_value = ".")]
+    target: String,
+
+    /// Heading level (default: 1, or parent+1 if --parent is used).
+    #[arg(long)]
+    level: Option<usize>,
+
+    /// TODO keyword (default: TODO).
+    #[arg(long, default_value = "TODO")]
+    keyword: String,
+
+    /// Priority letter (A-Z).
+    #[arg(long)]
+    priority: Option<char>,
+
+    /// Tags (comma-separated).
+    #[arg(long, value_delimiter = ',')]
+    tags: Vec<String>,
+
+    /// SCHEDULED date (YYYY-MM-DD).
+    #[arg(long)]
+    scheduled: Option<String>,
+
+    /// DEADLINE date (YYYY-MM-DD).
+    #[arg(long)]
+    deadline: Option<String>,
+
+    /// Insert as child of this locator target.
+    #[arg(long)]
+    parent: Option<String>,
+
+    /// ID minting strategy for the new entry.
+    #[arg(long = "id", value_enum, default_value = "none")]
+    id_mode: TodoIdArg,
+
+    /// Root namespace UUID override for deterministic ID minting.
+    #[arg(long)]
+    namespace: Option<String>,
+
+    /// URN prefix override for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    urn_prefix: Option<String>,
+
+    /// Explicit Stempelamt seed URN override.
+    #[arg(long)]
+    seed: Option<String>,
+
+    /// Scope slug for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    scope: Option<String>,
+
+    /// Artifact kind for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    kind: Option<String>,
+
+    /// Optional author handle for deterministic Stempelamt seed derivation.
+    #[arg(long)]
+    author: Option<String>,
+
+    /// Set property KEY=VALUE inside :PROPERTIES: (repeatable).
+    #[arg(long = "property", value_name = "KEY=VALUE")]
+    properties: Vec<String>,
+
+    /// Body text inserted below the heading and property drawer.
+    #[arg(long)]
+    body: Option<String>,
+
+    /// Target display column for heading tag alignment (`F007`).
+    #[arg(long)]
+    tag_column: Option<usize>,
+
+    /// Print what would be changed without writing files.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    format: MutationOutputFormat,
+}
+
+/// CLI arguments for `org update set-property`.
+#[derive(Args)]
+struct SetPropertyArgs {
+    /// Org locator identifying the target entry.
+    locator: String,
+
+    /// Property key name without colons.
+    key: String,
+
+    /// Property value to set.
+    value: String,
+
+    /// Print what would be changed without writing files.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    format: MutationOutputFormat,
+}
+
+/// CLI arguments for `org update delete-property`.
+#[derive(Args)]
+struct DeletePropertyArgs {
+    /// Org locator identifying the target entry.
+    locator: String,
+
+    /// Property key name without colons.
+    key: String,
+
+    /// Print what would be changed without writing files.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    format: MutationOutputFormat,
+}
+
+/// CLI arguments for `org update set-tags`.
+#[derive(Args)]
+struct SetTagsArgs {
+    /// Org locator identifying the target entry.
+    locator: String,
+
+    /// Tags formatted as `:tag1:tag2:`, `tag1,tag2`, or empty `""` to clear.
+    tags: Option<String>,
+
+    /// Clear all tags from the heading.
+    #[arg(long)]
+    clear: bool,
+
+    /// Target display column for heading tag alignment (`F007`).
+    #[arg(long)]
+    tag_column: Option<usize>,
+
+    /// Print what would be changed without writing files.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    format: MutationOutputFormat,
+}
+
 /// Subcommands for `org update`.
 #[derive(Subcommand)]
 enum UpdateCommand {
     /// Add :ID: properties to entries that lack them.
-    AddId {
-        /// Targets: file paths, directory paths, or org locator strings.
-        targets: Vec<String>,
-
-        /// Include descendant entries when targeting via locator.
-        #[arg(long, short)]
-        recursive: bool,
-
-        /// Print what would be changed without writing files.
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Generate IDs from a template with {placeholders}.
-        ///
-        /// Available: {uuid}, {uuid_short}, {file_stem}, {title_slug},
-        /// {level}, {index}, {ts}.
-        #[arg(long, conflicts_with = "id_command")]
-        id_format: Option<String>,
-
-        /// Pipe entry metadata (JSON) to a command that outputs the ID.
-        #[arg(long, conflicts_with = "id_format")]
-        id_command: Option<String>,
-
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: MutationOutputFormat,
-    },
+    AddId(Box<AddIdArgs>),
     /// Change the TODO state of entries.
-    SetState {
-        /// New TODO keyword (e.g., DONE, TODO, NEXT).
-        state: String,
-
-        /// Targets: file paths, directory paths, or org locator strings.
-        targets: Vec<String>,
-
-        /// Read additional locator targets from stdin.
-        #[arg(long)]
-        stdin: bool,
-
-        /// Filter entries by query expression (e.g., "todo:TODO tags:work").
-        #[arg(long)]
-        query: Option<String>,
-
-        /// Don't add/remove CLOSED: timestamp on state transitions.
-        #[arg(long)]
-        no_closed: bool,
-
-        /// Print what would be changed without writing files.
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: MutationOutputFormat,
-    },
+    SetState(Box<SetStateArgs>),
     /// Add a new TODO entry.
-    AddTodo {
-        /// Title for the new entry.
-        title: String,
-
-        /// Target file or locator for parent entry.
-        #[arg(default_value = ".")]
-        target: String,
-
-        /// Heading level (default: 1, or parent+1 if --parent is used).
-        #[arg(long)]
-        level: Option<usize>,
-
-        /// TODO keyword (default: TODO).
-        #[arg(long, default_value = "TODO")]
-        keyword: String,
-
-        /// Priority letter (A-Z).
-        #[arg(long)]
-        priority: Option<char>,
-
-        /// Tags (comma-separated).
-        #[arg(long, value_delimiter = ',')]
-        tags: Vec<String>,
-
-        /// SCHEDULED date (YYYY-MM-DD).
-        #[arg(long)]
-        scheduled: Option<String>,
-
-        /// DEADLINE date (YYYY-MM-DD).
-        #[arg(long)]
-        deadline: Option<String>,
-
-        /// Insert as child of this locator target.
-        #[arg(long)]
-        parent: Option<String>,
-
-        /// Print what would be changed without writing files.
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: MutationOutputFormat,
-    },
+    AddTodo(Box<AddTodoArgs>),
+    /// Set or insert a property in an entry's :PROPERTIES: drawer.
+    SetProperty(SetPropertyArgs),
+    /// Delete a property from an entry's :PROPERTIES: drawer.
+    DeleteProperty(DeletePropertyArgs),
+    /// Set or clear heading tags aligned to column 77.
+    SetTags(SetTagsArgs),
     /// Update statistic cookies ([/] and [%]) on headings.
     AddCookie {
         /// Files or directories to scan.
@@ -493,23 +669,74 @@ enum MutationOutputFormat {
     Json,
 }
 
+/// Execution telemetry included in uniform JSON mutation envelopes.
+#[derive(serde::Serialize)]
+struct MutationTelemetry {
+    /// Wall-clock command execution duration in microseconds.
+    duration_us: u64,
+    /// Number of Org source files inspected during the mutation pass.
+    files_scanned: usize,
+    /// Number of document cache hits.
+    cache_hits: usize,
+    /// Number of document cache misses.
+    cache_misses: usize,
+}
+
 /// Structured result from a mutation command.
 #[derive(serde::Serialize)]
 struct MutationResult {
+    /// Canonical subcommand identifier.
     command: String,
+    /// Number of files modified or scheduled for modification.
     files_modified: usize,
+    /// Total number of entries or cells affected across all files.
     entries_affected: usize,
+    /// Whether no file writes were performed (`--dry-run`).
     dry_run: bool,
+    /// Per-entry or per-file mutation details.
     details: Vec<MutationDetail>,
+    /// Operational error messages collected during execution.
     errors: Vec<String>,
+    /// Execution duration and file-scan telemetry.
+    telemetry: MutationTelemetry,
+}
+
+impl MutationResult {
+    /// Creates an empty [`MutationResult`] envelope for `command`.
+    fn new(command: &str, dry_run: bool) -> Self {
+        Self {
+            command: command.to_string(),
+            files_modified: 0,
+            entries_affected: 0,
+            dry_run,
+            details: Vec::new(),
+            errors: Vec::new(),
+            telemetry: MutationTelemetry {
+                duration_us: 0,
+                files_scanned: 0,
+                cache_hits: 0,
+                cache_misses: 0,
+            },
+        }
+    }
+
+    /// Populates wall-clock duration and scanned-file telemetry prior to output.
+    fn finish(&mut self, started: Instant, files_scanned: usize) {
+        self.telemetry.duration_us = started.elapsed().as_micros() as u64;
+        self.telemetry.files_scanned = files_scanned;
+    }
 }
 
 /// A single action within a mutation result.
 #[derive(serde::Serialize)]
 struct MutationDetail {
+    /// Path to the Org file containing the mutated entry.
     file: String,
+    /// One-based line number of the affected heading or table.
     line: usize,
+    /// Machine-readable mutation action label.
     action: String,
+    /// Optional human-readable detail describing the mutation.
     detail: Option<String>,
 }
 
@@ -1288,42 +1515,18 @@ fn run_query(command: QueryCommand) -> i32 {
     }
 }
 
+/// Sorted `(file_path, optional_entry_indices)` targets for batch mutation commands.
+type FileEntryTargets = Vec<(PathBuf, Option<Vec<usize>>)>;
+
 /// Runs the `update` subcommand.
 fn run_update(command: UpdateCommand) -> i32 {
     match command {
-        UpdateCommand::AddId {
-            targets,
-            recursive,
-            dry_run,
-            id_format,
-            id_command,
-            format,
-        } => run_add_id(targets, recursive, dry_run, id_format, id_command, format),
-        UpdateCommand::SetState {
-            state,
-            targets,
-            stdin,
-            query,
-            no_closed,
-            dry_run,
-            format,
-        } => run_set_state(state, targets, stdin, query, no_closed, dry_run, format),
-        UpdateCommand::AddTodo {
-            title,
-            target,
-            level,
-            keyword,
-            priority,
-            tags,
-            scheduled,
-            deadline,
-            parent,
-            dry_run,
-            format,
-        } => run_add_todo(
-            title, target, level, keyword, priority, tags, scheduled, deadline, parent, dry_run,
-            format,
-        ),
+        UpdateCommand::AddId(args) => run_add_id(*args),
+        UpdateCommand::SetState(args) => run_set_state(*args),
+        UpdateCommand::AddTodo(args) => run_add_todo(*args),
+        UpdateCommand::SetProperty(args) => run_set_property(args),
+        UpdateCommand::DeleteProperty(args) => run_delete_property(args),
+        UpdateCommand::SetTags(args) => run_set_tags(args),
         UpdateCommand::AddCookie {
             paths,
             recursive,
@@ -1385,135 +1588,401 @@ fn output_mutation(result: &MutationResult, format: MutationOutputFormat) {
     }
 }
 
-/// Runs `org update add-id`.
-fn run_add_id(
-    targets: Vec<String>,
+/// Resolves a single Org locator string into its parsed entry, source file, and document.
+fn resolve_single_target(
+    locator_str: &str,
+) -> Result<(ResolvedEntry, SourceFile, OrgDocument), i32> {
+    let locator = OrgLocator::parse(locator_str).map_err(|e| {
+        eprintln!("org: {e}");
+        EXIT_ERROR
+    })?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let resolved = resolve_locator(&locator, &[cwd]).map_err(|e| {
+        eprintln!("org: {e}");
+        EXIT_ERROR
+    })?;
+    let source = SourceFile::from_path(&resolved.file).map_err(|e| {
+        eprintln!("org: error reading {}: {e}", resolved.file.display());
+        EXIT_ERROR
+    })?;
+    let doc = OrgDocument::from_source(&source);
+    Ok((resolved, source, doc))
+}
+
+/// Inserts resolved locator indices for `add-id` into `file_targets`.
+fn insert_add_id_locator_target(
+    file_targets: &mut std::collections::HashMap<PathBuf, Option<Vec<usize>>>,
+    target: &str,
     recursive: bool,
-    dry_run: bool,
-    id_format: Option<String>,
-    id_command: Option<String>,
-    _format: MutationOutputFormat,
-) -> i32 {
-    if targets.is_empty() {
-        eprintln!("org: no targets specified");
-        return 2;
+) -> Result<(), i32> {
+    let (resolved, _source, doc) = resolve_single_target(target)?;
+    if resolved.is_file_node() {
+        if recursive {
+            file_targets.insert(resolved.file, None);
+        } else {
+            file_targets
+                .entry(resolved.file)
+                .or_insert(Some(Vec::new()));
+        }
+        return Ok(());
     }
-
-    let generator = if let Some(tpl) = id_format {
-        IdGenerator::Template(tpl)
-    } else if let Some(cmd) = id_command {
-        IdGenerator::Command(cmd)
+    let indices = if recursive {
+        id::collect_subtree(&doc, resolved.entry_index)
     } else {
-        IdGenerator::Uuid
+        vec![resolved.entry_index]
     };
+    if let Some(ref mut existing) = file_targets
+        .entry(resolved.file)
+        .or_insert(Some(Vec::new()))
+    {
+        existing.extend(indices);
+    }
+    Ok(())
+}
 
-    // Resolve targets into (file_path, entry_indices) pairs.
-    // entry_indices = None means all entries in the file.
+/// Resolves `add-id` CLI target arguments into sorted `(file, entry_indices)` pairs.
+fn resolve_add_id_targets(targets: &[String], recursive: bool) -> Result<FileEntryTargets, i32> {
     let mut file_targets: std::collections::HashMap<PathBuf, Option<Vec<usize>>> =
         std::collections::HashMap::new();
 
-    for target in &targets {
-        // Try to parse as a locator first.
-        if let Ok(locator) = OrgLocator::parse(target) {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            match resolve_locator(&locator, &[cwd]) {
-                Ok(resolved) => {
-                    let source = match SourceFile::from_path(&resolved.file) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            eprintln!("org: error reading {}: {}", resolved.file.display(), e);
-                            return 2;
-                        }
-                    };
-                    let doc = OrgDocument::from_source(&source);
-
-                    let indices = if recursive {
-                        id::collect_subtree(&doc, resolved.entry_index)
-                    } else {
-                        vec![resolved.entry_index]
-                    };
-
-                    // Merge with existing targets for this file.
-                    let entry = file_targets
-                        .entry(resolved.file.clone())
-                        .or_insert(Some(Vec::new()));
-                    if let Some(ref mut existing) = entry {
-                        existing.extend(indices);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("org: {e}");
-                    return 2;
-                }
-            }
+    for target in targets {
+        if OrgLocator::parse(target).is_ok() {
+            insert_add_id_locator_target(&mut file_targets, target, recursive)?;
         } else {
-            // Treat as file/directory path.
-            let path = PathBuf::from(target);
-            let files = collect_org_files(&[path]);
+            let files = collect_org_files(&[PathBuf::from(target)]);
             if files.is_empty() {
                 eprintln!("org: no .org files found in {target}");
-                return 2;
+                return Err(EXIT_ERROR);
             }
             for file in files {
-                // None = all entries.
                 file_targets.insert(file, None);
             }
         }
     }
 
-    let mut total_added = 0;
-
-    // Sort file paths for deterministic output order.
     let mut file_list: Vec<_> = file_targets.into_iter().collect();
     file_list.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(file_list)
+}
 
-    for (file, indices) in file_list {
-        let source = match SourceFile::from_path(&file) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("org: error reading {}: {}", file.display(), e);
-                continue;
-            }
+/// Builds per-entry [`MutationDetail`] records by comparing pre/post `:ID:` properties.
+fn collect_added_id_details(
+    file: &Path,
+    before: &OrgDocument,
+    after_content: &str,
+) -> Vec<MutationDetail> {
+    let after_source = SourceFile::new(file, after_content.to_string());
+    let after_doc = OrgDocument::from_source(&after_source);
+    let file_str = file.display().to_string();
+
+    after_doc
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(idx, entry)| {
+            entry.properties.contains_key("ID")
+                && before
+                    .entries
+                    .get(*idx)
+                    .is_some_and(|prev| !prev.properties.contains_key("ID"))
+        })
+        .map(|(_, entry)| MutationDetail {
+            file: file_str.clone(),
+            line: entry.heading_line,
+            action: "added-id".to_string(),
+            detail: entry.properties.get("ID").cloned(),
+        })
+        .collect()
+}
+
+/// Applies either deterministic Stempelamt or classic `:ID:` minting to one document.
+fn apply_file_add_ids(
+    source: &SourceFile,
+    doc: &OrgDocument,
+    indices: Option<&[usize]>,
+    generator: &IdGenerator,
+    det_opts: Option<&DeterministicIdOptions>,
+) -> Result<Option<(String, Vec<MutationDetail>)>, String> {
+    if let Some(opts) = det_opts {
+        let Some(res) = property::add_deterministic_ids(source, doc, indices, opts)? else {
+            return Ok(None);
         };
-        let doc = OrgDocument::from_source(&source);
+        let file_str = source.path.display().to_string();
+        let details = res
+            .entries
+            .into_iter()
+            .map(|entry| MutationDetail {
+                file: file_str.clone(),
+                line: entry.line,
+                action: "added-id".to_string(),
+                detail: Some(format!("{} ({})", entry.id, entry.seed)),
+            })
+            .collect();
+        return Ok(Some((res.content, details)));
+    }
 
-        let result = match id::add_ids(&source, &doc, indices.as_deref(), &generator) {
-            Ok(Some(r)) => r,
-            Ok(None) => continue,
-            Err(e) => {
-                eprintln!("org: error processing {}: {}", file.display(), e);
-                continue;
-            }
-        };
+    let Some(res) = id::add_ids(source, doc, indices, generator)? else {
+        return Ok(None);
+    };
+    let details = collect_added_id_details(&source.path, doc, &res.content);
+    Ok(Some((res.content, details)))
+}
 
-        total_added += result.ids_added;
+/// Prints the human-mode per-file summary for `org update add-id`.
+fn emit_add_id_file_human(file: &Path, count: usize, dry_run: bool) {
+    let suffix = if count == 1 { "" } else { "s" };
+    if dry_run {
+        println!("Would add {count} ID{suffix} to {}", file.display());
+    } else {
+        println!("Added {count} ID{suffix} to {}", file.display());
+    }
+}
 
-        if dry_run {
-            println!(
-                "Would add {} ID{} to {}",
-                result.ids_added,
-                if result.ids_added == 1 { "" } else { "s" },
-                file.display()
-            );
-        } else {
-            if let Err(e) = std::fs::write(&file, &result.content) {
-                eprintln!("org: error writing {}: {}", file.display(), e);
-                continue;
-            }
-            println!(
-                "Added {} ID{} to {}",
-                result.ids_added,
-                if result.ids_added == 1 { "" } else { "s" },
-                file.display()
-            );
+/// Processes `add-id` mutations for a single target file and updates `mutation`.
+fn process_add_id_file(
+    file: &Path,
+    indices: Option<&[usize]>,
+    args: &AddIdArgs,
+    generator: &IdGenerator,
+    det_opts: Option<&DeterministicIdOptions>,
+    mutation: &mut MutationResult,
+) {
+    let source = match SourceFile::from_path(file) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("error reading {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
+        }
+    };
+    let doc = OrgDocument::from_source(&source);
+    let applied = match apply_file_add_ids(&source, &doc, indices, generator, det_opts) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => return,
+        Err(e) => {
+            let msg = format!("error processing {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
+        }
+    };
+
+    let (new_content, details) = applied;
+    let added_count = details.len();
+    if !args.dry_run {
+        if let Err(e) = std::fs::write(file, &new_content) {
+            let msg = format!("error writing {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
         }
     }
 
-    if total_added == 0 && !dry_run {
-        println!("All entries already have IDs");
+    mutation.files_modified += 1;
+    mutation.entries_affected += added_count;
+    mutation.details.extend(details);
+    if args.format == MutationOutputFormat::Human {
+        emit_add_id_file_human(file, added_count, args.dry_run);
+    }
+}
+
+/// Selects the classic [`IdGenerator`] configured on [`AddIdArgs`].
+fn build_id_generator(args: &AddIdArgs) -> IdGenerator {
+    if let Some(ref tpl) = args.id_format {
+        IdGenerator::Template(tpl.clone())
+    } else if let Some(ref cmd) = args.id_command {
+        IdGenerator::Command(cmd.clone())
+    } else {
+        IdGenerator::Uuid
+    }
+}
+
+/// Resolves optional Stempelamt [`DeterministicIdOptions`] from [`AddIdArgs`].
+fn build_deterministic_opts(args: &AddIdArgs) -> Result<Option<DeterministicIdOptions>, i32> {
+    if !args.deterministic {
+        return Ok(None);
+    }
+    let cfg = StempelamtConfig::resolve(args.namespace.as_deref(), args.urn_prefix.as_deref())
+        .map_err(|e| {
+            eprintln!("org: {e}");
+            EXIT_ERROR
+        })?;
+    Ok(Some(DeterministicIdOptions {
+        config: cfg,
+        explicit_seed: args.seed.clone(),
+        scope: args.scope.clone(),
+        kind: args.kind.clone(),
+        author: args.author.clone(),
+    }))
+}
+
+/// Runs `org update add-id`.
+fn run_add_id(args: AddIdArgs) -> i32 {
+    let started = Instant::now();
+    if args.targets.is_empty() {
+        eprintln!("org: no targets specified");
+        return EXIT_ERROR;
     }
 
-    0
+    let det_opts = match build_deterministic_opts(&args) {
+        Ok(opts) => opts,
+        Err(code) => return code,
+    };
+    let generator = build_id_generator(&args);
+    let file_list = match resolve_add_id_targets(&args.targets, args.recursive) {
+        Ok(list) => list,
+        Err(code) => return code,
+    };
+
+    let mut mutation = MutationResult::new("add-id", args.dry_run);
+    for (file, indices) in &file_list {
+        process_add_id_file(
+            file,
+            indices.as_deref(),
+            &args,
+            &generator,
+            det_opts.as_ref(),
+            &mut mutation,
+        );
+    }
+    mutation.finish(started, file_list.len());
+
+    if args.format == MutationOutputFormat::Json {
+        output_mutation(&mutation, MutationOutputFormat::Json);
+    } else if mutation.entries_affected == 0 && !args.dry_run {
+        println!("All entries already have IDs");
+    }
+    EXIT_OK
+}
+
+/// Runs `org update set-property`.
+fn run_set_property(args: SetPropertyArgs) -> i32 {
+    let started = Instant::now();
+    let (resolved, source, doc) = match resolve_single_target(&args.locator) {
+        Ok(triple) => triple,
+        Err(code) => return code,
+    };
+
+    let result =
+        match property::set_property(&source, &doc, resolved.entry_index, &args.key, &args.value) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("org: {e}");
+                return EXIT_ERROR;
+            }
+        };
+
+    let mut mutation = MutationResult::new("set-property", args.dry_run);
+    if result.changed {
+        if !args.dry_run {
+            if let Err(e) = std::fs::write(&resolved.file, &result.content) {
+                eprintln!("org: error writing {}: {e}", resolved.file.display());
+                return EXIT_ERROR;
+            }
+        }
+        mutation.files_modified = 1;
+        mutation.entries_affected = 1;
+        mutation.details.push(MutationDetail {
+            file: resolved.file.display().to_string(),
+            line: result.line,
+            action: "set-property".to_string(),
+            detail: Some(format!("{}={}", args.key.trim(), args.value.trim())),
+        });
+    }
+    mutation.finish(started, 1);
+    output_mutation(&mutation, args.format);
+    EXIT_OK
+}
+
+/// Runs `org update delete-property`.
+fn run_delete_property(args: DeletePropertyArgs) -> i32 {
+    let started = Instant::now();
+    let (resolved, source, doc) = match resolve_single_target(&args.locator) {
+        Ok(triple) => triple,
+        Err(code) => return code,
+    };
+
+    let result = match property::delete_property(&source, &doc, resolved.entry_index, &args.key) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("org: {e}");
+            return EXIT_ERROR;
+        }
+    };
+
+    let mut mutation = MutationResult::new("delete-property", args.dry_run);
+    if result.changed {
+        if !args.dry_run {
+            if let Err(e) = std::fs::write(&resolved.file, &result.content) {
+                eprintln!("org: error writing {}: {e}", resolved.file.display());
+                return EXIT_ERROR;
+            }
+        }
+        mutation.files_modified = 1;
+        mutation.entries_affected = 1;
+        mutation.details.push(MutationDetail {
+            file: resolved.file.display().to_string(),
+            line: result.line,
+            action: "deleted-property".to_string(),
+            detail: Some(args.key.trim().to_string()),
+        });
+    }
+    mutation.finish(started, 1);
+    output_mutation(&mutation, args.format);
+    EXIT_OK
+}
+
+/// Runs `org update set-tags`.
+fn run_set_tags(args: SetTagsArgs) -> i32 {
+    let started = Instant::now();
+    let parsed_tags = match property::parse_tag_input(args.tags.as_deref(), args.clear) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("org: {e}");
+            return EXIT_ERROR;
+        }
+    };
+    let (resolved, source, doc) = match resolve_single_target(&args.locator) {
+        Ok(triple) => triple,
+        Err(code) => return code,
+    };
+
+    let tag_col = property::resolve_tag_column(args.tag_column);
+    let result =
+        match property::set_tags(&source, &doc, resolved.entry_index, &parsed_tags, tag_col) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("org: {e}");
+                return EXIT_ERROR;
+            }
+        };
+
+    let mut mutation = MutationResult::new("set-tags", args.dry_run);
+    if result.changed {
+        if !args.dry_run {
+            if let Err(e) = std::fs::write(&resolved.file, &result.content) {
+                eprintln!("org: error writing {}: {e}", resolved.file.display());
+                return EXIT_ERROR;
+            }
+        }
+        let detail = if parsed_tags.is_empty() {
+            Some("cleared".to_string())
+        } else {
+            Some(format!(":{}:", parsed_tags.join(":")))
+        };
+        mutation.files_modified = 1;
+        mutation.entries_affected = 1;
+        mutation.details.push(MutationDetail {
+            file: resolved.file.display().to_string(),
+            line: result.line,
+            action: "set-tags".to_string(),
+            detail,
+        });
+    }
+    mutation.finish(started, 1);
+    output_mutation(&mutation, args.format);
+    EXIT_OK
 }
 
 /// Runs the `clock` subcommand.
@@ -1779,310 +2248,539 @@ fn apply_set_state(
     org_tools_core::state::set_state(source, doc, effective_indices.as_deref(), state, !no_closed)
 }
 
-/// Runs `org update set-state`.
-fn run_set_state(
-    state: String,
-    mut targets: Vec<String>,
-    stdin: bool,
-    query_expr: Option<String>,
+/// Processes piped Org-mode file content for `org update set-state`.
+fn handle_piped_org_set_state(
+    content: String,
+    state: &str,
+    query_pred: Option<&query::parser::Predicate>,
     no_closed: bool,
     dry_run: bool,
-    _format: MutationOutputFormat,
 ) -> i32 {
-    // Parse --query upfront if provided.
-    let query_pred = match &query_expr {
-        Some(expr) => match query::parser::parse_query(expr) {
-            Ok(pred) => Some(pred),
-            Err(e) => {
-                eprintln!("org: invalid query: {e}");
-                return EXIT_ERROR;
-            }
-        },
-        None => None,
-    };
-
-    // Auto-detect piped stdin when no targets given.
-    let piped = !std::io::stdin().is_terminal();
-    if piped && targets.is_empty() && !stdin {
-        // Read stdin and decide: org content → process as file; locators → resolve targets.
-        let content = {
-            let mut buf = String::new();
-            if let Err(e) = std::io::stdin().lock().read_to_string(&mut buf) {
-                eprintln!("org: error reading stdin: {e}");
-                return EXIT_ERROR;
-            }
-            buf
-        };
-
-        let first_meaningful = content.lines().find(|l| !l.trim().is_empty());
-        let is_org = first_meaningful.is_some_and(looks_like_org_content);
-
-        if is_org {
-            // Org-file stdin mode: process content, write result to stdout.
-            let source = SourceFile::new("<stdin>", content);
-            let doc = OrgDocument::from_source(&source);
-
-            if !doc.todo_keywords.contains(&state) {
-                eprintln!(
-                    "org: '{}' is not a recognized TODO keyword in <stdin>",
-                    state
-                );
-                return EXIT_ERROR;
-            }
-
-            let result =
-                apply_set_state(&source, &doc, None, query_pred.as_ref(), &state, no_closed);
-
-            return match result {
-                Some(r) => {
-                    if dry_run {
-                        eprintln!(
-                            "Would change {} entr{} in <stdin>",
-                            r.changed,
-                            if r.changed == 1 { "y" } else { "ies" },
-                        );
-                        print!("{}", source.content);
-                    } else {
-                        eprintln!(
-                            "Changed {} entr{} to {}",
-                            r.changed,
-                            if r.changed == 1 { "y" } else { "ies" },
-                            state,
-                        );
-                        print!("{}", r.content);
-                    }
-                    0
-                }
-                None => {
-                    eprintln!("No entries to change");
-                    print!("{}", source.content);
-                    0
-                }
-            };
-        }
-
-        // Not org content — treat lines as locator targets.
-        let lines: Vec<String> = content
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(|l| l.to_string())
-            .collect();
-        // Validate that they don't look like org content (belt and suspenders).
-        if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
-            eprintln!(
-                "org: stdin looks like org-mode content, not locator targets\n\
-                 first offending line: {bad}\n\
-                 hint: pipe locators (e.g. from `org query search`), not org file content"
-            );
-            return EXIT_ERROR;
-        }
-        targets.extend(lines);
-    }
-
-    // Explicit --stdin flag: read locators from stdin.
-    if stdin {
-        match read_stdin_targets() {
-            Ok(stdin_targets) => targets.extend(stdin_targets),
-            Err(e) => {
-                eprintln!("{e}");
-                return EXIT_ERROR;
-            }
-        }
-    }
-
-    if targets.is_empty() {
-        eprintln!("org: no targets specified");
+    let source = SourceFile::new("<stdin>", content);
+    let doc = OrgDocument::from_source(&source);
+    if !doc.todo_keywords.contains(state) {
+        eprintln!("org: '{state}' is not a recognized TODO keyword in <stdin>");
         return EXIT_ERROR;
     }
 
-    // Resolve targets to file+entry pairs.
+    let result = apply_set_state(&source, &doc, None, query_pred, state, no_closed);
+    match result {
+        Some(r) => {
+            let suffix = if r.changed == 1 { "y" } else { "ies" };
+            if dry_run {
+                eprintln!("Would change {} entr{suffix} in <stdin>", r.changed);
+                print!("{}", source.content);
+            } else {
+                eprintln!("Changed {} entr{suffix} to {state}", r.changed);
+                print!("{}", r.content);
+            }
+            EXIT_OK
+        }
+        None => {
+            eprintln!("No entries to change");
+            print!("{}", source.content);
+            EXIT_OK
+        }
+    }
+}
+
+/// Reads piped stdin when no CLI targets or `--stdin` flag were supplied.
+fn read_piped_state_stdin(
+    targets: &mut Vec<String>,
+    query_pred: Option<&query::parser::Predicate>,
+    args: &SetStateArgs,
+) -> Result<Option<i32>, i32> {
+    if std::io::stdin().is_terminal() || !targets.is_empty() || args.stdin {
+        return Ok(None);
+    }
+
+    let mut content = String::new();
+    if let Err(e) = std::io::stdin().lock().read_to_string(&mut content) {
+        eprintln!("org: error reading stdin: {e}");
+        return Err(EXIT_ERROR);
+    }
+    let first_meaningful = content.lines().find(|l| !l.trim().is_empty());
+    if first_meaningful.is_some_and(looks_like_org_content) {
+        let code = handle_piped_org_set_state(
+            content,
+            &args.state,
+            query_pred,
+            args.no_closed,
+            args.dry_run,
+        );
+        return Ok(Some(code));
+    }
+
+    let lines: Vec<String> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(ToString::to_string)
+        .collect();
+    if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
+        eprintln!(
+            "org: stdin looks like org-mode content, not locator targets\n\
+             first offending line: {bad}\n\
+             hint: pipe locators (e.g. from `org query search`), not org file content"
+        );
+        return Err(EXIT_ERROR);
+    }
+    targets.extend(lines);
+    Ok(None)
+}
+
+/// Resolves `set-state` target arguments into sorted `(file, entry_indices)` pairs.
+fn resolve_state_targets(targets: &[String]) -> Result<FileEntryTargets, i32> {
     let mut file_targets: std::collections::HashMap<PathBuf, Option<Vec<usize>>> =
         std::collections::HashMap::new();
 
-    for target in &targets {
+    for target in targets {
         if let Ok(locator) = OrgLocator::parse(target) {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            match resolve_locator(&locator, &[cwd]) {
-                Ok(resolved) => {
-                    let entry = file_targets
-                        .entry(resolved.file.clone())
-                        .or_insert(Some(Vec::new()));
-                    if let Some(ref mut existing) = entry {
-                        existing.push(resolved.entry_index);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("org: {e}");
-                    return 2;
-                }
+            let resolved = resolve_locator(&locator, &[cwd]).map_err(|e| {
+                eprintln!("org: {e}");
+                EXIT_ERROR
+            })?;
+            if resolved.is_file_node() {
+                eprintln!("org: cannot set TODO state on file-level node {target}");
+                return Err(EXIT_ERROR);
+            }
+            let entry = file_targets
+                .entry(resolved.file)
+                .or_insert(Some(Vec::new()));
+            if let Some(ref mut existing) = entry {
+                existing.push(resolved.entry_index);
             }
         } else {
-            let path = PathBuf::from(target);
-            let files = collect_org_files(&[path]);
-            for file in files {
+            for file in collect_org_files(&[PathBuf::from(target)]) {
                 file_targets.insert(file, None);
             }
         }
     }
 
-    let mut total_changed = 0;
     let mut file_list: Vec<_> = file_targets.into_iter().collect();
     file_list.sort_by(|a, b| a.0.cmp(&b.0));
-
-    for (file, indices) in file_list {
-        let source = match SourceFile::from_path(&file) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("org: error reading {}: {}", file.display(), e);
-                continue;
-            }
-        };
-        let doc = OrgDocument::from_source(&source);
-
-        if !doc.todo_keywords.contains(&state) {
-            eprintln!(
-                "org: '{}' is not a recognized TODO keyword in {}",
-                state,
-                file.display()
-            );
-            continue;
-        }
-
-        let result = apply_set_state(
-            &source,
-            &doc,
-            indices.as_deref(),
-            query_pred.as_ref(),
-            &state,
-            no_closed,
-        );
-
-        if let Some(r) = result {
-            total_changed += r.changed;
-            if dry_run {
-                println!(
-                    "Would change {} entr{} in {}",
-                    r.changed,
-                    if r.changed == 1 { "y" } else { "ies" },
-                    file.display()
-                );
-            } else {
-                if let Err(e) = std::fs::write(&file, &r.content) {
-                    eprintln!("org: error writing {}: {}", file.display(), e);
-                    continue;
-                }
-                println!(
-                    "Changed {} entr{} to {} in {}",
-                    r.changed,
-                    if r.changed == 1 { "y" } else { "ies" },
-                    state,
-                    file.display()
-                );
-            }
-        }
-    }
-
-    if total_changed == 0 && !dry_run {
-        println!("No entries to change");
-    }
-    0
+    Ok(file_list)
 }
 
-/// Runs `org update add-todo`.
-#[allow(clippy::too_many_arguments)]
-fn run_add_todo(
-    title: String,
-    target: String,
-    level: Option<usize>,
-    keyword: String,
-    priority: Option<char>,
-    tags: Vec<String>,
-    scheduled: Option<String>,
-    deadline: Option<String>,
-    parent: Option<String>,
-    dry_run: bool,
-    _format: MutationOutputFormat,
-) -> i32 {
-    // Resolve parent if specified.
-    let (file_path, parent_idx, parent_level) = if let Some(ref parent_loc) = parent {
-        match OrgLocator::parse(parent_loc) {
-            Ok(locator) => {
-                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                match resolve_locator(&locator, &[cwd]) {
-                    Ok(resolved) => {
-                        let source = match SourceFile::from_path(&resolved.file) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                eprintln!("org: {e}");
-                                return 2;
-                            }
-                        };
-                        let doc = OrgDocument::from_source(&source);
-                        let plevel = doc.entries[resolved.entry_index].level;
-                        (resolved.file, Some(resolved.entry_index), Some(plevel))
-                    }
-                    Err(e) => {
-                        eprintln!("org: {e}");
-                        return 2;
-                    }
-                }
+/// Collects per-entry [`MutationDetail`] records for entries whose TODO state changed.
+fn collect_changed_state_details(
+    file: &Path,
+    before: &OrgDocument,
+    after_content: &str,
+) -> Vec<MutationDetail> {
+    let after_source = SourceFile::new(file, after_content.to_string());
+    let after_doc = OrgDocument::from_source(&after_source);
+    let file_str = file.display().to_string();
+
+    after_doc
+        .entries
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, entry)| {
+            let prev = before.entries.get(idx)?;
+            if prev.keyword == entry.keyword {
+                return None;
             }
-            Err(e) => {
-                eprintln!("org: {e}");
-                return 2;
-            }
-        }
+            let from_kw = prev.keyword.as_deref().unwrap_or("<none>");
+            let to_kw = entry.keyword.as_deref().unwrap_or("<none>");
+            Some(MutationDetail {
+                file: file_str.clone(),
+                line: entry.heading_line,
+                action: "state-changed".to_string(),
+                detail: Some(format!("{from_kw} -> {to_kw}")),
+            })
+        })
+        .collect()
+}
+
+/// Prints the human-mode per-file summary for `org update set-state`.
+fn emit_set_state_human(file: &Path, changed: usize, state: &str, dry_run: bool) {
+    let suffix = if changed == 1 { "y" } else { "ies" };
+    if dry_run {
+        println!("Would change {changed} entr{suffix} in {}", file.display());
     } else {
-        // Target is a file path.
-        let path = PathBuf::from(&target);
-        if path.is_dir() {
-            eprintln!("org: target must be a file, not a directory");
-            return 2;
-        }
-        (path, None, None)
-    };
-
-    let entry_level = level.unwrap_or_else(|| parent_level.map(|l| l + 1).unwrap_or(1));
-
-    let opts = org_tools_core::entry::NewEntryOpts {
-        title,
-        level: entry_level,
-        keyword: Some(keyword),
-        priority,
-        tags,
-        scheduled,
-        deadline,
-    };
-
-    // Create file if it doesn't exist.
-    if !file_path.exists() {
-        if dry_run {
-            println!("Would create {} with new entry", file_path.display());
-            return 0;
-        }
-        std::fs::write(&file_path, "").ok();
+        println!(
+            "Changed {changed} entr{suffix} to {state} in {}",
+            file.display()
+        );
     }
+}
 
-    let source = match SourceFile::from_path(&file_path) {
+/// Applies `set-state` to a single file and records results into `mutation`.
+fn process_set_state_file(
+    file: &Path,
+    indices: Option<&[usize]>,
+    query_pred: Option<&query::parser::Predicate>,
+    args: &SetStateArgs,
+    mutation: &mut MutationResult,
+) {
+    let source = match SourceFile::from_path(file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("org: error reading {}: {}", file_path.display(), e);
-            return 2;
+            let msg = format!("error reading {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
         }
     };
     let doc = OrgDocument::from_source(&source);
-    let result = org_tools_core::entry::add_entry(&source, &doc, parent_idx, &opts);
+    if !doc.todo_keywords.contains(&args.state) {
+        let msg = format!(
+            "'{}' is not a recognized TODO keyword in {}",
+            args.state,
+            file.display()
+        );
+        eprintln!("org: {msg}");
+        mutation.errors.push(msg);
+        return;
+    }
 
-    if dry_run {
+    let Some(r) = apply_set_state(
+        &source,
+        &doc,
+        indices,
+        query_pred,
+        &args.state,
+        args.no_closed,
+    ) else {
+        return;
+    };
+    if !args.dry_run {
+        if let Err(e) = std::fs::write(file, &r.content) {
+            let msg = format!("error writing {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
+        }
+    }
+
+    mutation.files_modified += 1;
+    mutation.entries_affected += r.changed;
+    mutation
+        .details
+        .extend(collect_changed_state_details(file, &doc, &r.content));
+    if args.format == MutationOutputFormat::Human {
+        emit_set_state_human(file, r.changed, &args.state, args.dry_run);
+    }
+}
+
+/// Parses an optional `--query` predicate expression.
+fn parse_optional_query(expr: Option<&str>) -> Result<Option<query::parser::Predicate>, i32> {
+    match expr {
+        Some(raw) => query::parser::parse_query(raw).map(Some).map_err(|e| {
+            eprintln!("org: invalid query: {e}");
+            EXIT_ERROR
+        }),
+        None => Ok(None),
+    }
+}
+
+/// Gathers CLI and piped locator targets for `org update set-state`.
+fn gather_set_state_targets(
+    args: &mut SetStateArgs,
+    query_pred: Option<&query::parser::Predicate>,
+) -> Result<Option<Vec<String>>, i32> {
+    let mut targets = std::mem::take(&mut args.targets);
+    if let Some(exit_code) = read_piped_state_stdin(&mut targets, query_pred, args)? {
+        if exit_code != EXIT_OK {
+            return Err(exit_code);
+        }
+        return Ok(None);
+    }
+    if args.stdin {
+        let stdin_targets = read_stdin_targets().map_err(|e| {
+            eprintln!("{e}");
+            EXIT_ERROR
+        })?;
+        targets.extend(stdin_targets);
+    }
+    if targets.is_empty() {
+        eprintln!("org: no targets specified");
+        return Err(EXIT_ERROR);
+    }
+    Ok(Some(targets))
+}
+
+/// Runs `org update set-state`.
+fn run_set_state(mut args: SetStateArgs) -> i32 {
+    let started = Instant::now();
+    let query_pred = match parse_optional_query(args.query.as_deref()) {
+        Ok(pred) => pred,
+        Err(code) => return code,
+    };
+
+    let targets = match gather_set_state_targets(&mut args, query_pred.as_ref()) {
+        Ok(Some(list)) => list,
+        Ok(None) => return EXIT_OK,
+        Err(code) => return code,
+    };
+    let file_list = match resolve_state_targets(&targets) {
+        Ok(list) => list,
+        Err(code) => return code,
+    };
+
+    let mut mutation = MutationResult::new("set-state", args.dry_run);
+    for (file, indices) in &file_list {
+        process_set_state_file(
+            file,
+            indices.as_deref(),
+            query_pred.as_ref(),
+            &args,
+            &mut mutation,
+        );
+    }
+    mutation.finish(started, file_list.len());
+
+    if args.format == MutationOutputFormat::Json {
+        output_mutation(&mutation, MutationOutputFormat::Json);
+    } else if mutation.entries_affected == 0 && !args.dry_run {
+        println!("No entries to change");
+    }
+    EXIT_OK
+}
+
+/// Resolves the target file path and optional parent entry for `org update add-todo`.
+fn resolve_add_todo_destination(
+    target: &str,
+    parent: Option<&str>,
+) -> Result<(PathBuf, Option<usize>, Option<usize>), i32> {
+    if let Some(parent_loc) = parent {
+        let (resolved, _source, doc) = resolve_single_target(parent_loc)?;
+        if resolved.is_file_node() {
+            return Ok((resolved.file, None, None));
+        }
+        let plevel = doc.entries[resolved.entry_index].level;
+        return Ok((resolved.file, Some(resolved.entry_index), Some(plevel)));
+    }
+    if OrgLocator::parse(target).is_ok() {
+        let (resolved, _source, doc) = resolve_single_target(target)?;
+        if resolved.is_file_node() {
+            return Ok((resolved.file, None, None));
+        }
+        let plevel = doc.entries[resolved.entry_index].level;
+        return Ok((resolved.file, Some(resolved.entry_index), Some(plevel)));
+    }
+
+    let path = PathBuf::from(target);
+    if path.is_dir() {
+        eprintln!("org: target must be a file, not a directory");
+        return Err(EXIT_ERROR);
+    }
+    Ok((path, None, None))
+}
+
+/// Loads an existing Org file or initializes an empty in-memory [`SourceFile`].
+fn load_or_init_todo_source(file_path: &Path) -> Result<(SourceFile, bool, bool), i32> {
+    if file_path.exists() {
+        let source = SourceFile::from_path(file_path).map_err(|e| {
+            eprintln!("org: error reading {}: {e}", file_path.display());
+            EXIT_ERROR
+        })?;
+        let was_empty = source.content.trim().is_empty();
+        Ok((source, true, was_empty))
+    } else {
+        Ok((SourceFile::new(file_path, String::new()), false, true))
+    }
+}
+
+/// Emits human-readable or JSON output for `org update add-todo`.
+fn emit_add_todo_output(
+    mutation: &MutationResult,
+    file_path: &Path,
+    existed: bool,
+    format: MutationOutputFormat,
+) {
+    if format == MutationOutputFormat::Json {
+        output_mutation(mutation, MutationOutputFormat::Json);
+    } else if mutation.dry_run && !existed {
+        println!("Would create {} with new entry", file_path.display());
+    } else if mutation.dry_run {
         println!("Would add entry to {}", file_path.display());
     } else {
-        if let Err(e) = std::fs::write(&file_path, &result.content) {
-            eprintln!("org: error writing {}: {}", file_path.display(), e);
-            return 2;
-        }
         println!("Added entry to {}", file_path.display());
     }
-    0
+}
+
+/// Inserts and post-processes a new TODO entry via `entry::add_entry` and `property`.
+fn insert_and_finalize_todo(
+    args: &AddTodoArgs,
+    file_path: &Path,
+    parent_idx: Option<usize>,
+    parent_level: Option<usize>,
+    properties: Vec<(String, String)>,
+) -> Result<(property::FinalizedTodoResult, bool), i32> {
+    let (source, existed, was_empty) = load_or_init_todo_source(file_path)?;
+    let doc = OrgDocument::from_source(&source);
+    let entry_level = args
+        .level
+        .unwrap_or_else(|| parent_level.map_or(1, |l| l + 1));
+    let opts = org_tools_core::entry::NewEntryOpts {
+        title: args.title.clone(),
+        level: entry_level,
+        keyword: Some(args.keyword.clone()),
+        priority: args.priority,
+        tags: args.tags.clone(),
+        scheduled: args.scheduled.clone(),
+        deadline: args.deadline.clone(),
+    };
+
+    let added = org_tools_core::entry::add_entry(&source, &doc, parent_idx, &opts);
+    let finalized = property::finalize_added_todo(
+        was_empty,
+        &added.content,
+        file_path,
+        parent_idx,
+        &FinalizeTodoOptions {
+            properties,
+            body: args.body.clone(),
+            tag_column: property::resolve_tag_column(args.tag_column),
+        },
+    )
+    .map_err(|e| {
+        eprintln!("org: {e}");
+        EXIT_ERROR
+    })?;
+    Ok((finalized, existed))
+}
+
+/// Runs `org update add-todo`.
+fn run_add_todo(args: AddTodoArgs) -> i32 {
+    let started = Instant::now();
+    let (file_path, parent_idx, parent_level) =
+        match resolve_add_todo_destination(&args.target, args.parent.as_deref()) {
+            Ok(dest) => dest,
+            Err(code) => return code,
+        };
+
+    let properties = match property::build_todo_properties(&NewTodoPropertySpec {
+        title: &args.title,
+        file_path: &file_path,
+        id_mode: args.id_mode.into_core(),
+        namespace: args.namespace.as_deref(),
+        urn_prefix: args.urn_prefix.as_deref(),
+        seed: args.seed.as_deref(),
+        scope: args.scope.as_deref(),
+        kind: args.kind.as_deref(),
+        author: args.author.as_deref(),
+        raw_properties: &args.properties,
+    }) {
+        Ok(props) => props,
+        Err(e) => {
+            eprintln!("org: {e}");
+            return EXIT_ERROR;
+        }
+    };
+
+    let (finalized, existed) =
+        match insert_and_finalize_todo(&args, &file_path, parent_idx, parent_level, properties) {
+            Ok(pair) => pair,
+            Err(code) => return code,
+        };
+
+    if !args.dry_run {
+        if let Err(e) = std::fs::write(&file_path, &finalized.content) {
+            eprintln!("org: error writing {}: {e}", file_path.display());
+            return EXIT_ERROR;
+        }
+    }
+
+    let mut mutation = MutationResult::new("add-todo", args.dry_run);
+    mutation.files_modified = 1;
+    mutation.entries_affected = 1;
+    mutation.details.push(MutationDetail {
+        file: file_path.display().to_string(),
+        line: finalized.heading_line,
+        action: "added-todo".to_string(),
+        detail: Some(args.title),
+    });
+    mutation.finish(started, usize::from(existed));
+    emit_add_todo_output(&mutation, &file_path, existed, args.format);
+    EXIT_OK
+}
+
+/// Collects per-line [`MutationDetail`] records for statistic cookies updated in `file`.
+fn collect_cookie_details(file: &Path, before: &str, after: &str) -> Vec<MutationDetail> {
+    let file_str = file.display().to_string();
+    let details: Vec<MutationDetail> = before
+        .lines()
+        .zip(after.lines())
+        .enumerate()
+        .filter(|(_, (old_l, new_l))| old_l != new_l)
+        .map(|(idx, (_, new_l))| MutationDetail {
+            file: file_str.clone(),
+            line: idx + 1,
+            action: "updated-cookie".to_string(),
+            detail: Some(new_l.trim().to_string()),
+        })
+        .collect();
+
+    if details.is_empty() {
+        vec![MutationDetail {
+            file: file_str,
+            line: 1,
+            action: "updated-cookie".to_string(),
+            detail: None,
+        }]
+    } else {
+        details
+    }
+}
+
+/// Applies statistic cookie updates to a single file and records results in `mutation`.
+fn process_add_cookie_file(
+    file: &Path,
+    recursive: bool,
+    dry_run: bool,
+    format: MutationOutputFormat,
+    mutation: &mut MutationResult,
+) {
+    let source = match SourceFile::from_path(file) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("error reading {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
+        }
+    };
+    let doc = OrgDocument::from_source(&source);
+    let Some(result) = org_tools_core::cookie::update_cookies(&source, &doc, recursive) else {
+        return;
+    };
+
+    if !dry_run {
+        if let Err(e) = std::fs::write(file, &result.content) {
+            let msg = format!("error writing {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
+        }
+    }
+
+    mutation.files_modified += 1;
+    mutation.entries_affected += result.updated;
+    mutation.details.extend(collect_cookie_details(
+        file,
+        &source.content,
+        &result.content,
+    ));
+
+    if format == MutationOutputFormat::Human {
+        let suffix = if result.updated == 1 { "" } else { "s" };
+        if dry_run {
+            println!(
+                "Would update {} cookie{suffix} in {}",
+                result.updated,
+                file.display()
+            );
+        } else {
+            println!(
+                "Updated {} cookie{suffix} in {}",
+                result.updated,
+                file.display()
+            );
+        }
+    }
 }
 
 /// Runs `org update add-cookie`.
@@ -2090,53 +2788,123 @@ fn run_add_cookie(
     paths: Vec<PathBuf>,
     recursive: bool,
     dry_run: bool,
-    _format: MutationOutputFormat,
+    format: MutationOutputFormat,
 ) -> i32 {
+    let started = Instant::now();
     let files = collect_org_files(&paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
-        return 2;
+        return EXIT_ERROR;
     }
 
-    let mut total_updated = 0;
+    let mut mutation = MutationResult::new("add-cookie", dry_run);
     for file in &files {
-        let source = match SourceFile::from_path(file) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("org: error reading {}: {}", file.display(), e);
-                continue;
-            }
-        };
-        let doc = OrgDocument::from_source(&source);
+        process_add_cookie_file(file, recursive, dry_run, format, &mut mutation);
+    }
+    mutation.finish(started, files.len());
 
-        if let Some(result) = org_tools_core::cookie::update_cookies(&source, &doc, recursive) {
-            total_updated += result.updated;
-            if dry_run {
-                println!(
-                    "Would update {} cookie{} in {}",
-                    result.updated,
-                    if result.updated == 1 { "" } else { "s" },
-                    file.display()
-                );
-            } else {
-                if let Err(e) = std::fs::write(file, &result.content) {
-                    eprintln!("org: error writing {}: {}", file.display(), e);
-                    continue;
-                }
-                println!(
-                    "Updated {} cookie{} in {}",
-                    result.updated,
-                    if result.updated == 1 { "" } else { "s" },
-                    file.display()
-                );
-            }
+    if format == MutationOutputFormat::Json {
+        output_mutation(&mutation, MutationOutputFormat::Json);
+    } else if mutation.entries_affected == 0 && !dry_run {
+        println!("All cookies are up to date");
+    }
+    EXIT_OK
+}
+
+/// Writes both the pruned source file and appended `.org_archive` file to disk.
+fn write_archived_files(
+    file: &Path,
+    result: &org_tools_core::archive::ArchiveResult,
+) -> Result<(), String> {
+    std::fs::write(file, &result.source_content)
+        .map_err(|e| format!("error writing {}: {e}", file.display()))?;
+    let mut archive_content = if result.archive_path.exists() {
+        std::fs::read_to_string(&result.archive_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    archive_content.push_str(&result.archive_content);
+    std::fs::write(&result.archive_path, &archive_content)
+        .map_err(|e| format!("error writing {}: {e}", result.archive_path.display()))
+}
+
+/// Prints the human-mode per-file summary for `org archive`.
+fn emit_archive_human(
+    file: &Path,
+    archive_dest: &str,
+    archived: usize,
+    archivable: &[org_tools_core::archive::ArchiveEntry],
+    dry_run: bool,
+) {
+    let suffix = if archived == 1 { "y" } else { "ies" };
+    if dry_run {
+        println!(
+            "Would archive {archived} entr{suffix} from {} to {archive_dest}",
+            file.display()
+        );
+        for entry in archivable {
+            println!("  {} (line {})", entry.title, entry.start_line);
+        }
+    } else {
+        println!(
+            "Archived {archived} entr{suffix} from {} to {archive_dest}",
+            file.display()
+        );
+    }
+}
+
+/// Processes archivable entries in a single Org file and records results in `mutation`.
+fn process_archive_file(
+    file: &Path,
+    target_override: Option<&str>,
+    tags: &[String],
+    dry_run: bool,
+    format: MutationOutputFormat,
+    mutation: &mut MutationResult,
+) {
+    let source = match SourceFile::from_path(file) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("error reading {}: {e}", file.display());
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
+        }
+    };
+    let doc = OrgDocument::from_source(&source);
+    let target_str = target_override
+        .or_else(|| doc.file_keywords.get("ARCHIVE").map(String::as_str))
+        .unwrap_or("");
+    let target = org_tools_core::archive::parse_archive_target(target_str, file);
+    let archivable = org_tools_core::archive::find_archivable_entries(&source, &doc, tags);
+    let Some(result) = org_tools_core::archive::build_archive(&source, &doc, &archivable, &target)
+    else {
+        return;
+    };
+
+    if !dry_run {
+        if let Err(msg) = write_archived_files(file, &result) {
+            eprintln!("org: {msg}");
+            mutation.errors.push(msg);
+            return;
         }
     }
 
-    if total_updated == 0 && !dry_run {
-        println!("All cookies are up to date");
+    mutation.files_modified += 1;
+    mutation.entries_affected += result.archived;
+    let file_str = file.display().to_string();
+    let archive_dest = result.archive_path.display().to_string();
+    for entry in &archivable {
+        mutation.details.push(MutationDetail {
+            file: file_str.clone(),
+            line: entry.start_line.max(1),
+            action: "archived".to_string(),
+            detail: Some(format!("{} -> {archive_dest}", entry.title)),
+        });
     }
-    0
+    if format == MutationOutputFormat::Human {
+        emit_archive_human(file, &archive_dest, result.archived, &archivable, dry_run);
+    }
 }
 
 /// Runs `org archive`.
@@ -2145,154 +2913,99 @@ fn run_archive(
     target_override: Option<String>,
     tags: Vec<String>,
     dry_run: bool,
-    _format: MutationOutputFormat,
+    format: MutationOutputFormat,
 ) -> i32 {
-    let files = collect_org_files(&paths);
-    if files.is_empty() {
-        eprintln!("org: no .org files found");
-        return 2;
-    }
-
-    let mut total_archived = 0;
-    for file in &files {
-        let source = match SourceFile::from_path(file) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("org: error reading {}: {}", file.display(), e);
-                continue;
-            }
-        };
-        let doc = OrgDocument::from_source(&source);
-
-        let target_str = target_override
-            .as_deref()
-            .or_else(|| doc.file_keywords.get("ARCHIVE").map(|s| s.as_str()))
-            .unwrap_or("");
-
-        let target = org_tools_core::archive::parse_archive_target(target_str, file);
-        let archivable = org_tools_core::archive::find_archivable_entries(&source, &doc, &tags);
-
-        if archivable.is_empty() {
-            continue;
-        }
-
-        if let Some(result) =
-            org_tools_core::archive::build_archive(&source, &doc, &archivable, &target)
-        {
-            total_archived += result.archived;
-            if dry_run {
-                println!(
-                    "Would archive {} entr{} from {} to {}",
-                    result.archived,
-                    if result.archived == 1 { "y" } else { "ies" },
-                    file.display(),
-                    result.archive_path.display()
-                );
-                for entry in &archivable {
-                    println!("  {} (line {})", entry.title, entry.start_line);
-                }
-            } else {
-                // Write modified source.
-                if let Err(e) = std::fs::write(file, &result.source_content) {
-                    eprintln!("org: error writing {}: {}", file.display(), e);
-                    continue;
-                }
-                // Append to archive file.
-                let mut archive_content = if result.archive_path.exists() {
-                    std::fs::read_to_string(&result.archive_path).unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                archive_content.push_str(&result.archive_content);
-                if let Err(e) = std::fs::write(&result.archive_path, &archive_content) {
-                    eprintln!(
-                        "org: error writing {}: {}",
-                        result.archive_path.display(),
-                        e
-                    );
-                    continue;
-                }
-                println!(
-                    "Archived {} entr{} from {} to {}",
-                    result.archived,
-                    if result.archived == 1 { "y" } else { "ies" },
-                    file.display(),
-                    result.archive_path.display()
-                );
-            }
-        }
-    }
-
-    if total_archived == 0 {
-        println!("No entries to archive");
-    }
-    EXIT_OK
-}
-
-/// Runs `org update calc`.
-fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutputFormat) -> i32 {
+    let started = Instant::now();
     let files = collect_org_files(&paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
         return EXIT_ERROR;
     }
 
-    let mut mutation = MutationResult {
-        command: "calc".to_string(),
-        files_modified: 0,
-        entries_affected: 0,
-        dry_run,
-        details: Vec::new(),
-        errors: Vec::new(),
-    };
-    let mut has_emacs_error = false;
-
+    let mut mutation = MutationResult::new("archive", dry_run);
     for file in &files {
-        match std::fs::read_to_string(file) {
-            Ok(content) => {
-                let source = match SourceFile::from_path(file) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        mutation.errors.push(format!("{}: {e}", file.display()));
-                        continue;
-                    }
-                };
-                let doc = OrgDocument::from_source(&source);
-                let result = org_tools_core::tblfm::calc_file(&content, &doc.table_constants);
+        process_archive_file(
+            file,
+            target_override.as_deref(),
+            &tags,
+            dry_run,
+            format,
+            &mut mutation,
+        );
+    }
+    mutation.finish(started, files.len());
 
-                for err in &result.errors {
-                    let msg = format!("{}: {err}", file.display());
-                    if matches!(err, org_tools_core::tblfm::TblfmError::RequiresEmacs(_)) {
-                        has_emacs_error = true;
-                    }
-                    mutation.errors.push(msg);
-                }
+    if format == MutationOutputFormat::Json {
+        output_mutation(&mutation, MutationOutputFormat::Json);
+    } else if mutation.entries_affected == 0 {
+        println!("No entries to archive");
+    }
+    EXIT_OK
+}
 
-                if result.cells_updated > 0 {
-                    mutation.files_modified += 1;
-                    mutation.entries_affected += result.cells_updated;
-                    mutation.details.push(MutationDetail {
-                        file: file.display().to_string(),
-                        line: 0,
-                        action: format!("update {} cells", result.cells_updated),
-                        detail: None,
-                    });
+/// Evaluates `#+TBLFM:` formulas in a single file and returns whether Emacs was required.
+fn process_calc_file(file: &Path, dry_run: bool, mutation: &mut MutationResult) -> bool {
+    let source = match SourceFile::from_path(file) {
+        Ok(s) => s,
+        Err(e) => {
+            mutation.errors.push(format!("{}: {e}", file.display()));
+            return false;
+        }
+    };
+    let doc = OrgDocument::from_source(&source);
+    let result = org_tools_core::tblfm::calc_file(&source.content, &doc.table_constants);
 
-                    if !dry_run {
-                        if let Err(e) = std::fs::write(file, &result.content) {
-                            mutation
-                                .errors
-                                .push(format!("{}: write error: {e}", file.display()));
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                mutation.errors.push(format!("{}: {e}", file.display()));
+    let mut has_emacs_error = false;
+    for err in &result.errors {
+        if matches!(err, org_tools_core::tblfm::TblfmError::RequiresEmacs(_)) {
+            has_emacs_error = true;
+        }
+        mutation.errors.push(format!("{}: {err}", file.display()));
+    }
+
+    if result.cells_updated > 0 {
+        let first_table_line = source
+            .content
+            .lines()
+            .position(|l| l.trim_start().starts_with('|'))
+            .map_or(1, |idx| idx + 1);
+        mutation.files_modified += 1;
+        mutation.entries_affected += result.cells_updated;
+        mutation.details.push(MutationDetail {
+            file: file.display().to_string(),
+            line: first_table_line,
+            action: format!("update {} cells", result.cells_updated),
+            detail: None,
+        });
+
+        if !dry_run {
+            if let Err(e) = std::fs::write(file, &result.content) {
+                mutation
+                    .errors
+                    .push(format!("{}: write error: {e}", file.display()));
             }
         }
     }
+    has_emacs_error
+}
 
+/// Runs `org update calc`.
+fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutputFormat) -> i32 {
+    let started = Instant::now();
+    let files = collect_org_files(&paths);
+    if files.is_empty() {
+        eprintln!("org: no .org files found");
+        return EXIT_ERROR;
+    }
+
+    let mut mutation = MutationResult::new("calc", dry_run);
+    let mut has_emacs_error = false;
+    for file in &files {
+        if process_calc_file(file, dry_run, &mut mutation) {
+            has_emacs_error = true;
+        }
+    }
+    mutation.finish(started, files.len());
     output_mutation(&mutation, format);
 
     if has_emacs_error {

@@ -1,3 +1,9 @@
+// Copyright (C) 2026 org-tools contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=1600 reason="Integration CLI test suite covering all top-level org subcommands"
+
+//! End-to-end integration tests for the `org` command-line binary.
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
@@ -1087,4 +1093,450 @@ fn calc_json_output() {
         .success()
         .stdout(predicate::str::contains("\"command\""))
         .stdout(predicate::str::contains("\"entries_affected\""));
+}
+
+// ---------------------------------------------------------------------------
+// ORGFMT-WP-02: Uniform MutationResult JSON, Property/Tag Setters, Stempelamt
+// ---------------------------------------------------------------------------
+
+/// Validates that a JSON value conforms to `org-mutation-output.schema.json`.
+fn assert_mutation_envelope(val: &serde_json::Value, expected_cmd: &str, expected_dry_run: bool) {
+    assert_eq!(val["command"].as_str(), Some(expected_cmd));
+    assert_eq!(val["dry_run"].as_bool(), Some(expected_dry_run));
+    assert!(val["files_modified"].is_u64());
+    assert!(val["entries_affected"].is_u64());
+    assert!(val["errors"].is_array());
+    let details = val["details"].as_array().expect("details must be array");
+    for item in details {
+        assert!(item["file"].is_string());
+        assert!(item["line"].as_u64().unwrap_or(0) >= 1);
+        assert!(item["action"].is_string());
+        assert!(item["detail"].is_string() || item["detail"].is_null());
+    }
+    let telemetry = val["telemetry"]
+        .as_object()
+        .expect("telemetry object must be present");
+    assert!(telemetry["duration_us"].is_u64());
+    assert!(telemetry["files_scanned"].is_u64());
+    assert_eq!(telemetry["cache_hits"].as_u64(), Some(0));
+    assert_eq!(telemetry["cache_misses"].as_u64(), Some(0));
+}
+
+/// Runs `org` with `args` and parses stdout as JSON.
+fn run_org_json(args: &[&str]) -> serde_json::Value {
+    let out = org()
+        .args(args)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).unwrap()
+}
+
+/// Verifies `org update add-id --format json` emits a valid `MutationResult`.
+#[test]
+fn slice1_add_id_json_envelope() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("ids.org");
+    fs::write(&file, "* First\n* Second\n").unwrap();
+
+    let json = run_org_json(&[
+        "update",
+        "add-id",
+        "--format",
+        "json",
+        file.to_str().unwrap(),
+    ]);
+    assert_mutation_envelope(&json, "add-id", false);
+    assert_eq!(json["files_modified"], 1);
+    assert_eq!(json["entries_affected"], 2);
+    assert_eq!(json["details"].as_array().unwrap().len(), 2);
+}
+
+/// Verifies `set-state`, `add-todo`, `add-cookie`, and `archive` emit `MutationResult` JSON.
+#[test]
+fn slice1_existing_mutators_json_envelope() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("tasks.org");
+    fs::write(&file, "* Project\n** TODO Child A\n** DONE Child B\n").unwrap();
+    let path = file.to_str().unwrap();
+
+    let cookie_json = run_org_json(&[
+        "update",
+        "add-cookie",
+        "--recursive",
+        "--format",
+        "json",
+        path,
+    ]);
+    assert_mutation_envelope(&cookie_json, "add-cookie", false);
+    assert_eq!(cookie_json["entries_affected"], 1);
+
+    let todo_json = run_org_json(&["update", "add-todo", "Added item", "--format", "json", path]);
+    assert_mutation_envelope(&todo_json, "add-todo", false);
+    assert_eq!(todo_json["entries_affected"], 1);
+
+    let state_loc = format!("{}::*/Added item", file.display());
+    let state_json = run_org_json(&[
+        "update",
+        "set-state",
+        "DONE",
+        &state_loc,
+        "--format",
+        "json",
+    ]);
+    assert_mutation_envelope(&state_json, "set-state", false);
+    assert_eq!(state_json["entries_affected"], 1);
+
+    let arch_json = run_org_json(&["archive", "--dry-run", "--format", "json", path]);
+    assert_mutation_envelope(&arch_json, "archive", true);
+    assert_eq!(arch_json["entries_affected"], 2);
+}
+
+/// Verifies `set-property` and `delete-property` align drawers (`F005`) and preserve body text.
+#[test]
+fn slice2_set_and_delete_property_cli() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("props.org");
+    fs::write(
+        &file,
+        "* TODO Review spec\nSCHEDULED: <2026-11-08 Sun>\nKeep this body paragraph intact.\n",
+    )
+    .unwrap();
+    let loc = format!("{}::*/Review spec", file.display());
+    let path = file.to_str().unwrap();
+
+    let j1 = run_org_json(&[
+        "update",
+        "set-property",
+        &loc,
+        "EFFORT",
+        "1:30",
+        "--format",
+        "json",
+    ]);
+    assert_mutation_envelope(&j1, "set-property", false);
+    assert_eq!(j1["entries_affected"], 1);
+
+    org()
+        .args(["update", "set-property", &loc, "CUSTOM_ID", "spec-review"])
+        .assert()
+        .success();
+    let after_set = fs::read_to_string(&file).unwrap();
+    assert!(after_set.contains(":EFFORT:    1:30\n:CUSTOM_ID: spec-review\n"));
+    assert!(after_set.contains("Keep this body paragraph intact.\n"));
+    org().args(["fmt", "check", path]).assert().success();
+
+    let j2 = run_org_json(&[
+        "update",
+        "delete-property",
+        &loc,
+        "CUSTOM_ID",
+        "--format",
+        "json",
+    ]);
+    assert_mutation_envelope(&j2, "delete-property", false);
+    assert_eq!(j2["entries_affected"], 1);
+
+    let after_del = fs::read_to_string(&file).unwrap();
+    assert!(after_del.contains(":PROPERTIES:\n:EFFORT: 1:30\n:END:\n"));
+    org().args(["fmt", "check", path]).assert().success();
+}
+
+/// Verifies `set-tags` supports colon/comma/clear inputs and aligns to column 77 (`F007`).
+#[test]
+fn slice3_set_tags_cli_aligns_and_clears() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("tags.org");
+    fs::write(&file, "* TODO Ship release\n").unwrap();
+    let loc = format!("{}::*/Ship release", file.display());
+
+    let out = org()
+        .args([
+            "update",
+            "set-tags",
+            &loc,
+            ":ops:release:",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_mutation_envelope(&json, "set-tags", false);
+    assert_eq!(json["entries_affected"], 1);
+
+    let with_tags = fs::read_to_string(&file).unwrap();
+    assert_eq!(with_tags.trim_end().len(), 77);
+    assert!(with_tags.trim_end().ends_with(":ops:release:"));
+    org()
+        .args(["fmt", "check"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+
+    org()
+        .args(["update", "set-tags", &loc, "alpha,beta"])
+        .assert()
+        .success();
+    let comma_tags = fs::read_to_string(&file).unwrap();
+    assert!(comma_tags.trim_end().ends_with(":alpha:beta:"));
+    org()
+        .args(["fmt", "check"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+
+    org()
+        .args(["update", "set-tags", &loc, "--clear"])
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(&file).unwrap(), "* TODO Ship release\n");
+    org()
+        .args(["fmt", "check"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+}
+
+/// Verifies Stempelamt golden vectors 1 and 2 via `org update add-id --deterministic`.
+#[test]
+fn slice4_stempelamt_deterministic_add_id_golden_vectors() {
+    let dir = TempDir::new().unwrap();
+    let f1 = dir.path().join("wp.org");
+    fs::write(
+        &f1,
+        "* TODO Execute WP\n:PROPERTIES:\n:CUSTOM_ID: FRITZ-WP-01\n:END:\n",
+    )
+    .unwrap();
+    org()
+        .args([
+            "update",
+            "add-id",
+            "--deterministic",
+            "--scope",
+            "fritz",
+            "--kind",
+            "wp",
+            f1.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let c1 = fs::read_to_string(&f1).unwrap();
+    assert!(c1.contains("cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9"));
+    assert!(c1.contains("urn:babelsberg:fritz:wp:fritz-wp-01"));
+    org()
+        .args(["fmt", "check"])
+        .arg(f1.to_str().unwrap())
+        .assert()
+        .success();
+
+    let f2 = dir.path().join("jira.org");
+    fs::write(&f2, "* ORGFMT-101\n").unwrap();
+    org()
+        .args([
+            "update",
+            "add-id",
+            "--deterministic",
+            "--scope",
+            "orgfmt",
+            "--kind",
+            "jira",
+            f2.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let c2 = fs::read_to_string(&f2).unwrap();
+    assert!(c2.contains("9472f8df-1ad0-53bb-baac-dce22a6b1821"));
+    assert!(c2.contains("urn:babelsberg:orgfmt:jira:orgfmt-101"));
+}
+
+/// Verifies author-scoped Stempelamt golden vectors 3 & 4 and env var overrides.
+#[test]
+fn slice4_stempelamt_author_vectors_and_env_overrides() {
+    let dir = TempDir::new().unwrap();
+    for (author, expected_id) in [
+        ("alice", "2d68a2b3-33ca-574f-a339-e55515473106"),
+        ("bob", "cb9854df-43a7-566f-8476-67333b5deec2"),
+    ] {
+        let f = dir.path().join(format!("finding_{author}.org"));
+        fs::write(&f, "* 20261106-cache-race\n").unwrap();
+        let p = f.to_str().unwrap();
+        let args = [
+            "update",
+            "add-id",
+            "--deterministic",
+            "--scope",
+            "fritz",
+            "--kind",
+            "finding",
+            "--author",
+            author,
+            p,
+        ];
+        org().args(args).assert().success();
+        assert!(fs::read_to_string(&f).unwrap().contains(expected_id));
+    }
+
+    let f5 = dir.path().join("env_override.org");
+    fs::write(&f5, "* Custom Prefix Item\n").unwrap();
+    let env_args = [
+        "update",
+        "add-id",
+        "--deterministic",
+        "--scope",
+        "ops",
+        "--kind",
+        "runbook",
+        f5.to_str().unwrap(),
+    ];
+    org()
+        .env("BABELSBERG_ID_PREFIX", "urn:acme")
+        .args(env_args)
+        .assert()
+        .success();
+    assert!(fs::read_to_string(&f5)
+        .unwrap()
+        .contains("urn:acme:ops:runbook:custom-prefix-item"));
+}
+
+/// Verifies `add-todo --id auto` under `--parent` locator stays `org fmt check` clean.
+#[test]
+fn slice4_add_todo_auto_id_under_parent_fmt_clean() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("project.org");
+    fs::write(&file, "* Active Epic\n").unwrap();
+    let parent_loc = format!("{}::*/Active Epic", file.display());
+
+    org()
+        .args([
+            "update",
+            "add-todo",
+            "Child Work Package",
+            "--parent",
+            &parent_loc,
+            "--id",
+            "auto",
+            "--property",
+            "EFFORT=1:00",
+            "--body",
+            "Child body paragraph.",
+        ])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("** TODO Child Work Package"));
+    assert!(content.contains(":ID:"));
+    assert!(!content.contains(":ID_SEED:"));
+    assert!(content.contains(":EFFORT: 1:00"));
+    org()
+        .args(["fmt", "check"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+}
+
+/// Verifies `org update add-todo` with `--id deterministic`, `--property`, `--tags`, and `--body`.
+#[test]
+fn slice4_add_todo_deterministic_properties_and_body_fmt_clean() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("backlog.org");
+
+    let out = org()
+        .args([
+            "update",
+            "add-todo",
+            "Support Stempelamt",
+            file.to_str().unwrap(),
+            "--tags",
+            "core,stempelamt",
+            "--id",
+            "deterministic",
+            "--scope",
+            "orgfmt",
+            "--kind",
+            "jira",
+            "--property",
+            "CUSTOM_ID=ORGFMT-101",
+            "--property",
+            "EFFORT=2:00",
+            "--body",
+            "Deterministic RFC 9562 UUIDv5 minting with :ID_SEED: provenance.",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_mutation_envelope(&json, "add-todo", false);
+    assert_eq!(json["entries_affected"], 1);
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("9472f8df-1ad0-53bb-baac-dce22a6b1821"));
+    assert!(content.contains("urn:babelsberg:orgfmt:jira:orgfmt-101"));
+    assert!(content.contains(":EFFORT:    2:00"));
+    assert!(content.contains("Deterministic RFC 9562 UUIDv5 minting with :ID_SEED: provenance."));
+
+    org()
+        .args(["fmt", "check"])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .success();
+}
+
+/// Verifies file-level `:ID:` locators (`org-roam` v2) do not panic in `update` commands.
+#[test]
+fn file_node_id_locator_mutations_handle_sentinel_cleanly() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("roam-note.org");
+    fs::write(
+        &file,
+        ":PROPERTIES:\n:ID: 11111111-2222-4333-8444-555555555555\n:END:\n#+TITLE: Roam Note\n",
+    )
+    .unwrap();
+
+    // `add-todo` targeting a file-level `id:<uuid>` appends a level-1 heading cleanly.
+    org()
+        .current_dir(dir.path())
+        .args([
+            "update",
+            "add-todo",
+            "Top-level item under roam note",
+            "id:11111111-2222-4333-8444-555555555555",
+        ])
+        .assert()
+        .success();
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("* TODO Top-level item under roam note"));
+
+    // `add-id` without `--recursive` on a file-level node is a clean no-op (exit 0).
+    org()
+        .current_dir(dir.path())
+        .args([
+            "update",
+            "add-id",
+            "id:11111111-2222-4333-8444-555555555555",
+        ])
+        .assert()
+        .success();
+
+    // `set-state` on a file-level node exits cleanly with EXIT_ERROR (2), never panicking.
+    org()
+        .current_dir(dir.path())
+        .args([
+            "update",
+            "set-state",
+            "DONE",
+            "id:11111111-2222-4333-8444-555555555555",
+        ])
+        .assert()
+        .code(2);
 }

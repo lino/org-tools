@@ -8,7 +8,7 @@
   "properties": {
     "command": {
       "type": "string",
-      "description": "The mutation command that was executed (e.g., 'add-id', 'set-state', 'calc', 'archive')."
+      "description": "The mutation command that was executed (e.g., 'add-id', 'set-state', 'add-todo', 'add-cookie', 'set-property', 'delete-property', 'set-tags', 'calc', 'archive')."
     },
     "files_modified": {
       "type": "integer",
@@ -42,7 +42,7 @@
           },
           "action": {
             "type": "string",
-            "description": "The specific action taken (e.g., 'added-id', 'state-changed', 'archived')."
+            "description": "The specific action taken (e.g., 'added-id', 'state-changed', 'set-property', 'deleted-property', 'set-tags', 'archived')."
           },
           "detail": {
             "type": ["string", "null"],
@@ -56,6 +56,34 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Error messages encountered during the operation."
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Optional execution telemetry for mutation observability.",
+      "required": ["duration_us", "files_scanned", "cache_hits", "cache_misses"],
+      "properties": {
+        "duration_us": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock execution duration in microseconds."
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of org files scanned during the operation."
+        },
+        "cache_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache hits."
+        },
+        "cache_misses": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache misses."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

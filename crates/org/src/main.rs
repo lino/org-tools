@@ -23,6 +23,7 @@ use commands::cache::{run_cache, CacheCommand};
 use commands::clock::{run_clock, ClockCommand};
 use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
+use commands::mcp::{run_mcp, McpArgs};
 use commands::query::{run_query, QueryCommand};
 use commands::roam::{run_roam, RoamCommand};
 use commands::schema::{run_schema, SchemaArgs};
@@ -112,6 +113,8 @@ enum OrgCommand {
     },
     /// Extract a scoped entry subtree or file node by locator.
     Show(ShowArgs),
+    /// Serve the built-in zero-Emacs MCP JSON-RPC 2.0 server over stdio.
+    Mcp(McpArgs),
     /// Archive done entries to a separate file.
     Archive(ArchiveArgs),
     /// Print the JSON schema for a given output type.
@@ -149,6 +152,19 @@ fn load_config(cli_config: &Option<PathBuf>) -> Config {
     Config::load(&cwd)
 }
 
+/// Dispatches agent, graph, cache, archive, and schema subcommands.
+fn dispatch_agent_command(command: OrgCommand, no_cache: bool) -> i32 {
+    match command {
+        OrgCommand::Roam { command } => run_roam(command, no_cache),
+        OrgCommand::Cache { command } => run_cache(command),
+        OrgCommand::Show(args) => run_show(args),
+        OrgCommand::Mcp(args) => run_mcp(args, no_cache),
+        OrgCommand::Archive(args) => run_archive(args),
+        OrgCommand::Schema(args) => run_schema(&args.name),
+        _ => unreachable!("non-agent commands handled in dispatch_command"),
+    }
+}
+
 /// Dispatches a parsed [`OrgCommand`] to its corresponding module handler.
 fn dispatch_command(command: OrgCommand, no_cache: bool) -> i32 {
     match command {
@@ -160,11 +176,7 @@ fn dispatch_command(command: OrgCommand, no_cache: bool) -> i32 {
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
-        OrgCommand::Roam { command } => run_roam(command, no_cache),
-        OrgCommand::Cache { command } => run_cache(command),
-        OrgCommand::Show(args) => run_show(args),
-        OrgCommand::Archive(args) => run_archive(args),
-        OrgCommand::Schema(args) => run_schema(&args.name),
+        other => dispatch_agent_command(other, no_cache),
     }
 }
 

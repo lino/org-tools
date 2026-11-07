@@ -45,7 +45,7 @@ use schema::{
     adjust_roam_telemetry_counts, build_cache_status, configure_connection, list_table_names,
     open_in_memory_configured, query_table_counts, sidecar_path,
 };
-use sync::{sync_discovered_files, sync_workspace};
+use sync::{invalidate_cached_paths, sync_discovered_files, sync_workspace};
 use walk::discover_org_files;
 
 /// Default workspace-relative path for the Mabuse SQLite index.
@@ -265,6 +265,26 @@ impl MabuseCache {
             sync_discovered_files(&mut cache.conn, &cache.workspace_root, &disk_res?, started)?;
         cache.missed_rels = missed;
         Ok((cache, tel))
+    }
+
+    /// Incrementally re-synchronizes this open SQLite handle against workspace disk changes.
+    pub fn refresh(&mut self) -> Result<CacheTelemetry, String> {
+        let started = Instant::now();
+        let disk_files = discover_org_files(&self.workspace_root)?;
+        if !self.db_path.is_file() && !disk_files.is_empty() {
+            let fresh =
+                Self::open_rw_normalized(self.workspace_root.clone(), self.db_path.clone(), false)?;
+            self.conn = fresh.conn;
+        }
+        let (tel, missed) =
+            sync_discovered_files(&mut self.conn, &self.workspace_root, &disk_files, started)?;
+        self.missed_rels = missed;
+        Ok(tel)
+    }
+
+    /// Marks `paths` stale in `files` so the next `refresh()` re-hashes them regardless of `mtime`.
+    pub fn invalidate_paths(&mut self, paths: &[PathBuf]) -> Result<(), String> {
+        invalidate_cached_paths(&self.conn, &self.workspace_root, paths)
     }
 
     /// Returns the workspace root directory bound to this cache handle.

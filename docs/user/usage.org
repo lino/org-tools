@@ -54,10 +54,12 @@ org fmt format [OPTIONS] <PATHS>...
 
 ** Common Options
 
-| Option            | Description                                   |
-|-------------------+-----------------------------------------------|
-| =--config <PATH>= | Path to config file (default: search for      |
-|                   | =.org-tools.toml= in current and parent dirs) |
+| Option            | Description                                                       |
+|-------------------+-------------------------------------------------------------------|
+| =--config <PATH>= | Path to config file (default: search for =.org-tools.toml= in     |
+|                   | current and parent dirs)                                          |
+| =--no-cache=      | Bypass the =.cache/mabuse.db= SQLite index and parse =.org= files |
+|                   | directly from disk                                                |
 
 * Directory Scanning
 
@@ -170,54 +172,60 @@ org fmt check --format json . | jq '.[] | select(.severity == "error")'
 
 *** Errors (structural issues)
 
-| ID   | Name                   | Description                        |
-|------+------------------------+------------------------------------|
-| E001 | unclosed-block         | =#+BEGIN= without matching =#+END= |
-| E002 | duplicate-custom-id    | Duplicate =CUSTOM_ID= property     |
-| E003 | duplicate-name         | Duplicate =#+NAME:= value          |
-| E004 | duplicate-target       | Duplicate =<<target>>=             |
-| E005 | duplicate-footnote-def | Duplicate footnote definition      |
-| E006 | incomplete-drawer      | =:DRAWER:= without =:END:=         |
+| ID   | Name                   | Description                                                      |
+|------+------------------------+------------------------------------------------------------------|
+| E001 | unclosed-block         | =#+BEGIN= without matching =#+END=                               |
+| E002 | duplicate-custom-id    | Duplicate =CUSTOM_ID= property                                   |
+| E003 | duplicate-name         | Duplicate =#+NAME:= value                                        |
+| E004 | duplicate-target       | Duplicate =<<target>>=                                           |
+| E005 | duplicate-footnote-def | Duplicate footnote definition                                    |
+| E006 | incomplete-drawer      | =:DRAWER:= without =:END:=                                       |
+| E007 | drawer-nesting         | Incorrectly nested drawers                                       |
+| E008 | circular-edna-blocker  | Circular org-edna =:BLOCKER:= dependency cycle                   |
+| E009 | duplicate-id           | Duplicate =:ID:= across file drawers, headings, or workspace     |
+| E010 | invalid-id-seed        | Mismatched Stempelamt =:ID_SEED:= and deterministic UUIDv5 =:ID= |
 
 *** Warnings (correctness / style)
 
-| ID   | Name                         | Description                                |
-|------+------------------------------+--------------------------------------------|
-| W001 | heading-level-gap            | Heading level jumps (e.g., * to ***)       |
-| W002 | missing-src-language         | =#+BEGIN_SRC= without language             |
-| W003 | misplaced-property-drawer    | Property drawer not after heading          |
-| W004 | orphaned-footnotes           | Footnote ref without def or vice versa     |
-| W005 | invalid-keyword-syntax       | Malformed keyword line                     |
-| W006 | obsolete-affiliated-keywords | Deprecated affiliated keyword syntax       |
-| W007 | deprecated-export-blocks     | Old-style export block syntax              |
-| W008 | deprecated-category-setup    | Deprecated =#+CATEGORY= placement          |
-| W009 | trailing-bracket-after-link  | Stray =]= after a link                     |
-| W010 | invalid-effort-property      | Malformed =Effort= property                |
-| W011 | invalid-id-property          | Malformed =ID= property                    |
-| W012 | spurious-colons              | Unnecessary colons in headline             |
-| W013 | missing-export-backend       | Missing export backend in =#+BEGIN_EXPORT= |
-| W014 | planning-inactive            | Inactive timestamp in SCHEDULED/DEADLINE   |
-| W015 | misplaced-planning-info      | Planning info not after heading            |
-| W016 | file-application             | =#+begin_src= with =file= header arg       |
-| W017 | obsolete-include-markup      | Old =#+INCLUDE= markup syntax              |
-| W018 | quote-section                | Deprecated QUOTE headline                  |
-| W019 | special-property-in-drawer   | Reserved property in property drawer       |
-| W020 | misplaced-heading            | Heading inside a list or block             |
-| W021 | orphaned-affiliated-keywords | Affiliated keyword not before an element   |
-| W022 | non-existent-setupfile       | =#+SETUPFILE= points to missing file       |
-| W023 | link-to-local-file           | Link to non-existent local file            |
-| W024 | invalid-babel-call           | Malformed =#+CALL:= line                   |
-| W025 | percent-encoding-link        | Unnecessary percent encoding in link       |
-| W026 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment        |
-| W027 | timestamp-validity           | Invalid date/time in timestamp             |
-| W028 | link-syntax                  | Malformed link syntax                      |
-| W029 | list-consistency             | Mixed list markers in same list            |
-| W030 | priority-validity            | Invalid priority cookie                    |
-| W031 | clock-entry-validity         | Malformed =CLOCK:= entry                   |
-| W032 | affiliated-keyword-placement | Affiliated keyword in wrong position       |
-| W033 | undeclared-tag               | Tag not declared in =#+TAGS:=              |
-| W034 | invalid-table-formula        | Invalid =#+TBLFM:= formula syntax          |
-| W035 | invalid-edna-syntax          | Invalid org-edna BLOCKER/TRIGGER syntax    |
+| ID   | Name                         | Description                                   |
+|------+------------------------------+-----------------------------------------------|
+| W001 | heading-level-gap            | Heading level jumps (e.g., * to ***)          |
+| W002 | missing-src-language         | =#+BEGIN_SRC= without language                |
+| W003 | misplaced-property-drawer    | Property drawer not after heading             |
+| W004 | orphaned-footnotes           | Footnote ref without def or vice versa        |
+| W005 | invalid-keyword-syntax       | Malformed keyword line                        |
+| W006 | obsolete-affiliated-keywords | Deprecated affiliated keyword syntax          |
+| W007 | deprecated-export-blocks     | Old-style export block syntax                 |
+| W008 | deprecated-category-setup    | Deprecated =#+CATEGORY= placement             |
+| W009 | trailing-bracket-after-link  | Stray =]= after a link                        |
+| W010 | invalid-effort-property      | Malformed =Effort= property                   |
+| W011 | invalid-id-property          | Malformed =ID= property                       |
+| W012 | spurious-colons              | Unnecessary colons in headline                |
+| W013 | missing-export-backend       | Missing export backend in =#+BEGIN_EXPORT=    |
+| W014 | planning-inactive            | Inactive timestamp in SCHEDULED/DEADLINE      |
+| W015 | misplaced-planning-info      | Planning info not after heading               |
+| W016 | file-application             | =#+begin_src= with =file= header arg          |
+| W017 | obsolete-include-markup      | Old =#+INCLUDE= markup syntax                 |
+| W018 | quote-section                | Deprecated QUOTE headline                     |
+| W019 | special-property-in-drawer   | Reserved property in property drawer          |
+| W020 | misplaced-heading            | Heading inside a list or block                |
+| W021 | orphaned-affiliated-keywords | Affiliated keyword not before an element      |
+| W022 | non-existent-setupfile       | =#+SETUPFILE= points to missing file          |
+| W023 | link-to-local-file           | Link to non-existent local file               |
+| W024 | invalid-babel-call           | Malformed =#+CALL:= line                      |
+| W025 | percent-encoding-link        | Unnecessary percent encoding in link          |
+| W026 | invalid-image-alignment      | Invalid =#+ATTR_.*= image alignment           |
+| W027 | timestamp-validity           | Invalid date/time in timestamp                |
+| W028 | link-syntax                  | Malformed link syntax                         |
+| W029 | list-consistency             | Mixed list markers in same list               |
+| W030 | priority-validity            | Invalid priority cookie                       |
+| W031 | clock-entry-validity         | Malformed =CLOCK:= entry                      |
+| W032 | affiliated-keyword-placement | Affiliated keyword in wrong position          |
+| W033 | undeclared-tag               | Tag not declared in =#+TAGS:=                 |
+| W034 | invalid-table-formula        | Invalid =#+TBLFM:= formula syntax             |
+| W035 | invalid-edna-syntax          | Invalid org-edna BLOCKER/TRIGGER syntax       |
+| W036 | unresolved-edna-ids          | org-edna =ids(...)= references missing =:ID:= |
+| W037 | broken-id-link               | =id:<uuid>= link targets an unresolved =:ID:= |
 
 *** Info (suggestions)
 
@@ -227,12 +235,6 @@ org fmt check --format json . | jq '.[] | select(.severity == "error")'
 | I002 | unknown-options-item | Unknown item in =#+OPTIONS:=           |
 | I003 | keyword-validity     | Unknown or misplaced keyword           |
 | I004 | block-type-validity  | Unknown block type                     |
-
-*** Structural errors
-
-| ID   | Name           | Description                |
-|------+----------------+----------------------------|
-| E007 | drawer-nesting | Incorrectly nested drawers |
 
 * Query (=org query=)
 
@@ -299,6 +301,10 @@ org query search 'todo:TODO tags:work'           # implicit AND
 org query search 'todo:TODO or todo:NEXT'        # explicit OR
 org query search 'not done'                      # negation
 org query search '(todo:TODO or todo:NEXT) and tags:work'
+
+# Full-text BM25 body search (backed by SQLite FTS5 when warm cache is active)
+org query search 'body:"Herzmaschine"'
+org query search 'todo:NEXT body:"telemetry"'
 
 # Bare words search heading text
 org query search 'meeting'                       # same as heading:meeting
@@ -506,8 +512,14 @@ org update add-id [OPTIONS] <TARGETS>...
 | =--format human=     | Human-readable output (default)                             |
 | =--format json=      | JSON output (see =schemas/org-mutation-output.schema.json=) |
 | =--id-format <TMPL>= | Generate IDs from a template with ={placeholders}=          |
-| =--id-command <CMD>= | Pipe entry metadata (JSON) to a command that outputs        |
-|                      | the ID                                                      |
+| =--id-command <CMD>= | Pipe entry metadata (JSON) to a command that outputs the ID |
+| =--deterministic=    | Mint deterministic RFC 9562 UUIDv5 =:ID:= and =:ID_SEED:=   |
+| =--namespace <UUID>= | Root namespace UUID override for deterministic minting      |
+| =--urn-prefix <PRE>= | URN prefix override for deterministic seed derivation       |
+| =--seed <URN>=       | Explicit Stempelamt seed URN override                       |
+| =--scope <SLUG>=     | Scope slug for deterministic Stempelamt seed derivation     |
+| =--kind <KIND>=      | Artifact kind for deterministic Stempelamt seed derivation  |
+| =--author <HANDLE>=  | Optional author handle for deterministic seed derivation    |
 
 The =--id-format= template supports these placeholders: ={uuid}=, ={uuid_short}=,
 ={file_stem}=, ={title_slug}=, ={level}=, ={index}=, ={ts}=.
@@ -539,15 +551,17 @@ automatically (unless =--no-closed= is passed).
 org update set-state [OPTIONS] <STATE> [TARGETS]...
 #+end_src
 
-| Option           | Description                                                 |
-|------------------+-------------------------------------------------------------|
-| =--query <EXPR>= | Filter entries by query expression (same syntax as          |
-|                  | =org query search=)                                         |
-| =--stdin=        | Force reading locator targets from stdin (one per line)     |
-| =--no-closed=    | Don't add/remove =CLOSED: = timestamp on state transitions  |
-| =--dry-run=      | Print what would be changed without writing files           |
-| =--format human= | Human-readable output (default)                             |
-| =--format json=  | JSON output (see =schemas/org-mutation-output.schema.json=) |
+| Option              | Description                                                 |
+|---------------------+-------------------------------------------------------------|
+| =--query <EXPR>=    | Filter entries by query expression (same syntax as          |
+|                     | =org query search=)                                         |
+| =--workspace <DIR>= | Workspace directory for cross-file org-edna =:TRIGGER:=     |
+|                     | cascade resolution                                          |
+| =--stdin=           | Force reading locator targets from stdin (one per line)     |
+| =--no-closed=       | Don't add/remove =CLOSED: = timestamp on state transitions  |
+| =--dry-run=         | Print what would be changed without writing files           |
+| =--format human=    | Human-readable output (default)                             |
+| =--format json=     | JSON output (see =schemas/org-mutation-output.schema.json=) |
 
 *** Stdin auto-detection
 
@@ -602,6 +616,10 @@ org update add-todo [OPTIONS] <TITLE> [TARGET]
 | =--scheduled <DATE>= | SCHEDULED date (YYYY-MM-DD)                                 |
 | =--deadline <DATE>=  | DEADLINE date (YYYY-MM-DD)                                  |
 | =--parent <LOC>=     | Insert as child of this locator target                      |
+| =--id <MODE>=        | ID mode: =none= (default), =auto=, or =deterministic=       |
+| =--property <K=V>=   | Set =KEY=VALUE= in =:PROPERTIES:= (repeatable)              |
+| =--body <TEXT>=      | Body text inserted below the heading and property drawer    |
+| =--tag-column <COL>= | Target display column for heading tag alignment (=F007=)    |
 | =--dry-run=          | Print what would be changed without writing files           |
 | =--format human=     | Human-readable output (default)                             |
 | =--format json=      | JSON output (see =schemas/org-mutation-output.schema.json=) |
@@ -621,6 +639,68 @@ org update add-todo 'Subtask one' project.org \
 # Add with a custom keyword
 org update add-todo 'Review PR' inbox.org --keyword NEXT
 #+end_src
+
+** =org update set-property=
+
+Set or insert a property in an entry's =:PROPERTIES:= drawer with =F005= alignment.
+
+#+begin_src sh
+org update set-property [OPTIONS] <LOCATOR> <KEY> <VALUE>
+#+end_src
+
+| Option           | Description                                                 |
+|------------------+-------------------------------------------------------------|
+| =--dry-run=      | Print what would be changed without writing files           |
+| =--format human= | Human-readable output (default)                             |
+| =--format json=  | JSON output (see =schemas/org-mutation-output.schema.json=) |
+
+** =org update delete-property=
+
+Delete a property from an entry's =:PROPERTIES:= drawer (removing the drawer if empty).
+
+#+begin_src sh
+org update delete-property [OPTIONS] <LOCATOR> <KEY>
+#+end_src
+
+| Option           | Description                                                 |
+|------------------+-------------------------------------------------------------|
+| =--dry-run=      | Print what would be changed without writing files           |
+| =--format human= | Human-readable output (default)                             |
+| =--format json=  | JSON output (see =schemas/org-mutation-output.schema.json=) |
+
+** =org update set-tags=
+
+Set or clear heading tags aligned to column 77 (=F007=).
+
+#+begin_src sh
+org update set-tags [OPTIONS] <LOCATOR> [TAGS]
+#+end_src
+
+| Option               | Description                                                 |
+|----------------------+-------------------------------------------------------------|
+| =--clear=            | Clear all tags from the heading                             |
+| =--tag-column <COL>= | Target display column for heading tag alignment (=F007=)    |
+| =--dry-run=          | Print what would be changed without writing files           |
+| =--format human=     | Human-readable output (default)                             |
+| =--format json=      | JSON output (see =schemas/org-mutation-output.schema.json=) |
+
+** =org update dep=
+
+Wire or remove symmetric org-edna =:BLOCKER:= and =:TRIGGER:= dependencies across
+entries, automatically verifying acyclic dependency invariants.
+
+#+begin_src sh
+org update dep add [OPTIONS] <BLOCKER> <BLOCKED>
+org update dep remove [OPTIONS] <BLOCKER> <BLOCKED>
+#+end_src
+
+| Option                    | Description                                              |
+|---------------------------+----------------------------------------------------------|
+| =--trigger-state <STATE>= | Downstream state set on =dep add= (default: =NEXT=)      |
+| =--workspace <DIR>=       | Workspace root for cross-file locator & cycle resolution |
+| =--dry-run=               | Preview dependency mutations without writing files       |
+| =--format human=          | Human-readable output (default)                          |
+| =--format json=           | JSON output                                              |
 
 ** =org update add-cookie=
 
@@ -808,6 +888,164 @@ org export jscal ~/org/ > events.json
 org export jscal --output events.json --from 2026-01-01 --to 2026-12-31 ~/org/
 #+end_src
 
+** =org export md=
+
+Export Org documents to Zensical-ready GitHub Flavored Markdown (=.md=),
+preserving Mermaid fenced code blocks and resolving cross-node =[[id:...]]=
+links across the workspace.
+
+#+begin_src sh
+org export md [OPTIONS] [PATHS...]
+#+end_src
+
+| Option              | Description                                                      |
+|---------------------+------------------------------------------------------------------|
+| =--output, -o=      | Output file (single input) or output directory (multiple inputs) |
+| =--workspace <DIR>= | Workspace root used to resolve cross-node =id:<uuid>= links      |
+
+#+begin_src sh
+# Export a single Org document to stdout as Markdown
+org export md README.org
+
+# Export a directory tree to a Zensical docs output folder
+org export md --workspace ~/org/ --output build/docs ~/org/specs/
+#+end_src
+
+* Roam (=org roam=)
+
+Inspect =org-roam= v2 file and heading nodes, incoming backlinks, outgoing
+=[[id:...]]= links, and workspace graphs without requiring Emacs.
+
+#+begin_src sh
+org roam node [OPTIONS] <QUERY> [PATHS...]
+org roam backlinks [OPTIONS] <TARGET> [PATHS...]
+org roam links [OPTIONS] <SOURCE> [PATHS...]
+org roam graph [OPTIONS] [PATHS...]
+#+end_src
+
+| Subcommand  | Options                                                      | Description                                       |
+|-------------+--------------------------------------------------------------+---------------------------------------------------|
+| =node=      | =--workspace <DIR>=, =--format human\vert{}json=             | Resolve node by =id:<uuid>=, =:ID:=, title, alias |
+| =backlinks= | =--workspace <DIR>=, =--format human\vert{}json=             | List incoming =id:<uuid>= backlinks to =<TARGET>= |
+| =links=     | =--workspace <DIR>=, =--format human\vert{}json=             | List outgoing =id:<uuid>= links from =<SOURCE>=   |
+| =graph=     | =--workspace <DIR>=, =--format json\vert{}mermaid\vert{}dot= | Export workspace =org-roam= node and link graph   |
+
+#+begin_src sh
+# Resolve a node by title or :ROAM_ALIASES: token
+org roam node "Hub Architecture" --workspace ~/org/
+
+# Inspect incoming backlinks as structured JSON
+org roam backlinks id:550e8400-e29b-41d4-a716-446655440000 --format json ~/org/
+
+# Render a Mermaid graph of workspace roam links
+org roam graph --format mermaid ~/org/
+#+end_src
+
+* Show (=org show=)
+
+Extract a bounded single-node subtree or level-0 file node by =OrgLocator= so
+agents and scripts can inspect targeted context without loading whole files.
+
+#+begin_src sh
+org show [OPTIONS] <LOCATOR>
+#+end_src
+
+| Option               | Description                                                    |
+|----------------------+----------------------------------------------------------------|
+| =--workspace <DIR>=  | Workspace directory for resolving =id:= locators and links     |
+| =--format org=       | Raw Org-mode slice (default)                                   |
+| =--format json=      | Structured JSON matching =schemas/org-show-output.schema.json= |
+| =--format md=        | Zensical-ready GitHub Flavored Markdown slice                  |
+| =--no-children=      | Omit descendant subheadings (or stop before first =*= heading) |
+| =--max-chars <N>=    | Truncate extracted text cleanly at =N= Unicode scalar values   |
+| =--include-markdown= | Include rendered =markdown= alongside =content= in JSON output |
+
+#+begin_src sh
+# Extract a single subtree as bounded Markdown
+org show 'specs/hub.org::#probe-task' --format md --max-chars 2000
+
+# Resolve an id: locator across a workspace as JSON with checklist summary
+org show 'id:550e8400-e29b-41d4-a716-446655440000' --workspace ~/org/ --format json
+#+end_src
+
+* Cache (=org cache=)
+
+Inspect, rebuild, or clear the incremental SQLite WAL + FTS5 workspace index
+(=.cache/mabuse.db=, overridable via =ORG_TOOLS_CACHE_PATH=). Read and query
+commands refresh changed files automatically via =(mtime_ns, byte_len, sha256)=
+fingerprints unless =--no-cache= is passed.
+
+#+begin_src sh
+org cache status [OPTIONS] [PATH]
+org cache rebuild [OPTIONS] [PATH]
+org cache clear [OPTIONS] [PATH]
+#+end_src
+
+| Subcommand | Options                                          | Description                                          |
+|------------+--------------------------------------------------+------------------------------------------------------|
+| =status=   | =--workspace <DIR>=, =--format human\vert{}json= | Report indexed counts, byte size, and telemetry      |
+| =rebuild=  | =--workspace <DIR>=, =--format human\vert{}json= | Drop and rebuild =.cache/mabuse.db= in 1 transaction |
+| =clear=    | =--workspace <DIR>=, =--format human\vert{}json= | Remove =.cache/mabuse.db= and =-wal= / =-shm= files  |
+
+* MCP Server (=org mcp=)
+
+Run the built-in zero-Emacs Model Context Protocol (MCP) JSON-RPC 2.0 server
+over =stdio=. A single persistent =MabuseCache= SQLite connection stays warm
+across tool calls and refreshes incrementally whenever write tools mutate files.
+
+#+begin_src sh
+org mcp [--workspace <DIR>] [--no-cache]
+#+end_src
+
+| Option              | Description                                                        |
+|---------------------+--------------------------------------------------------------------|
+| =--workspace <DIR>= | Default workspace root (fallback: =ORG_TOOLS_WORKSPACE=, ancestor  |
+|                     | =.git= / =kb.toml= / =.org-tools.toml= / =.fritz.toml=, or =cwd=)  |
+| =--no-cache=        | Bypass =.cache/mabuse.db= and parse =.org= files directly per call |
+
+** =.mcp.json= Configuration
+
+Register =org mcp= in =.mcp.json= using portable command lookup (no hardcoded
+machine paths):
+
+#+begin_src json
+{
+  "mcpServers": {
+    "org": {
+      "command": "org",
+      "args": ["mcp"],
+      "type": "stdio"
+    }
+  }
+}
+#+end_src
+
+** Transport & Framing
+
+- Speaks JSON-RPC 2.0 strictly over =stdin= / =stdout= (all diagnostic messages
+  go to =stderr= or structured tool error envelopes; exits =0= cleanly at =stdin=
+  EOF).
+- Supports both newline-delimited JSON frames (=stdio= MCP default) and
+  =Content-Length: <N>\r\n\r\n= framed messages, replying in the caller's
+  framing mode.
+
+** Exposed MCP Tools & Telemetry
+
+Every =tools/call= response returns standard MCP =CallToolResult= (=content=,
+=structuredContent=, =isError=) with structured =telemetry= (=duration_us=,
+=files_scanned=, =cache_hits=, =cache_misses=):
+
+| Tool                 | Required Args      | Optional Args                                     | Purpose                                                      |
+|----------------------+--------------------+---------------------------------------------------+--------------------------------------------------------------|
+| =org_roam_node=      | =query=            | =workspace=                                       | Resolve =org-roam= v2 nodes by ID, title, or alias           |
+| =org_roam_backlinks= | =target=           | =workspace=                                       | List incoming =id:<uuid>= backlinks to a target node         |
+| =org_roam_search=    | =query=            | =limit=, =workspace=                              | Run structured query or FTS5 BM25 =body:= search             |
+| =org_query_next=     | /(none)/           | =context=, =limit=, =workspace=                   | List actionable GTD next actions (with optional =@context=)  |
+| =org_query_blocked=  | /(none)/           | =limit=, =workspace=                              | List org-edna =:BLOCKER:= blocked tasks and blocking entries |
+| =org_show=           | =locator=          | =format=, =no_children=, =max_chars=, =workspace= | Extract bounded single-node slice (=json=, =org=, or =md=)   |
+| =org_update_state=   | =locator=, =state= | =dry_run=, =workspace=                            | Transition TODO state with =:TRIGGER:= cascades & cache sync |
+| =org_fmt_file=       | =path=             | =check_only=, =workspace=                         | Check or format a workspace =.org= file & refresh warm cache |
+
 * Schema (=org schema=)
 
 Print the JSON schema for any org-tools output type. Useful for validating
@@ -821,6 +1059,8 @@ org schema <NAME>
 |----------------+---------------------+-----------------------------------|
 | =diagnostic=   |                     | =org fmt check --format json=     |
 | =query=        | =entry=, =entries=  | =org query search --format json=  |
+| =roam=         |                     | =org roam * --format json=        |
+| =show=         |                     | =org show --format json=          |
 | =blocked=      |                     | =org query blocked --format json= |
 | =stuck=        |                     | =org query stuck --format json=   |
 | =deps=         | =dependencies=      | =org query deps --format json=    |
@@ -987,11 +1227,11 @@ All org-tools subcommands use a consistent set of exit codes:
 
 | Code | Meaning                                                     |
 |------+-------------------------------------------------------------|
-|    0 | Success                                                     |
-|    1 | No results or issues found (e.g., lint found issues,        |
+| =0=  | Success                                                     |
+| =1=  | No results or issues found (e.g., lint found issues,        |
 |      | format =--check= detected changes, query returned no match) |
-|    2 | Operational error (missing files, invalid arguments, I/O)   |
-|    3 | Requires Emacs (e.g., =org update calc= encountered a       |
+| =2=  | Operational error (missing files, invalid arguments, I/O)   |
+| =3=  | Requires Emacs (e.g., =org update calc= encountered a       |
 |      | =lisp:= expression or unsupported Calc function)            |
 
 Exit code 3 allows scripts to detect when a formula or feature falls outside

@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use rusqlite::{params, Connection};
@@ -16,6 +16,7 @@ use crate::cache::schema::clear_all_rows;
 use crate::cache::sha256::sha256_hex;
 use crate::cache::walk::{compute_canon_key, discover_org_files, DiskOrgFile};
 use crate::cache::CacheTelemetry;
+use crate::export_md::normalize_workspace_path;
 
 /// Sorted file-table diff tuple `(unchanged_hits, added_indices, changed_indices, deleted_rel_paths)`.
 type FileDiffPlan = (usize, Vec<usize>, Vec<usize>, Vec<String>);
@@ -231,4 +232,51 @@ pub(crate) fn sync_workspace(
     }
     let disk_files = discover_org_files(workspace_root)?;
     sync_discovered_files(conn, workspace_root, &disk_files, started).map(|(tel, _)| tel)
+}
+
+/// Converts `path` into a forward-slash relative path under `workspace_root` when possible.
+fn slash_rel_under_workspace(workspace_root: &Path, path: &Path) -> Option<String> {
+    let norm_path = normalize_workspace_path(path);
+    let rel = if path.is_relative() {
+        path
+    } else if let Ok(r) = path.strip_prefix(workspace_root) {
+        r
+    } else {
+        norm_path.strip_prefix(workspace_root).ok()?
+    };
+    let mut parts = Vec::new();
+    for comp in rel.components() {
+        if let Component::Normal(seg) = comp {
+            parts.push(seg.to_str()?);
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// Marks `paths` with `mtime_ns = -1` in `files` so `refresh()` re-hashes them on coarse-tick FS.
+pub(crate) fn invalidate_cached_paths(
+    conn: &Connection,
+    workspace_root: &Path,
+    paths: &[PathBuf],
+) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut stmt = conn
+        .prepare_cached("UPDATE files SET mtime_ns = -1 WHERE rel_path = ?1 OR canon_key = ?2")
+        .map_err(|e| format!("failed to prepare cache invalidation: {e}"))?;
+    for path in paths {
+        let joined = if path.is_relative() {
+            workspace_root.join(path)
+        } else {
+            path.clone()
+        };
+        let canon = normalize_workspace_path(&joined)
+            .to_string_lossy()
+            .into_owned();
+        let rel = slash_rel_under_workspace(workspace_root, path).unwrap_or_default();
+        stmt.execute(params![rel, canon])
+            .map_err(|e| format!("failed to invalidate {}: {e}", path.display()))?;
+    }
+    Ok(())
 }

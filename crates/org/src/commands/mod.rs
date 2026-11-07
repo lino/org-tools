@@ -8,6 +8,7 @@ pub(crate) mod cache;
 pub(crate) mod clock;
 pub(crate) mod export;
 pub(crate) mod fmt;
+pub(crate) mod mcp;
 pub(crate) mod query;
 pub(crate) mod query_gtd;
 pub(crate) mod roam;

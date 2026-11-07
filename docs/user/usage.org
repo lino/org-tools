@@ -99,6 +99,13 @@ disabled_rules = ["W001", "heading-level-gap"]
 
 Rules can be disabled by ID (e.g., =W001=) or name (e.g., =heading-level-gap=).
 
+** Agenda Options
+
+#+begin_src toml
+[agenda]
+deadline_warning_days = 14       # lead-time warning window for deadlines without -Nd (default: 14)
+#+end_src
+
 * Output Format
 
 ** Human (default)
@@ -255,17 +262,35 @@ org query search [OPTIONS] <QUERY> [PATHS...]
 
 ** =org query agenda=
 
-Show upcoming scheduled and deadline items grouped by day.
+Project an Emacs-compatible multi-day agenda timeline covering =SCHEDULED=,
+=DEADLINE=, overdue items, per-timestamp (=-Nd= / =--Nd=) or global deadline
+warnings, =+= / =++= / =.+= repeaters, and active =<...>= body timestamps.
 
 #+begin_src sh
 org query agenda [OPTIONS] [PATHS...]
 #+end_src
 
-| Option           | Description                         |
-|------------------+-------------------------------------|
-| =--days N=       | Number of days to show (default: 7) |
-| =--format human= | Human-readable timeline (default)   |
-| =--format json=  | JSON output                         |
+| Option               | Description                                                     |
+|----------------------+-----------------------------------------------------------------|
+| =--from <DATE>=      | Inclusive start date in =YYYY-MM-DD= format (defaults to today) |
+| =--days <N>=         | Number of calendar days to project in the timeline (default: 7) |
+| =--warning-days <N>= | Override deadline lead-time warning window in days              |
+| =--composite=        | Append GTD =Next Actions=, =Blocked=, and =Inbox= sections      |
+| =--format human=     | Emacs-like human-readable timeline (default)                    |
+| =--format json=      | JSON output (see =schemas/org-agenda-output.schema.json=)       |
+| =--format locator=   | Deduplicated =OrgLocator= lines (timeline + optional composite) |
+| =--format org=       | Lint-clean Org-mode report document                             |
+| =--format md=        | Zensical-ready GitHub Flavored Markdown report                  |
+| =--output, -o <OUT>= | Write rendered report atomically to =<OUT>= instead of stdout   |
+
+#+begin_src sh
+# 14-day agenda starting on a fixed ISO date with composite GTD sections
+org query agenda --from 2026-04-06 --days 14 --composite ~/org/
+
+# Materialize a Zensical Markdown or Org agenda report atomically
+org query agenda --composite --format md -o build/docs/agenda.md ~/org/
+org query agenda --warning-days 7 --format org -o agenda.org ~/org/
+#+end_src
 
 ** Query Syntax
 
@@ -544,8 +569,14 @@ org update add-id --id-command 'jq -r .title | tr " " -' project.org
 ** =org update set-state=
 
 Change the TODO state of entries. Targets can be OrgLocator strings, file paths,
-or directories. When changing to a done state, a =CLOSED: = timestamp is added
-automatically (unless =--no-closed= is passed).
+or directories. When transitioning to a done state:
+
+- Non-repeating entries receive an automatic =CLOSED= planning timestamp (unless
+  =--no-closed= is passed).
+- Entries carrying a repeating =SCHEDULED=, =DEADLINE=, or active body timestamp
+  (=+=, =++=, or =.+=) automatically advance every repeating timestamp to its
+  next occurrence, reset the keyword to the initial active TODO state (or
+  =:REPEAT_TO_STATE:=), and omit =CLOSED= unless =--no-repeat= is passed.
 
 #+begin_src sh
 org update set-state [OPTIONS] <STATE> [TARGETS]...
@@ -558,7 +589,8 @@ org update set-state [OPTIONS] <STATE> [TARGETS]...
 | =--workspace <DIR>= | Workspace directory for cross-file org-edna =:TRIGGER:=     |
 |                     | cascade resolution                                          |
 | =--stdin=           | Force reading locator targets from stdin (one per line)     |
-| =--no-closed=       | Don't add/remove =CLOSED: = timestamp on state transitions  |
+| =--no-closed=       | Don't add/remove =CLOSED= timestamp on state transitions    |
+| =--no-repeat=       | Disable repeater auto-advance and close repeating tasks     |
 | =--dry-run=         | Print what would be changed without writing files           |
 | =--format human=    | Human-readable output (default)                             |
 | =--format json=     | JSON output (see =schemas/org-mutation-output.schema.json=) |
@@ -597,6 +629,43 @@ cat todo.org | org update set-state DONE --query 'tags:work'
 # Pipe locator targets from query (auto-detected)
 org query search 'todo:TODO tags:old' --format locator ~/org/ \
 | org update set-state DONE |
+
+# Permanently close a repeating task without advancing its repeater
+org update set-state DONE --no-repeat 'id:550e8400-e29b-41d4-a716-446655440000'
+#+end_src
+
+** =org update set-scheduled= and =org update set-deadline=
+
+Set, update, shift, or clear =SCHEDULED= and =DEADLINE= planning timestamps on
+locators, files, directories, or piped stdin while preserving sibling planning
+keywords and warming/invalidating =.cache/mabuse.db=.
+
+#+begin_src sh
+org update set-scheduled [OPTIONS] [SPEC] [TARGETS]...
+org update set-deadline [OPTIONS] [SPEC] [TARGETS]...
+#+end_src
+
+Supported =SPEC= forms include ISO dates (=2026-04-10=), =today= or =.=,
+relative offsets (=+Nd=, =+Nw=, =+Nm=, =+Ny=, =-Nd=), optional =HH:MM= times,
+repeaters (=+1w=, =++1m=, =.+2d=), and warning delays (=-3d=, =--2d=).
+
+| Option              | Description                                                 |
+|---------------------+-------------------------------------------------------------|
+| =--clear=           | Remove the =SCHEDULED= or =DEADLINE= timestamp              |
+| =--query <EXPR>=    | Filter matching entries by query expression                 |
+| =--workspace <DIR>= | Workspace root for locator resolution & cache invalidation  |
+| =--stdin=           | Force reading locator targets from stdin (one per line)     |
+| =--dry-run=         | Preview planning mutations without writing files            |
+| =--format human=    | Human-readable output (default)                             |
+| =--format json=     | JSON output (see =schemas/org-mutation-output.schema.json=) |
+
+#+begin_src sh
+# Schedule for 3 days from today with a morning time and weekly repeater
+org update set-scheduled '+3d 09:00 .+1w' 'id:550e8400-e29b-41d4-a716-446655440000'
+
+# Set a deadline with a 5-day warning window, then clear it
+org update set-deadline '2026-04-30 -5d' project.org --query 'todo:NEXT'
+org update set-deadline --clear 'project.org::#milestone-1'
 #+end_src
 
 ** =org update add-todo=
@@ -1035,16 +1104,18 @@ Every =tools/call= response returns standard MCP =CallToolResult= (=content=,
 =structuredContent=, =isError=) with structured =telemetry= (=duration_us=,
 =files_scanned=, =cache_hits=, =cache_misses=):
 
-| Tool                 | Required Args      | Optional Args                                     | Purpose                                                      |
-|----------------------+--------------------+---------------------------------------------------+--------------------------------------------------------------|
-| =org_roam_node=      | =query=            | =workspace=                                       | Resolve =org-roam= v2 nodes by ID, title, or alias           |
-| =org_roam_backlinks= | =target=           | =workspace=                                       | List incoming =id:<uuid>= backlinks to a target node         |
-| =org_roam_search=    | =query=            | =limit=, =workspace=                              | Run structured query or FTS5 BM25 =body:= search             |
-| =org_query_next=     | /(none)/           | =context=, =limit=, =workspace=                   | List actionable GTD next actions (with optional =@context=)  |
-| =org_query_blocked=  | /(none)/           | =limit=, =workspace=                              | List org-edna =:BLOCKER:= blocked tasks and blocking entries |
-| =org_show=           | =locator=          | =format=, =no_children=, =max_chars=, =workspace= | Extract bounded single-node slice (=json=, =org=, or =md=)   |
-| =org_update_state=   | =locator=, =state= | =dry_run=, =workspace=                            | Transition TODO state with =:TRIGGER:= cascades & cache sync |
-| =org_fmt_file=       | =path=             | =check_only=, =workspace=                         | Check or format a workspace =.org= file & refresh warm cache |
+| Tool                  | Required Args      | Optional Args                                                              | Purpose                                                      |
+|-----------------------+--------------------+----------------------------------------------------------------------------+--------------------------------------------------------------|
+| =org_roam_node=       | =query=            | =workspace=                                                                | Resolve =org-roam= v2 nodes by ID, title, or alias           |
+| =org_roam_backlinks=  | =target=           | =workspace=                                                                | List incoming =id:<uuid>= backlinks to a target node         |
+| =org_roam_search=     | =query=            | =limit=, =workspace=                                                       | Run structured query or FTS5 BM25 =body:= search             |
+| =org_query_next=      | /(none)/           | =context=, =limit=, =workspace=                                            | List actionable GTD next actions (with optional =@context=)  |
+| =org_query_blocked=   | /(none)/           | =limit=, =workspace=                                                       | List org-edna =:BLOCKER:= blocked tasks and blocking entries |
+| =org_query_agenda=    | /(none)/           | =path=, =from=, =days=, =warning_days=, =composite=, =format=, =workspace= | Project multi-day agenda timeline and optional GTD sections  |
+| =org_show=            | =locator=          | =format=, =no_children=, =max_chars=, =workspace=                          | Extract bounded single-node slice (=json=, =org=, or =md=)   |
+| =org_update_state=    | =locator=, =state= | =dry_run=, =workspace=                                                     | Transition TODO state with =:TRIGGER:= cascades & cache sync |
+| =org_update_planning= | =kind=             | =locator=, =targets=, =value=, =clear=, =dry_run=, =workspace=             | Set, shift, or clear =SCHEDULED= / =DEADLINE= & sync cache   |
+| =org_fmt_file=        | =path=             | =check_only=, =workspace=                                                  | Check or format a workspace =.org= file & refresh warm cache |
 
 * Schema (=org schema=)
 
@@ -1057,22 +1128,24 @@ org schema <NAME>
 
 | Name           | Aliases             | Describes output of               |
 |----------------+---------------------+-----------------------------------|
-| =diagnostic=   |                     | =org fmt check --format json=     |
+| =diagnostic=   | =diagnostics=       | =org fmt check --format json=     |
 | =query=        | =entry=, =entries=  | =org query search --format json=  |
-| =roam=         |                     | =org roam * --format json=        |
+| =agenda=       | =org-agenda-output= | =org query agenda --format json=  |
+| =roam=         | =org-roam-output=   | =org roam * --format json=        |
 | =show=         |                     | =org show --format json=          |
 | =blocked=      |                     | =org query blocked --format json= |
 | =stuck=        |                     | =org query stuck --format json=   |
 | =deps=         | =dependencies=      | =org query deps --format json=    |
-| =clock-report= |                     | =org clock report --format json=  |
-| =clock-status= |                     | =org clock status --format json=  |
+| =clock-report= | =clock_report=      | =org clock report --format json=  |
+| =clock-status= | =clock_status=      | =org clock status --format json=  |
 | =mutation=     | =update=, =archive= | Mutation commands =--format json= |
 
 Schema files are also available in =schemas/= in the repository.
 
 #+begin_src sh
-# Print the diagnostic schema
+# Print the diagnostic or agenda schema
 org schema diagnostic
+org schema agenda
 
 # Print the mutation schema (used by update and archive commands)
 org schema mutation

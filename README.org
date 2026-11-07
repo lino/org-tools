@@ -33,12 +33,16 @@ set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.
 
 ** Query & Agenda (=org query=)
 
-- *Query language* with predicates: =todo=, =done=, =tags=, =heading=,
-  =property=, =priority=, =level=, =scheduled=, =deadline=, =closed=, =clocked=
+- *Query language* with predicates: =todo=, =done=, =tags=, =heading=, =body=,
+  =property=, =priority=, =level=, =scheduled=, =deadline=, =closed=, =clocked=,
+  =blocked=, =actionable=, =waiting=
 - *Boolean operators*: =and=, =or=, =not=, parentheses, implicit AND
-- *Agenda view*: scheduled/deadline items grouped by day
+- *Agenda view* (=org query agenda=): multi-day timeline (=--from=, =--days=,
+  =--warning-days=, =--composite=) projecting =+= / =++= / =.+= repeaters,
+  overdue items, deadline warnings, and active body timestamps in =human=,
+  =json= ([[file:schemas/org-agenda-output.schema.json][JSON schema]] via =org schema agenda=), =locator=, =org=, and =md= (=-o=)
 - *Tag inheritance*: child entries inherit parent tags in queries
-- *Output formats*: human, JSON (with [[file:schemas/org-query-output.schema.json][JSON schema]]), locator (for piping)
+- *Output formats*: human, JSON (with [[file:schemas/org-query-output.schema.json][JSON schema]]), locator, Org, Markdown
 
 ** Org Item Locator
 
@@ -62,10 +66,20 @@ When an entry has an =:ID:= property, that is always preferred.
 
 ** Entry Updates (=org update=)
 
-- *add-id*: add =:ID:= properties to entries (UUID, template, or external command)
-- *set-state*: change TODO keyword with automatic =CLOSED: = timestamps and =--query= filtering
-- *add-todo*: insert new entries with planning, priority, and tags
-- *add-cookie*: compute and update =[/]= and =[%]= statistic cookies
+- *add-id*: add =:ID:= properties to entries (UUIDv4, Stempelamt UUIDv5, template, or command)
+- *set-state*: change TODO keyword with automatic =CLOSED= timestamps, repeater auto-advance (=--no-repeat= to close permanently), =:TRIGGER:= cascades, and =--query= filtering
+- *set-scheduled* / *set-deadline*: set, shift (=today= / =.=, =+Nd=, =+Nw=, =+Nm=, =+Ny=, =-Nd=), or =--clear= =SCHEDULED= and =DEADLINE= timestamps
+- *add-todo*: insert new entries with planning, priority, properties, and tags
+- *set-property* / *delete-property* / *set-tags* / *dep*: drawer, tag, and =org-edna= dependency mutations
+- *add-cookie* / *calc*: compute =[/]= / =[%]= statistic cookies and =#+TBLFM:= formulas
+
+** MCP Server & Workspace Cache (=org mcp=, =org cache=)
+
+- Built-in zero-Emacs JSON-RPC 2.0 =stdio= server exposing 10 workspace-confined tools:
+  =org_roam_node=, =org_roam_backlinks=, =org_roam_search=, =org_query_next=,
+  =org_query_blocked=, =org_query_agenda=, =org_show=, =org_update_state=,
+  =org_update_planning=, and =org_fmt_file=
+- Incremental SQLite WAL + FTS5 cache (=.cache/mabuse.db=) with warm telemetry
 
 ** Archive (=org archive=)
 
@@ -94,8 +108,13 @@ org fmt format file.org
 # Query entries
 org query search 'todo:TODO tags:work' ~/org/
 
-# Agenda view (next 7 days)
+# Agenda view and Zensical Markdown export
 org query agenda ~/org/
+org query agenda --from 2026-04-06 --warning-days 7 --composite --format md -o agenda.md ~/org/
+
+# Set or shift planning dates
+org update set-scheduled '+3d' 'id:550e8400-e29b-41d4-a716-446655440000'
+org update set-deadline --clear 'id:550e8400-e29b-41d4-a716-446655440000'
 
 # JSON output for tooling
 org query search 'deadline:past' --format json ~/org/
@@ -136,6 +155,9 @@ property_drawer_align = true
 
 [lint]
 disabled_rules = []
+
+[agenda]
+deadline_warning_days = 14
 #+end_src
 
 org-tools searches for =.org-tools.toml= starting from the current directory and
@@ -167,14 +189,12 @@ org-tools is a Cargo workspace with two crates:
 
 * Documentation
 
-| Path                   | Contents                                   |
-|------------------------+--------------------------------------------|
-| [[file:docs/technical/architecture.org][docs/technical/]]        | Architecture (arc42), ADRs                 |
-| [[file:docs/operations/installation.org][docs/operations/]]       | Installation, release process              |
-| [[file:docs/product/vision.org][docs/product/]]          | Product vision and design principles       |
-| [[file:docs/user/usage.org][docs/user/]]             | Usage guide and rule reference             |
-| [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]] | Org-mode ecosystem and extension reference |
-| [[file:schemas/][schemas/]]               | JSON schemas for output formats            |
+- [[file:docs/technical/architecture.org][docs/technical/]] — Architecture (arc42), ADRs
+- [[file:docs/operations/installation.org][docs/operations/]] — Installation, release process
+- [[file:docs/product/vision.org][docs/product/]] — Product vision and design principles
+- [[file:docs/user/usage.org][docs/user/]] — Usage guide and rule reference
+- [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]] — Org-mode ecosystem and extension reference
+- [[file:schemas/][schemas/]] — JSON schemas for output formats
 
 * License
 

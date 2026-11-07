@@ -98,10 +98,12 @@ The project is structured as a *Cargo workspace* with a shared library and a
 modular umbrella binary:
 
 - =org-tools-core=: all parsing, format/lint rules, =OrgDocument= heading and
-  =org-roam= v2 file-node model, =OrgLocator= resolution, property/tag/ID
-  mutations, archiving, =org-edna= dependencies, and =#+TBLFM:= evaluation
-- =org=: unified CLI dispatching modular subcommands (=fmt=, =query=, =update=,
-  =clock=, =archive=, =export=, =schema=)
+  =org-roam= v2 file-node model, =OrgLocator= resolution, property/tag/ID/planning
+  mutations, =MabuseCache= SQLite WAL + FTS5 indexing, archiving, =org-edna=
+  dependencies, and =#+TBLFM:= evaluation
+- =org=: unified CLI and =stdio= MCP server dispatching modular subcommands
+  (=fmt=, =query=, =roam=, =show=, =update=, =clock=, =archive=, =export=,
+  =cache=, =mcp=, =schema=)
 
 ** Lint & Format Strategy
 
@@ -169,8 +171,11 @@ graph TD
 | =entry.rs=      | Heading insertion and plain-list =ChecklistItem= parsing             |
 | =locator.rs=    | OrgLocator parse/display/resolve across headings and file nodes      |
 | =property.rs=   | F005 drawer mutations, F007 tag alignment, Stempelamt UUIDv5 IDs     |
+| =planning.rs=   | Repeater projection/advancement, body timestamps, planning mutations |
 | =id.rs=         | UUIDv4, template, and external-command =:ID:= generation             |
-| =state.rs=      | TODO keyword transitions and =CLOSED= planning timestamp updates     |
+| =state.rs=      | TODO transitions, repeater auto-advance, and =CLOSED= updates        |
+| =cache.rs=      | Incremental SQLite WAL + FTS5 workspace index (=.cache/mabuse.db=)   |
+| =roam.rs=       | =org-roam= v2 node, backlink, outgoing link, and graph resolution    |
 | =cookie.rs=     | Heading =[/]= and =[%]= statistic cookie recalculation               |
 | =archive.rs=    | Archivable DONE subtree extraction and =.org_archive= rendering      |
 | =edna.rs=       | =BLOCKEE= / =TRIGGER= dependency parsing for =org-edna=              |
@@ -185,25 +190,28 @@ graph TD
 
 *** org binary (CLI)
 
-| Module                        | Responsibility                                                   |
-|-------------------------------+------------------------------------------------------------------|
-| =main.rs=                     | Top-level =clap= CLI, exit codes (=0..3=), subcommand dispatch   |
-| =commands/mod.rs=             | Shared =MutationResult=, =telemetry=, and document I/O helpers   |
-| =commands/fmt.rs=             | =org fmt check= and =org fmt format= (files and piped stdin)     |
-| =commands/query.rs=           | =org query= CLI, =search=, =agenda=, and =deps= handlers         |
-| =commands/query_gtd.rs=       | GTD query views (=blocked=, =next=, =inbox=, =waiting=, =stuck=) |
-| =commands/update.rs=          | =org update= entry module, locator helper, and dispatch          |
-| =commands/update_id.rs=       | =org update add-id= (UUIDv4, template, command, Stempelamt)      |
-| =commands/update_property.rs= | =org update set-property=, =delete-property=, and =set-tags=     |
-| =commands/update_state.rs=    | =org update set-state= with stdin and =--query= filtering        |
-| =commands/update_todo.rs=     | =org update add-todo= entry creation and lint-clean post-pass    |
-| =commands/update_table.rs=    | =org update add-cookie= and =org update calc= (=#+TBLFM:=)       |
-| =commands/clock.rs=           | =org clock report= and =org clock status= handlers               |
-| =commands/archive.rs=         | =org archive= subtree archiving handler                          |
-| =commands/export.rs=          | =org export ical= and =org export jscal= handlers                |
-| =commands/schema.rs=          | =org schema= embedded JSON Schema printer                        |
-| =query/=, =clock/=, =export/= | Query parser/predicates/renderers, clock reports, exporters      |
-| =date.rs=                     | Civil calendar date parsing and arithmetic                       |
+| Module                        | Responsibility                                                                                      |
+|-------------------------------+-----------------------------------------------------------------------------------------------------|
+| =main.rs=                     | Top-level =clap= CLI, exit codes (=0..3=), subcommand dispatch                                      |
+| =commands/mod.rs=             | Shared =MutationResult=, =telemetry=, and document I/O helpers                                      |
+| =commands/fmt.rs=             | =org fmt check= and =org fmt format= (files and piped stdin)                                        |
+| =commands/query.rs=           | =org query= CLI, =search=, and =deps= handlers                                                      |
+| =commands/query_agenda.rs=    | =org query agenda= (=--from=, =--warning-days=, =--composite=)                                      |
+| =commands/query_gtd.rs=       | GTD query views (=blocked=, =next=, =inbox=, =waiting=, =stuck=)                                    |
+| =commands/update.rs=          | =org update= entry module, locator helper, and dispatch                                             |
+| =commands/update_id.rs=       | =org update add-id= (UUIDv4, template, command, Stempelamt)                                         |
+| =commands/update_property.rs= | =org update set-property=, =delete-property=, and =set-tags=                                        |
+| =commands/update_state.rs=    | =org update set-state= with repeater auto-advance & =--no-repeat=                                   |
+| =commands/update_planning.rs= | =org update set-scheduled= and =set-deadline= planning mutators                                     |
+| =commands/update_todo.rs=     | =org update add-todo= entry creation and lint-clean post-pass                                       |
+| =commands/update_table.rs=    | =org update add-cookie= and =org update calc= (=#+TBLFM:=)                                          |
+| =commands/mcp.rs=             | JSON-RPC 2.0 =stdio= MCP server and =tools_planning.rs= (=org_query_agenda=, =org_update_planning=) |
+| =commands/clock.rs=           | =org clock report= and =org clock status= handlers                                                  |
+| =commands/archive.rs=         | =org archive= subtree archiving handler                                                             |
+| =commands/export.rs=          | =org export ical=, =jscal=, and Zensical =md= handlers                                              |
+| =commands/schema.rs=          | =org schema= embedded JSON Schema printer (incl. =agenda=)                                          |
+| =query/=, =clock/=, =export/= | Query parser/predicates/renderers, clock reports, exporters                                         |
+| =date.rs=                     | Civil calendar date parsing and arithmetic                                                          |
 
 ** Level 3: Key Data Models
 
@@ -405,14 +413,12 @@ Key decisions:
 
 * Risks and Technical Debt
 
-| Risk / Debt                      | Mitigation                                        |
-|----------------------------------+---------------------------------------------------|
-| Line-based parsing has limits    | Sufficient for ~35 of ~58 org-lint checks;        |
-|                                  | OrgDocument provides heading-level structure      |
-| Table alignment is left-only     | Track as known divergence from Emacs; future fix  |
-| No incremental/cached processing | Acceptable at current scale; revisit if needed    |
-| No parallel file processing      | Single-threaded is fast enough; easy to add later |
-| ID resolution scans all files    | O(n) per lookup; cache if needed at scale         |
+| Risk / Debt                   | Mitigation                                                       |
+|-------------------------------+------------------------------------------------------------------|
+| Line-based parsing has limits | Sufficient for ~35 of ~58 org-lint checks + OrgDocument headings |
+| Table alignment is left-only  | Track as known divergence from Emacs; future fix                 |
+| Coarse filesystem mtime ticks | Explicit =invalidate_paths= clears cached fingerprints on writes |
+| No parallel file processing   | Single-threaded + warm SQLite WAL cache is sub-50 ms at scale    |
 
 * Glossary
 

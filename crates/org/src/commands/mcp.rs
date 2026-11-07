@@ -6,6 +6,7 @@
 mod confinement;
 mod framing;
 mod schema;
+mod tools_planning;
 mod tools_read;
 mod tools_show;
 mod tools_write;
@@ -26,10 +27,11 @@ use self::framing::{read_frame, write_frame, IncomingFrame};
 use self::schema::{
     build_tools_list_result, jsonrpc_err, jsonrpc_ok, optional_str, reject_unknown_keys,
     ALL_TOOL_NAMES, DEFAULT_PROTOCOL_VERSION, ERR_INVALID_PARAMS, ERR_INVALID_REQUEST,
-    ERR_METHOD_NOT_FOUND, ERR_PARSE_ERROR, SERVER_NAME, TOOL_FMT_FILE, TOOL_QUERY_BLOCKED,
-    TOOL_QUERY_NEXT, TOOL_ROAM_BACKLINKS, TOOL_ROAM_NODE, TOOL_ROAM_SEARCH, TOOL_SHOW,
-    TOOL_UPDATE_STATE,
+    ERR_METHOD_NOT_FOUND, ERR_PARSE_ERROR, SERVER_NAME, TOOL_FMT_FILE, TOOL_QUERY_AGENDA,
+    TOOL_QUERY_BLOCKED, TOOL_QUERY_NEXT, TOOL_ROAM_BACKLINKS, TOOL_ROAM_NODE, TOOL_ROAM_SEARCH,
+    TOOL_SHOW, TOOL_UPDATE_PLANNING, TOOL_UPDATE_STATE,
 };
+use self::tools_planning::{exec_query_agenda, exec_update_planning};
 use self::tools_read::{
     exec_query_blocked, exec_query_next, exec_roam_backlinks, exec_roam_node, exec_roam_search,
 };
@@ -158,12 +160,15 @@ impl McpSession {
         if is_default {
             if let Some(ref mut cache) = self.warm_cache {
                 cache.invalidate_paths(paths)?;
+                return Ok(());
             }
-            return Ok(());
         }
         if MabuseCache::resolve_db_path(norm_ws).is_file() {
             let (mut cache, _) = MabuseCache::open_and_sync(norm_ws)?;
             cache.invalidate_paths(paths)?;
+            if is_default {
+                self.warm_cache = Some(cache);
+            }
         }
         Ok(())
     }
@@ -236,17 +241,34 @@ fn ensure_optional_object_params(params: Option<&Value>) -> Result<(), &'static 
     }
 }
 
+/// Dispatches read-only roam, query, agenda, and show MCP tools (`Some`), or returns `None`.
+fn try_dispatch_read_tool(
+    session: &mut McpSession,
+    name: &str,
+    args: &Map<String, Value>,
+    started: Instant,
+) -> Option<Value> {
+    match name {
+        TOOL_ROAM_NODE => Some(exec_roam_node(session, args, started)),
+        TOOL_ROAM_BACKLINKS => Some(exec_roam_backlinks(session, args, started)),
+        TOOL_ROAM_SEARCH => Some(exec_roam_search(session, args, started)),
+        TOOL_QUERY_NEXT => Some(exec_query_next(session, args, started)),
+        TOOL_QUERY_BLOCKED => Some(exec_query_blocked(session, args, started)),
+        TOOL_QUERY_AGENDA => Some(exec_query_agenda(session, args, started)),
+        TOOL_SHOW => Some(exec_show(session, args, started)),
+        _ => None,
+    }
+}
+
 /// Dispatches an individual `tools/call` invocation to its read or write handler.
 fn dispatch_named_tool(session: &mut McpSession, name: &str, args: &Map<String, Value>) -> Value {
     let started = Instant::now();
+    if let Some(res) = try_dispatch_read_tool(session, name, args, started) {
+        return res;
+    }
     match name {
-        TOOL_ROAM_NODE => exec_roam_node(session, args, started),
-        TOOL_ROAM_BACKLINKS => exec_roam_backlinks(session, args, started),
-        TOOL_ROAM_SEARCH => exec_roam_search(session, args, started),
-        TOOL_QUERY_NEXT => exec_query_next(session, args, started),
-        TOOL_QUERY_BLOCKED => exec_query_blocked(session, args, started),
-        TOOL_SHOW => exec_show(session, args, started),
         TOOL_UPDATE_STATE => exec_update_state(session, args, started),
+        TOOL_UPDATE_PLANNING => exec_update_planning(session, args, started),
         TOOL_FMT_FILE => exec_fmt_file(session, args, started),
         _ => unreachable!("tool name pre-validated against ALL_TOOL_NAMES"),
     }

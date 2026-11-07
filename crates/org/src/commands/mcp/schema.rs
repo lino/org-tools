@@ -42,24 +42,32 @@ pub(super) const TOOL_QUERY_NEXT: &str = "org_query_next";
 /// MCP tool name listing entries blocked by unresolved `org-edna` `:BLOCKER:` rules.
 pub(super) const TOOL_QUERY_BLOCKED: &str = "org_query_blocked";
 
+/// MCP tool name projecting the multi-day agenda timeline and optional GTD sections.
+pub(super) const TOOL_QUERY_AGENDA: &str = "org_query_agenda";
+
 /// MCP tool name extracting a bounded subtree or file node in `json`, `org`, or `md`.
 pub(super) const TOOL_SHOW: &str = "org_show";
 
 /// MCP tool name transitioning TODO states and executing `:TRIGGER:` cascades.
 pub(super) const TOOL_UPDATE_STATE: &str = "org_update_state";
 
+/// MCP tool name setting, shifting, or clearing `SCHEDULED:` and `DEADLINE:` timestamps.
+pub(super) const TOOL_UPDATE_PLANNING: &str = "org_update_planning";
+
 /// MCP tool name checking or formatting an Org file in-place within the workspace.
 pub(super) const TOOL_FMT_FILE: &str = "org_fmt_file";
 
-/// Ordered registry of all supported MCP tool names.
+/// Ordered registry of all 10 supported MCP tool names.
 pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_ROAM_NODE,
     TOOL_ROAM_BACKLINKS,
     TOOL_ROAM_SEARCH,
     TOOL_QUERY_NEXT,
     TOOL_QUERY_BLOCKED,
+    TOOL_QUERY_AGENDA,
     TOOL_SHOW,
     TOOL_UPDATE_STATE,
+    TOOL_UPDATE_PLANNING,
     TOOL_FMT_FILE,
 ];
 
@@ -81,7 +89,7 @@ fn tool_descriptor(name: &str, description: &str, properties: Value, required: &
     })
 }
 
-/// Builds the 4 `org-roam` and GTD query tool descriptors (`org_roam_*`, `org_query_*`).
+/// Builds the 4 `org-roam` and `org_query_next` tool descriptors.
 fn roam_and_query_descriptors() -> Vec<Value> {
     let ws_prop =
         json!({ "type": "string", "description": "Optional workspace root directory override." });
@@ -128,8 +136,8 @@ fn roam_and_query_descriptors() -> Vec<Value> {
     ]
 }
 
-/// Builds the remaining 4 query, show, and write tool descriptors.
-fn inspect_and_write_descriptors() -> Vec<Value> {
+/// Builds the 3 blocked-query, agenda-timeline, and single-node show tool descriptors.
+fn agenda_and_show_descriptors() -> Vec<Value> {
     let ws_prop =
         json!({ "type": "string", "description": "Optional workspace root directory override." });
     let limit_prop = json!({ "type": "integer", "minimum": 1, "description": "Maximum number of entries to return." });
@@ -138,6 +146,20 @@ fn inspect_and_write_descriptors() -> Vec<Value> {
             TOOL_QUERY_BLOCKED,
             "List entries currently blocked by org-edna :BLOCKER: conditions with blocker details.",
             json!({ "limit": limit_prop, "workspace": ws_prop }),
+            &[],
+        ),
+        tool_descriptor(
+            TOOL_QUERY_AGENDA,
+            "Project a multi-day Org agenda timeline with repeaters, warnings, and optional GTD sections.",
+            json!({
+                "path": { "type": "string", "description": "Optional confined workspace directory or .org file path (defaults to workspace root)." },
+                "from": { "type": "string", "description": "Inclusive ISO 8601 start date in YYYY-MM-DD format (defaults to local today)." },
+                "days": { "type": "integer", "minimum": 1, "description": "Number of calendar days to project in the timeline (default: 7)." },
+                "warning_days": { "type": "integer", "minimum": 0, "description": "Optional deadline lead-time warning window override in days." },
+                "composite": { "type": "boolean", "description": "Append GTD next_actions, blocked, and inbox sections (default: false)." },
+                "format": { "type": "string", "enum": ["json", "org", "md", "human", "locator"], "description": "Output format (defaults to json)." },
+                "workspace": ws_prop
+            }),
             &[],
         ),
         tool_descriptor(
@@ -152,6 +174,14 @@ fn inspect_and_write_descriptors() -> Vec<Value> {
             }),
             &["locator"],
         ),
+    ]
+}
+
+/// Builds the 3 mutating tool descriptors (`org_update_state`, `org_update_planning`, `org_fmt_file`).
+fn write_tool_descriptors() -> Vec<Value> {
+    let ws_prop =
+        json!({ "type": "string", "description": "Optional workspace root directory override." });
+    vec![
         tool_descriptor(
             TOOL_UPDATE_STATE,
             "Transition an entry TODO state, execute cross-file :TRIGGER: cascades, and refresh cache.",
@@ -162,6 +192,20 @@ fn inspect_and_write_descriptors() -> Vec<Value> {
                 "workspace": ws_prop
             }),
             &["locator", "state"],
+        ),
+        tool_descriptor(
+            TOOL_UPDATE_PLANNING,
+            "Set, shift, or clear SCHEDULED or DEADLINE planning timestamps on confined heading locators.",
+            json!({
+                "kind": { "type": "string", "enum": ["scheduled", "deadline"], "description": "Planning timestamp kind to set or clear." },
+                "locator": { "type": "string", "description": "Single OrgLocator identifying a target heading entry." },
+                "targets": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Batch OrgLocator strings identifying target heading entries." },
+                "value": { "type": "string", "description": "Timestamp spec (e.g. '2026-04-10', 'today', '+3d', '2026-04-10 09:00 .+1w -2d'); omit when clear is true." },
+                "clear": { "type": "boolean", "description": "Remove the planning timestamp instead of setting it (default: false)." },
+                "dry_run": { "type": "boolean", "description": "Preview planning mutations without writing files (default: false)." },
+                "workspace": ws_prop
+            }),
+            &["kind"],
         ),
         tool_descriptor(
             TOOL_FMT_FILE,
@@ -176,10 +220,11 @@ fn inspect_and_write_descriptors() -> Vec<Value> {
     ]
 }
 
-/// Constructs the complete `tools/list` result object for all 8 MCP tools.
+/// Constructs the complete `tools/list` result object for all 10 MCP tools.
 pub(super) fn build_tools_list_result() -> Value {
     let mut tools = roam_and_query_descriptors();
-    tools.extend(inspect_and_write_descriptors());
+    tools.extend(agenda_and_show_descriptors());
+    tools.extend(write_tool_descriptors());
     json!({ "tools": tools })
 }
 
@@ -264,6 +309,49 @@ pub(super) fn optional_positive_usize(
         return Err(format!("argument '{key}' must be >= 1"));
     }
     Ok(Some(n as usize))
+}
+
+/// Extracts an optional non-negative (`>= 0`) `u32` integer argument `key` from `args`.
+pub(super) fn optional_u32(args: &Map<String, Value>, key: &str) -> Result<Option<u32>, String> {
+    let Some(val) = args.get(key) else {
+        return Ok(None);
+    };
+    if val.is_null() {
+        return Ok(None);
+    }
+    let Some(n) = val.as_u64() else {
+        return Err(format!("argument '{key}' must be a non-negative integer"));
+    };
+    u32::try_from(n)
+        .map(Some)
+        .map_err(|_| format!("argument '{key}' exceeds maximum u32 value"))
+}
+
+/// Extracts an optional non-empty array of non-empty strings `key` from `args`.
+pub(super) fn optional_str_array(
+    args: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<Vec<String>>, String> {
+    let Some(val) = args.get(key) else {
+        return Ok(None);
+    };
+    if val.is_null() {
+        return Ok(None);
+    }
+    let Some(items) = val.as_array() else {
+        return Err(format!("argument '{key}' must be an array of strings"));
+    };
+    if items.is_empty() {
+        return Err(format!("argument '{key}' must not be empty"));
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let Some(s) = item.as_str().filter(|s| !s.trim().is_empty()) else {
+            return Err(format!("argument '{key}' must contain non-empty strings"));
+        };
+        out.push(s.to_string());
+    }
+    Ok(Some(out))
 }
 
 // endregion

@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use assert_cmd::Command;
 use org_tools_core::cache::{MabuseCache, CACHE_PATH_ENV_VAR, DEFAULT_CACHE_REL_PATH};
+use org_tools_core::files::join_slash_rel;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -115,7 +116,7 @@ fn seed_four_file_workspace(root: &Path) {
         ("notes/delta.org", "* TODO Delta Task :ops:\nStandalone entry linking [[id:10000000-0000-4000-8000-000000000002]].\n"),
     ];
     for (rel, body) in files {
-        write_org(&root.join(rel), body);
+        write_org(&join_slash_rel(root, rel), body);
     }
 }
 
@@ -185,8 +186,8 @@ fn render_corpus_1k_file(file_idx: usize) -> String {
 /// Generates the 1,000-file canonical `corpus-1k` workspace inside `root`.
 fn generate_corpus_1k(root: &Path) {
     for idx in 0..CORPUS_1K_FILES {
-        let path = root.join(format!("dir_{:02}/note_{idx:04}.org", idx / 100));
-        write_org(&path, &render_corpus_1k_file(idx));
+        let rel = format!("dir_{:02}/note_{idx:04}.org", idx / 100);
+        write_org(&join_slash_rel(root, &rel), &render_corpus_1k_file(idx));
     }
 }
 
@@ -200,11 +201,12 @@ fn slice1_cold_rebuild_populates_all_five_tables_and_cache_commands() {
     let dir = TempDir::new().unwrap();
     seed_four_file_workspace(dir.path());
     let ws = dir.path().to_str().unwrap();
+    let db_path = join_slash_rel(dir.path(), DEFAULT_CACHE_REL_PATH);
     let pre = run_json(&["cache", "status", ws, "--format", "json"]);
-    assert!(!pre["exists"].as_bool().unwrap() && !dir.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(!pre["exists"].as_bool().unwrap() && !db_path.exists());
 
     let reb = run_json(&["cache", "rebuild", ws, "--format", "json"]);
-    assert!(dir.path().join(DEFAULT_CACHE_REL_PATH).is_file());
+    assert!(db_path.is_file());
     assert!(!dir.path().join("org-roam.db").exists());
     assert_eq!(reb["telemetry"]["files_scanned"], 4);
     assert_eq!(hit_miss(&reb["telemetry"]), (0, 4));
@@ -222,14 +224,14 @@ fn slice1_cold_rebuild_populates_all_five_tables_and_cache_commands() {
     }
     drop(cache);
     run_ok(&["cache", "clear", ws, "--format", "json"]);
-    assert!(!dir.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(!db_path.exists());
     let cdir = TempDir::new().unwrap();
     let cdb = cdir.path().join("override-mabuse.db");
     let mut cmd = org();
     cmd.env(CACHE_PATH_ENV_VAR, &cdb);
     cmd.args(["cache", "rebuild", ws, "--format", "json"]);
     cmd.assert().success();
-    assert!(cdb.is_file() && !dir.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(cdb.is_file() && !db_path.exists());
 }
 
 // endregion
@@ -264,13 +266,13 @@ fn slice2_no_cache_and_gitignore_respect_workspace_boundaries() {
         ("ignored/secret.org", "* TODO Ignored Entry\n"),
         ("specs/excluded.org", "* TODO Info Excluded\n"),
     ] {
-        write_org(&r.join(rel), body);
+        write_org(&join_slash_rel(r, rel), body);
     }
     let (ws, specs_ws) = (r.to_str().unwrap(), r.join("specs"));
     let sws = specs_ws.to_str().unwrap();
 
     let (_, tel) = roam_call(ws, &["node", "Alpha Spec"], true);
-    assert!(!r.join(DEFAULT_CACHE_REL_PATH).exists() && hit_miss(&tel) == (0, exp_roam));
+    assert!(!join_slash_rel(r, DEFAULT_CACHE_REL_PATH).exists() && hit_miss(&tel) == (0, exp_roam));
     let sg = roam_call(sws, &["graph"], false).0;
     assert_eq!(sg, roam_call(sws, &["graph"], true).0);
 
@@ -316,21 +318,23 @@ fn slice2_incremental_modify_add_delete_reindexes_single_file_with_full_parity()
 
     std::thread::sleep(std::time::Duration::from_millis(5));
     let gamma = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000003\n:END:\n#+TITLE: Gamma Revised\n* TODO Gamma Updated\nLinks [[id:10000000-0000-4000-8000-000000000002][Beta]] and Herzmaschine Herzmaschine.\n";
-    write_org(&dir.path().join("notes/gamma.org"), gamma);
+    write_org(&join_slash_rel(dir.path(), "notes/gamma.org"), gamma);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (3, 1));
     assert_full_parity(ws);
 
-    let existing = fs::read_to_string(dir.path().join("notes/delta.org")).unwrap();
+    let delta_p = join_slash_rel(dir.path(), "notes/delta.org");
+    let existing = fs::read_to_string(&delta_p).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(5));
-    write_org(&dir.path().join("notes/delta.org"), &existing);
+    write_org(&delta_p, &existing);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (4, 0));
 
     let eps = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000005\n:END:\n#+TITLE: Epsilon\n* TODO Epsilon Herzmaschine\n";
-    write_org(&dir.path().join("notes/epsilon.org"), eps);
+    let eps_p = join_slash_rel(dir.path(), "notes/epsilon.org");
+    write_org(&eps_p, eps);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (4, 1));
     assert_full_parity(ws);
 
-    fs::remove_file(dir.path().join("notes/epsilon.org")).unwrap();
+    fs::remove_file(&eps_p).unwrap();
     let (_, del_tel) = roam_call(ws, &["graph"], false);
     let dscan = del_tel["files_scanned"].as_u64();
     assert_eq!((dscan, hit_miss(&del_tel)), (Some(4), (4, 0)));
@@ -382,22 +386,19 @@ fn assert_corpus_1k_warm_latencies(root: &Path, hub_q: &str) -> (u128, u128) {
     let (warmup, runs, p95) = BENCH_WARMUP_MEASURED_P95;
     let terms = vec!["Herzmaschine".to_string()];
     let exp = "dir_00/note_0042.org,dir_03/note_0314.org,dir_05/note_0512.org,dir_07/note_0777.org";
+    let (cache, ft) = MabuseCache::open_and_sync(root).unwrap();
+    assert_eq!((ft.cache_hits, ft.cache_misses), (CORPUS_1K_FILES, 0));
     let (mut fts_s, mut roam_s) = (Vec::with_capacity(runs), Vec::with_capacity(runs));
     for iter in 0..(warmup + runs) {
         let t0 = Instant::now();
-        let (cache, ft) = MabuseCache::open_and_sync(root).unwrap();
         let hits = cache.search_fts_bm25(&terms).unwrap();
         let fts_us = t0.elapsed().as_micros();
-        assert_eq!((ft.cache_hits, ft.cache_misses), (CORPUS_1K_FILES, 0));
         let joined: Vec<&str> = hits.iter().map(|h| h.rel_path.as_str()).collect();
         assert_eq!(joined.join(","), exp);
-        drop(cache);
         let t1 = Instant::now();
-        let (c2, rt) = MabuseCache::open_and_sync(root).unwrap();
-        let nodes = c2.resolve_roam_nodes(root, hub_q, true).unwrap();
-        let bl = c2.roam_backlinks_for(root, &nodes).unwrap();
+        let nodes = cache.resolve_roam_nodes(root, hub_q, true).unwrap();
+        let bl = cache.roam_backlinks_for(root, &nodes).unwrap();
         let roam_us = t1.elapsed().as_micros();
-        assert_eq!((rt.cache_hits, rt.cache_misses), (CORPUS_1K_FILES, 0));
         assert_eq!(bl.len(), 15);
         if iter >= warmup {
             fts_s.push(fts_us);

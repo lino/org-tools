@@ -34,6 +34,38 @@ pub fn collect_org_files(paths: &[PathBuf]) -> Vec<PathBuf> {
     files
 }
 
+/// Strips the Win32 `\\?\` extended-length path prefix when present so `/` and `starts_with` behave normally.
+pub fn strip_windows_verbatim(path: PathBuf) -> PathBuf {
+    let Some(s) = path.to_str() else {
+        return path;
+    };
+    if let Some(unc_tail) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{unc_tail}"));
+    }
+    if let Some(tail) = s.strip_prefix(r"\\?\") {
+        if tail.as_bytes().get(1) == Some(&b':') {
+            return PathBuf::from(tail);
+        }
+    }
+    path
+}
+
+/// Canonicalizes `path` via [`std::fs::canonicalize`] and strips any Win32 `\\?\` verbatim prefix.
+pub fn canonicalize_clean(path: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(path).map(strip_windows_verbatim)
+}
+
+/// Joins a slash-separated relative path onto `base` component-by-component using native OS separators.
+pub fn join_slash_rel(base: &Path, rel_path: &str) -> PathBuf {
+    let mut out = strip_windows_verbatim(base.to_path_buf());
+    for seg in rel_path.split(['/', '\\']) {
+        if !seg.is_empty() && seg != "." {
+            out.push(seg);
+        }
+    }
+    out
+}
+
 /// Atomically writes `content` to `path` (or its canonical target when `path` is a symlink).
 ///
 /// Creates a temporary file in the target's parent directory, writes `content`,
@@ -41,7 +73,7 @@ pub fn collect_org_files(paths: &[PathBuf]) -> Vec<PathBuf> {
 /// and atomically renames the temporary file into place.
 pub fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<()> {
     let target = if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
-        std::fs::canonicalize(path)?
+        canonicalize_clean(path)?
     } else {
         path.to_path_buf()
     };
@@ -95,5 +127,23 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "* New\n");
+    }
+
+    /// Verifies Win32 `\\?\` verbatim stripping and component-wise `/` path joining.
+    #[test]
+    fn test_strip_windows_verbatim_and_join_slash_rel() {
+        assert_eq!(
+            strip_windows_verbatim(PathBuf::from(r"\\?\C:\Users\runner\Temp\.tmp1")),
+            PathBuf::from(r"C:\Users\runner\Temp\.tmp1")
+        );
+        assert_eq!(
+            strip_windows_verbatim(PathBuf::from(r"\\?\UNC\server\share\notes")),
+            PathBuf::from(r"\\server\share\notes")
+        );
+        let base = Path::new("/tmp/ws");
+        assert_eq!(
+            join_slash_rel(base, ".cache/mabuse.db"),
+            base.join(".cache").join("mabuse.db")
+        );
     }
 }

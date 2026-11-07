@@ -23,7 +23,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::document::{ChecklistItem, OrgDocument};
 use crate::entry::{parse_checklist_item, CheckboxState};
-use crate::files::collect_org_files;
+use crate::files::{canonicalize_clean, collect_org_files, strip_windows_verbatim};
 use crate::locator::{resolve_in_document, OrgLocator, ResolvedEntry};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::heading::{parse_heading_with_keywords, HeadingParts};
@@ -234,14 +234,15 @@ pub fn scan_file_node_checklists(source: &SourceFile, doc: &OrgDocument) -> Vec<
 
 /// Cleans `.` and `..` path components lexicographically without touching the filesystem.
 fn clean_lexical_path(path: &Path) -> PathBuf {
+    let clean_in = strip_windows_verbatim(path.to_path_buf());
     let mut out = PathBuf::new();
-    for comp in path.components() {
+    for comp in clean_in.components() {
         match comp {
             Component::CurDir => {}
             Component::ParentDir => {
                 if matches!(out.components().next_back(), Some(Component::Normal(_))) {
                     out.pop();
-                } else if !path.is_absolute() {
+                } else if !clean_in.is_absolute() {
                     out.push("..");
                 }
             }
@@ -271,7 +272,7 @@ pub fn normalize_workspace_path(path: &Path) -> PathBuf {
         };
         cur = parent;
     }
-    let mut resolved = cur.canonicalize().unwrap_or_else(|_| cur.to_path_buf());
+    let mut resolved = canonicalize_clean(cur).unwrap_or_else(|_| cur.to_path_buf());
     for seg in tail.into_iter().rev() {
         resolved.push(seg);
     }

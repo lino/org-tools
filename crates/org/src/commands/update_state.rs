@@ -224,7 +224,8 @@ fn commit_single_file_state(
     modified_paths: &mut HashSet<PathBuf>,
     mutation: &mut MutationResult,
 ) -> bool {
-    let canon = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
+    let canon =
+        org_tools_core::files::canonicalize_clean(file).unwrap_or_else(|_| file.to_path_buf());
     if !dry_run {
         invalidate_warm_mabuse_caches(workspace, std::slice::from_ref(&canon));
         if let Err(e) = org_tools_core::files::write_file_atomic(file, &r.content) {

@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use crate::document::OrgDocument;
+use crate::files::canonicalize_clean;
 use crate::locator::FILE_NODE_ENTRY_INDEX;
 
 use super::eval::{resolve_finder_targets, EdnaContext, EdnaTarget};
@@ -27,7 +28,7 @@ pub struct GraphNode {
 impl GraphNode {
     /// Builds a [`GraphNode`] for `(doc, entry_idx)` with canonicalized path when possible.
     pub fn from_doc(doc: &OrgDocument, entry_idx: usize) -> Self {
-        let file = doc.file.canonicalize().unwrap_or_else(|_| doc.file.clone());
+        let file = canonicalize_clean(&doc.file).unwrap_or_else(|_| doc.file.clone());
         Self { file, entry_idx }
     }
 }
@@ -99,10 +100,7 @@ fn build_blocker_graph(all_docs: &[&OrgDocument]) -> BlockerGraph {
             let resolved = collect_resolved_targets(&exprs, &ctx);
             let adj = edges.entry(src_node).or_default();
             for target in resolved {
-                let file = target
-                    .file
-                    .canonicalize()
-                    .unwrap_or_else(|_| target.file.clone());
+                let file = canonicalize_clean(&target.file).unwrap_or_else(|_| target.file.clone());
                 let dst = GraphNode {
                     file,
                     entry_idx: target.entry_idx,

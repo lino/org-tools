@@ -11,12 +11,19 @@ use std::time::Instant;
 
 use rusqlite::{params, Connection};
 
-use crate::cache::payload::{build_file_payload, commit_batch, FileTouch};
+use crate::cache::payload::{build_file_payload, commit_batch, FileTouch, ParsedFilePayload};
 use crate::cache::schema::clear_all_rows;
 use crate::cache::sha256::sha256_hex;
 use crate::cache::walk::{compute_canon_key, discover_org_files, DiskOrgFile};
 use crate::cache::CacheTelemetry;
 use crate::export_md::normalize_workspace_path;
+use crate::files::join_slash_rel;
+
+/// Minimum added file count before parallelizing SHA-256 and Org AST extraction across scoped threads.
+const PARALLEL_PARSE_THRESHOLD: usize = 64;
+
+/// Maximum scoped worker threads used to parse added `.org` files during cold rebuilds.
+const MAX_PARSE_WORKERS: usize = 4;
 
 /// Sorted file-table diff tuple `(unchanged_hits, added_indices, changed_indices, deleted_rel_paths)`.
 type FileDiffPlan = (usize, Vec<usize>, Vec<usize>, Vec<String>);
@@ -150,11 +157,50 @@ fn read_and_hash_disk_file(
     workspace_root: &Path,
     df: &DiskOrgFile,
 ) -> Result<(Vec<u8>, String), String> {
-    let disk_path = workspace_root.join(&df.rel_path);
+    let disk_path = join_slash_rel(workspace_root, &df.rel_path);
     let bytes =
         fs::read(&disk_path).map_err(|e| format!("error reading {}: {e}", disk_path.display()))?;
     let hash = sha256_hex(&bytes);
     Ok((bytes, hash))
+}
+
+/// Reads, hashes, and parses a slice of added `DiskOrgFile` items sequentially.
+fn parse_added_chunk(
+    workspace_root: &Path,
+    disk_files: &[DiskOrgFile],
+    indices: &[usize],
+) -> Result<Vec<ParsedFilePayload>, String> {
+    let mut out = Vec::with_capacity(indices.len());
+    for &idx in indices {
+        let df = disk_files[idx].clone();
+        let (bytes, hash) = read_and_hash_disk_file(workspace_root, &df)?;
+        out.push(build_file_payload(workspace_root, df, bytes, hash, false));
+    }
+    Ok(out)
+}
+
+/// Parses all `added` files, fanning out across `MAX_PARSE_WORKERS` threads when `added.len() >= 64`.
+fn build_added_payloads(
+    workspace_root: &Path,
+    disk_files: &[DiskOrgFile],
+    added: &[usize],
+) -> Result<Vec<ParsedFilePayload>, String> {
+    if added.len() < PARALLEL_PARSE_THRESHOLD {
+        return parse_added_chunk(workspace_root, disk_files, added);
+    }
+    let chunk_size = added.len().div_ceil(MAX_PARSE_WORKERS);
+    let results: Vec<Result<Vec<ParsedFilePayload>, String>> = std::thread::scope(|s| {
+        let handles: Vec<_> = added
+            .chunks(chunk_size)
+            .map(|chunk| s.spawn(move || parse_added_chunk(workspace_root, disk_files, chunk)))
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let mut out = Vec::with_capacity(added.len());
+    for res in results {
+        out.extend(res?);
+    }
+    Ok(out)
 }
 
 /// Synchronizes `conn` against pre-discovered `disk_files`, returning telemetry and missed `rel_path`s.
@@ -200,12 +246,8 @@ pub(crate) fn sync_discovered_files(
             upserts.push(build_file_payload(workspace_root, df, bytes, hash, true));
         }
     }
-    for idx in added {
-        let df = disk_files[idx].clone();
-        let (bytes, hash) = read_and_hash_disk_file(workspace_root, &df)?;
-        misses += 1;
-        upserts.push(build_file_payload(workspace_root, df, bytes, hash, false));
-    }
+    misses += added.len();
+    upserts.extend(build_added_payloads(workspace_root, disk_files, &added)?);
 
     let missed_rels: Vec<String> = upserts.iter().map(|u| u.disk.rel_path.clone()).collect();
     commit_batch(conn, &deleted, &touches, &upserts)?;

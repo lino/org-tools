@@ -12,6 +12,7 @@ use std::path::Path;
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::edna::{self, EdnaContext, EdnaTarget};
+use org_tools_core::files::canonicalize_clean;
 use org_tools_core::locator::FILE_NODE_ENTRY_INDEX;
 use serde::Serialize;
 
@@ -130,9 +131,9 @@ fn find_doc_by_path<'a>(docs: &[&'a OrgDocument], path: &Path) -> Option<&'a Org
     if let Some(&exact) = docs.iter().find(|d| d.file == path) {
         return Some(exact);
     }
-    let canon = path.canonicalize().ok()?;
+    let canon = canonicalize_clean(path).ok()?;
     docs.iter()
-        .find(|d| d.file.canonicalize().ok().as_ref() == Some(&canon))
+        .find(|d| canonicalize_clean(&d.file).ok().as_ref() == Some(&canon))
         .copied()
 }
 

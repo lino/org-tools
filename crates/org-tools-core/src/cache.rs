@@ -27,7 +27,7 @@ use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 
 use crate::export_md::normalize_workspace_path;
-use crate::files::collect_org_files;
+use crate::files::{collect_org_files, join_slash_rel};
 use crate::roam::{RoamBacklink, RoamIndex, RoamNode, RoamOutgoingLink};
 
 pub use fts::{
@@ -136,7 +136,7 @@ impl MabuseCache {
         if let Some(val) = std::env::var_os(CACHE_PATH_ENV_VAR).filter(|v| !v.is_empty()) {
             return PathBuf::from(val);
         }
-        workspace_root.join(DEFAULT_CACHE_REL_PATH)
+        join_slash_rel(workspace_root, DEFAULT_CACHE_REL_PATH)
     }
 
     /// Opens `db_path` for an already-normalized `norm_root` and ensures WAL + FTS5 schema.

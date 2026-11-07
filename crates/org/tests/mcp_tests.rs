@@ -10,7 +10,8 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use org_tools_core::cache::{MabuseCache, DEFAULT_CACHE_REL_PATH};
+use org_tools_core::cache::MabuseCache;
+use org_tools_core::files::join_slash_rel;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -64,9 +65,9 @@ fn seed_mcp_workspace(root: &Path) {
     let roadmap = format!(
         "#+TITLE: Roadmap\n\n* TODO Ship downstream deliverable                                     :@ops:\n:PROPERTIES:\n:ID: {BLOCKED_ID}\n:BLOCKER: ids(\"{BLOCKER_ID}\")\n:END:\nTrailing spaces here   \n| Name | Count |\n|---|---|\n| alpha | 1 |\nReferences [[id:{HUB_ID}][Hub Spec]].\n"
     );
-    write_file_str(&root.join("specs/hub.org"), &hub);
-    write_file_str(&root.join("plan/tasks.org"), &tasks);
-    write_file_str(&root.join("plan/roadmap.org"), &roadmap);
+    write_file_str(&join_slash_rel(root, "specs/hub.org"), &hub);
+    write_file_str(&join_slash_rel(root, "plan/tasks.org"), &tasks);
+    write_file_str(&join_slash_rel(root, "plan/roadmap.org"), &roadmap);
 }
 
 /// Asserts that `telemetry` carries `duration_us` and exact `(scanned, hits, misses)` counts.
@@ -237,7 +238,7 @@ fn slice1_initialize_notifications_dual_framing_and_tools_list_schemas() {
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
     client.close_cleanly();
-    assert!(!dir.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(!MabuseCache::resolve_db_path(dir.path()).exists());
 }
 
 /// Verifies JSON-RPC 2.0 error codes (`-32700`, `-32600`, `-32601`, `-32602`) keep the session alive.
@@ -276,7 +277,7 @@ fn slice2_roam_and_search_tools_use_warm_cache_and_handle_domain_errors() {
     let node = client.call_ok(1, "org_roam_node", json!({ "query": "Mabuse Spec" }));
     assert_eq!(node["nodes"][0]["id"], HUB_ID);
     assert_telemetry(&node["telemetry"], (3, 0, 3));
-    assert!(dir.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(MabuseCache::resolve_db_path(dir.path()).exists());
 
     let empty = client.call_ok(2, "org_roam_node", json!({ "query": "NoSuchNode" }));
     assert!(empty["nodes"].as_array().unwrap().is_empty());
@@ -347,7 +348,7 @@ fn slice2_write_tools_mutate_cascade_and_refresh_warm_mabuse_cache() {
     let fmt_res = client.call_ok(4, "org_fmt_file", json!({ "path": "plan/roadmap.org" }));
     assert_eq!(fmt_res["changed"], true);
     assert_telemetry(&fmt_res["telemetry"], (3, 2, 1));
-    let roadmap_text = fs::read_to_string(dir.path().join("plan/roadmap.org")).unwrap();
+    let roadmap_text = fs::read_to_string(join_slash_rel(dir.path(), "plan/roadmap.org")).unwrap();
     assert!(roadmap_text.contains("| alpha |     1 |"));
     let after_read = client.call_ok(5, "org_roam_node", json!({ "query": BLOCKED_ID }));
     assert_eq!(after_read["nodes"][0]["todo_keyword"], "NEXT");
@@ -369,7 +370,7 @@ fn slice3_no_cache_env_mcp_json_and_coarse_tick_invalidation() {
     let node = client.call_ok(1, "org_roam_node", json!({ "query": HUB_ID }));
     assert_eq!(node["nodes"][0]["id"], HUB_ID);
     assert_telemetry(&node["telemetry"], (3, 0, 3));
-    assert!(!dir.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(!MabuseCache::resolve_db_path(dir.path()).exists());
     client.close_cleanly();
 
     let raw_mcp = fs::read_to_string(repo_root().join(".mcp.json")).expect("read .mcp.json");
@@ -378,7 +379,7 @@ fn slice3_no_cache_env_mcp_json_and_coarse_tick_invalidation() {
     let expected_org = json!({ "command": "org", "args": ["mcp"], "type": "stdio" });
     assert_eq!(parsed["mcpServers"]["org"], expected_org);
 
-    let hub = dir.path().join("specs/hub.org");
+    let hub = join_slash_rel(dir.path(), "specs/hub.org");
     let (mut cache, _) = MabuseCache::open_and_sync(dir.path()).unwrap();
     let frozen_mtime = fs::metadata(&hub).unwrap().modified().unwrap();
     let raw_hub = fs::read_to_string(&hub).unwrap();

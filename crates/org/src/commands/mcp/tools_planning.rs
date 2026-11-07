@@ -12,7 +12,7 @@ use serde_json::{json, Map, Value};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::normalize_workspace_path;
-use org_tools_core::files::collect_org_files;
+use org_tools_core::files::{canonicalize_clean, collect_org_files, join_slash_rel};
 use org_tools_core::locator::{resolve_in_document, resolve_locator, OrgLocator, ResolvedEntry};
 use org_tools_core::planning::PlanningKind;
 use org_tools_core::source::SourceFile;
@@ -83,9 +83,7 @@ fn confine_existing_scan_candidate(
     if !candidate.exists() && fs::symlink_metadata(candidate).is_err() {
         return Err(format!("path not found: {label}"));
     }
-    let cand_canon = candidate
-        .canonicalize()
-        .map_err(|e| format!("bad path {label}: {e}"))?;
+    let cand_canon = canonicalize_clean(candidate).map_err(|e| format!("bad path {label}: {e}"))?;
     if !cand_canon.starts_with(canon_ws) {
         return Err(format!("path escapes workspace boundary: {label}"));
     }
@@ -123,7 +121,7 @@ fn resolve_confined_agenda_scan(
         }
         input.to_path_buf()
     } else {
-        display_ws.join(input)
+        join_slash_rel(display_ws, raw)
     };
     confine_existing_scan_candidate(&candidate, canon_ws, raw)
 }

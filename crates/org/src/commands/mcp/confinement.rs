@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
+use org_tools_core::files::{canonicalize_clean, join_slash_rel};
 use org_tools_core::locator::OrgLocator;
 
 /// Ancestor markers inspected when discovering a default workspace root from `cwd`.
@@ -51,7 +52,7 @@ pub(super) fn is_org_extension(path: &Path) -> bool {
 
 /// Resolves the canonical filesystem root for `norm_ws`.
 pub(super) fn canonical_workspace_root(norm_ws: &Path) -> Result<PathBuf, String> {
-    norm_ws.canonicalize().map_err(|e| {
+    canonicalize_clean(norm_ws).map_err(|e| {
         format!(
             "failed to canonicalize workspace {}: {e}",
             norm_ws.display()
@@ -71,9 +72,8 @@ pub(super) fn verify_existing_confined_org_file(
     if !candidate.is_file() {
         return Err(format!("file not found: {label}"));
     }
-    let file_canon = candidate
-        .canonicalize()
-        .map_err(|e| format!("cannot canonicalize {label}: {e}"))?;
+    let file_canon =
+        canonicalize_clean(candidate).map_err(|e| format!("cannot canonicalize {label}: {e}"))?;
     if !file_canon.starts_with(canon_ws) {
         return Err(format!("path escapes workspace boundary: {label}"));
     }
@@ -107,7 +107,7 @@ pub(super) fn resolve_confined_org_path(
         }
         input.to_path_buf()
     } else {
-        display_ws.join(input)
+        join_slash_rel(display_ws, raw_path)
     };
     verify_existing_confined_org_file(&candidate, canon_ws, raw_path)?;
     Ok(candidate)
@@ -170,8 +170,7 @@ pub(super) fn verify_confined_mutation_target(
     let Some(existing_anc) = path.ancestors().skip(1).find(|anc| anc.exists()) else {
         return Err(format!("mutation target has no existing parent: {label}"));
     };
-    let anc_canon = existing_anc
-        .canonicalize()
+    let anc_canon = canonicalize_clean(existing_anc)
         .map_err(|e| format!("cannot canonicalize parent of {label}: {e}"))?;
     if !anc_canon.starts_with(canon_ws) {
         return Err(format!(

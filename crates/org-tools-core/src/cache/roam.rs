@@ -10,15 +10,16 @@ use rusqlite::{params, Connection, Row};
 
 use crate::document::OrgDocument;
 use crate::export_md::normalize_workspace_path;
+use crate::files::join_slash_rel;
 use crate::locator::{resolve_in_document, OrgLocator};
 use crate::roam::{lookup_prop_ci, RoamBacklink, RoamIndex, RoamLink, RoamNode, RoamOutgoingLink};
 use crate::source::SourceFile;
 
 // region Row Decoders & Path Helpers
 
-/// Formats `display_root.join(rel_path)` consistently with `WalkBuilder::new(display_root)`.
+/// Formats `join_slash_rel(display_root, rel_path)` consistently with `WalkBuilder::new(display_root)`.
 fn display_file_path(display_root: &Path, rel_path: &str) -> String {
-    display_root.join(rel_path).display().to_string()
+    join_slash_rel(display_root, rel_path).display().to_string()
 }
 
 /// Decodes a JSON `Vec<String>` column, defaulting to an empty vector on corrupt metadata.
@@ -158,13 +159,13 @@ fn resolve_locator_node(
 
     for item in rels {
         let rel = item.map_err(|e| e.to_string())?;
-        let candidate_disp = display_root.join(&rel);
+        let candidate_disp = join_slash_rel(display_root, &rel);
         let matches = Path::new(&rel) == loc_file
             || candidate_disp == *loc_file
             || candidate_disp.ends_with(loc_file)
             || normalize_workspace_path(&candidate_disp) == normalize_workspace_path(loc_file);
         if matches {
-            let disk_path = workspace_root.join(&rel);
+            let disk_path = join_slash_rel(workspace_root, &rel);
             if let Some(id) = resolve_id_in_single_file(&parsed, &disk_path, candidate_disp) {
                 return query_nodes_by_id(conn, display_root, &id);
             }

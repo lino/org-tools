@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::document::OrgDocument;
-use crate::files::collect_org_files;
+use crate::files::{canonicalize_clean, collect_org_files};
 use crate::locator::{locator_for_entry, resolve_in_document, OrgLocator, FILE_NODE_ENTRY_INDEX};
 use crate::source::SourceFile;
 
@@ -78,7 +78,7 @@ pub fn discover_workspace_root(explicit: Option<&Path>, target_file: &Path) -> P
         return dir.to_path_buf();
     }
     let temp_root = std::env::temp_dir();
-    let temp_canon = temp_root.canonicalize().ok();
+    let temp_canon = canonicalize_clean(&temp_root).ok();
     let start_dir = target_file
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -88,7 +88,7 @@ pub fn discover_workspace_root(explicit: Option<&Path>, target_file: &Path) -> P
         if ancestor.as_os_str().is_empty() || ancestor == temp_root {
             break;
         }
-        if let (Some(ref tc), Ok(ac)) = (&temp_canon, ancestor.canonicalize()) {
+        if let (Some(ref tc), Ok(ac)) = (&temp_canon, canonicalize_clean(ancestor)) {
             if ac == *tc {
                 break;
             }
@@ -140,7 +140,7 @@ pub fn run_file_trigger_cascade(
     let modified = overlay
         .modified_files()
         .into_iter()
-        .map(|(p, _)| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
+        .map(|(p, _)| canonicalize_clean(p).unwrap_or_else(|_| p.to_path_buf()))
         .collect();
     Ok((modified, cascade))
 }
@@ -245,10 +245,10 @@ impl WorkspaceOverlay {
         if self.files.contains_key(path) {
             return Some(path.to_path_buf());
         }
-        let target_canon = path.canonicalize().ok()?;
+        let target_canon = canonicalize_clean(path).ok()?;
         self.files
             .keys()
-            .find(|k| k.canonicalize().ok().as_ref() == Some(&target_canon))
+            .find(|k| canonicalize_clean(k).ok().as_ref() == Some(&target_canon))
             .cloned()
     }
 }
@@ -591,10 +591,10 @@ fn resolve_seed_in_docs(seed: &TriggerSeed, docs: &[OrgDocument]) -> Option<(usi
             }
         }
     }
-    let seed_canon = seed.file.canonicalize().ok();
+    let seed_canon = canonicalize_clean(&seed.file).ok();
     for (doc_pos, doc) in docs.iter().enumerate() {
         let same_file = doc.file == seed.file
-            || (seed_canon.is_some() && doc.file.canonicalize().ok() == seed_canon);
+            || (seed_canon.is_some() && canonicalize_clean(&doc.file).ok() == seed_canon);
         if same_file {
             if let Ok(res) = resolve_in_document(&seed.locator, doc) {
                 if !res.is_file_node() {
@@ -617,7 +617,7 @@ fn resolve_target_ref(tref: &TargetRef, docs: &[OrgDocument]) -> Option<(usize, 
             return Some(found);
         }
     }
-    let file_canon = tref.file.canonicalize().ok();
+    let file_canon = canonicalize_clean(&tref.file).ok();
     docs.iter().enumerate().find_map(|(pos, doc)| {
         resolve_target_ref_in_doc(tref, doc, file_canon.as_deref()).map(|idx| (pos, idx))
     })
@@ -630,7 +630,7 @@ fn resolve_target_ref_in_doc(
     file_canon: Option<&Path>,
 ) -> Option<usize> {
     let same_file = doc.file == tref.file
-        || (file_canon.is_some() && doc.file.canonicalize().ok().as_deref() == file_canon);
+        || (file_canon.is_some() && canonicalize_clean(&doc.file).ok().as_deref() == file_canon);
     if !same_file {
         return None;
     }
@@ -653,7 +653,7 @@ fn canonical_visit_key(doc: &OrgDocument, entry_idx: usize) -> String {
     if let Some(id) = doc.property(entry_idx, "ID") {
         return format!("id:{id}");
     }
-    let canon = doc.file.canonicalize().unwrap_or_else(|_| doc.file.clone());
+    let canon = canonicalize_clean(&doc.file).unwrap_or_else(|_| doc.file.clone());
     let olp = doc.outline_path(entry_idx).join("/");
     format!("{}::*/{olp}", canon.display())
 }

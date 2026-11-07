@@ -11,6 +11,7 @@ use rusqlite::{params, Connection};
 
 use crate::cache::{FtsHit, MabuseCache};
 use crate::document::OrgDocument;
+use crate::files::join_slash_rel;
 use crate::roam::lookup_prop_ci;
 use crate::source::SourceFile;
 
@@ -359,11 +360,11 @@ pub fn load_cached_fts_candidate_docs(
 
     let mut loaded = Vec::with_capacity(rel_set.len());
     for rel in rel_set {
-        let disk_path = cache.workspace_root().join(&rel);
+        let disk_path = join_slash_rel(cache.workspace_root(), &rel);
         let Ok(raw_src) = SourceFile::from_path(&disk_path) else {
             continue;
         };
-        let display_src = SourceFile::new(display_root.join(&rel), raw_src.content);
+        let display_src = SourceFile::new(join_slash_rel(display_root, &rel), raw_src.content);
         let doc = OrgDocument::from_source(&display_src);
         if doc_has_dynamic_cross_file_blocker(&doc) {
             return Ok(None);
@@ -374,8 +375,8 @@ pub fn load_cached_fts_candidate_docs(
     loaded.sort_by(|a, b| a.doc.file.cmp(&b.doc.file));
     hits.sort_by(|a, b| {
         b.score.total_cmp(&a.score).then_with(|| {
-            (display_root.join(&a.rel_path), a.entry_idx)
-                .cmp(&(display_root.join(&b.rel_path), b.entry_idx))
+            (join_slash_rel(display_root, &a.rel_path), a.entry_idx)
+                .cmp(&(join_slash_rel(display_root, &b.rel_path), b.entry_idx))
         })
     });
     Ok(Some((hits, loaded)))

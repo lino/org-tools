@@ -11,6 +11,7 @@ use org_tools_core::cache::{
 };
 use org_tools_core::document::{OrgDocument, OrgEntry};
 use org_tools_core::edna::{self, EdnaContext};
+use org_tools_core::files::join_slash_rel;
 use org_tools_core::rules::timestamp::OrgTimestamp;
 use org_tools_core::source::SourceFile;
 
@@ -74,7 +75,7 @@ pub fn filter_fts_hits(
 ) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     for hit in hits {
-        let target_file = scan_dir.join(&hit.rel_path);
+        let target_file = join_slash_rel(scan_dir, &hit.rel_path);
         let Ok(di) = loaded.binary_search_by(|d| d.doc.file.cmp(&target_file)) else {
             continue;
         };

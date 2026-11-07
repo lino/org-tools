@@ -18,6 +18,7 @@ use std::rc::Rc;
 use regex::Regex;
 
 use crate::document::{OrgDocument, OrgEntry};
+use crate::files::canonicalize_clean;
 use crate::locator::{locator_for_entry, FILE_NODE_ENTRY_INDEX};
 use crate::source::SourceFile;
 
@@ -261,13 +262,13 @@ fn find_or_load_doc<'a>(raw_path: &str, ctx: &EdnaContext<'a>) -> Option<DocHand
     let req = Path::new(raw_path);
     let base_dir = ctx.doc.file.parent().unwrap_or_else(|| Path::new("."));
     let rel_candidate = base_dir.join(req);
-    let rel_canon = rel_candidate.canonicalize().ok();
+    let rel_canon = canonicalize_clean(&rel_candidate).ok();
 
     for &doc in ctx.all_docs {
         if doc.file == req || doc.file == rel_candidate || doc.file.ends_with(req) {
             return Some(DocHandle::Borrowed(doc));
         }
-        if let (Some(ref target_c), Ok(doc_c)) = (&rel_canon, doc.file.canonicalize()) {
+        if let (Some(ref target_c), Ok(doc_c)) = (&rel_canon, canonicalize_clean(&doc.file)) {
             if target_c == &doc_c {
                 return Some(DocHandle::Borrowed(doc));
             }

@@ -14,7 +14,7 @@ use super::{
     DEFAULT_CACHE_REL_PATH,
 };
 use crate::edna::{self, EdnaContext};
-use crate::files::collect_org_files;
+use crate::files::{collect_org_files, join_slash_rel};
 
 /// Writes UTF-8 Org content to `path`, creating parent directories when needed.
 fn write_file(path: &Path, content: &str) {
@@ -143,7 +143,7 @@ fn empty_directory_open_and_sync_does_not_create_cache_files() {
     let (_, tel) = MabuseCache::open_and_sync(empty.path()).unwrap();
     assert_eq!(tel.files_scanned, 0);
     assert!(!empty.path().join(".cache").exists());
-    assert!(!empty.path().join(DEFAULT_CACHE_REL_PATH).exists());
+    assert!(!join_slash_rel(empty.path(), DEFAULT_CACHE_REL_PATH).exists());
 }
 
 /// Verifies Git-repo scanning follows symlinked `.org` files to external targets while skipping broken symlinks.
@@ -270,7 +270,7 @@ fn fts5vocab_matches_standalone_combining_mark_and_devanagari_bm25() {
     let ranked = rank_matched_indices_bm25(&loaded, &pairs, &[hindi.to_string()]);
     let cached_order: Vec<_> = fts_hits
         .iter()
-        .map(|h| dir.path().join(&h.rel_path))
+        .map(|h| join_slash_rel(dir.path(), &h.rel_path))
         .collect();
     let uncached_order: Vec<_> = ranked
         .iter()

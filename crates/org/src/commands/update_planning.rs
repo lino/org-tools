@@ -224,7 +224,7 @@ fn commit_planning_writes(
                 continue;
             }
         }
-        modified_paths.push(file.canonicalize().unwrap_or(file));
+        modified_paths.push(org_tools_core::files::canonicalize_clean(&file).unwrap_or(file));
     }
     mutation.files_modified = modified_paths.len();
     modified_paths

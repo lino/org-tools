@@ -12,6 +12,7 @@ use crate::cache::fts::extract_entry_bodies;
 use crate::cache::walk::{compute_canon_key, DiskOrgFile};
 use crate::document::OrgDocument;
 use crate::edna::extract_dependency_ids;
+use crate::files::join_slash_rel;
 use crate::roam::{
     extract_roam_links, extract_roam_nodes, is_roam_excluded, lookup_prop_ci, RoamLink, RoamNode,
 };
@@ -179,7 +180,7 @@ pub(crate) fn build_file_payload(
 ) -> ParsedFilePayload {
     let content = String::from_utf8(bytes)
         .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned());
-    let source = SourceFile::new(workspace_root.join(&disk.rel_path), content);
+    let source = SourceFile::new(join_slash_rel(workspace_root, &disk.rel_path), content);
     let doc = OrgDocument::from_source(&source);
     let nodes = extract_roam_nodes(&doc);
     let excluded_ids = extract_excluded_ids(&doc);

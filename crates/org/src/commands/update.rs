@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
-use org_tools_core::cache::{MabuseCache, DEFAULT_CACHE_REL_PATH};
+use org_tools_core::cache::MabuseCache;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::{discover_workspace_root, normalize_workspace_path};
 use org_tools_core::files::collect_org_files;
@@ -189,7 +189,7 @@ fn find_ancestor_with_cache(file: &Path) -> Option<PathBuf> {
         if ancestor.as_os_str().is_empty() || ancestor == temp_root || ancestor == temp_norm {
             break;
         }
-        if ancestor.join(DEFAULT_CACHE_REL_PATH).is_file() {
+        if MabuseCache::resolve_db_path(ancestor).is_file() {
             return Some(ancestor.to_path_buf());
         }
     }

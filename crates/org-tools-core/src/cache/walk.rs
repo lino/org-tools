@@ -10,9 +10,10 @@ use std::time::UNIX_EPOCH;
 use ignore::WalkBuilder;
 
 use crate::export_md::normalize_workspace_path;
+use crate::files::join_slash_rel;
 
 /// Minimum top-level subdirectory count before fanning out scoped parallel `read_dir` workers.
-const PARALLEL_SUBDIR_THRESHOLD: usize = 4;
+const PARALLEL_SUBDIR_THRESHOLD: usize = 16;
 
 /// Maximum scoped worker threads used for parallel directory metadata scanning.
 const MAX_SCAN_WORKERS: usize = 3;
@@ -32,7 +33,7 @@ pub(crate) struct DiskOrgFile {
 
 /// Computes the canonical target path string for `df` (`0` syscalls when `!df.is_symlink`).
 pub(crate) fn compute_canon_key(workspace_root: &Path, df: &DiskOrgFile) -> String {
-    let joined = workspace_root.join(&df.rel_path);
+    let joined = join_slash_rel(workspace_root, &df.rel_path);
     if df.is_symlink {
         normalize_workspace_path(&joined)
             .to_string_lossy()

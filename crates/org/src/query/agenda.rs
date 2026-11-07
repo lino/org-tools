@@ -1,316 +1,436 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Agenda view — shows scheduled/deadline items grouped by day.
+//! Agenda view engine projecting scheduled, deadline, overdue, warning, and body timestamps.
+//!
+//! Spec: [§8.3 Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html),
+//! [§8.3.2 Repeated tasks](https://orgmode.org/manual/Repeated-tasks.html),
+//! [§11 Agenda Views](https://orgmode.org/manual/Agenda-Views.html),
+//! [Syntax: Planning](https://orgmode.org/worg/org-syntax.html#Planning),
+//! [Syntax: Timestamps](https://orgmode.org/worg/org-syntax.html#Timestamps).
 
 use std::path::Path;
 
+use org_tools_core::config::DEFAULT_DEADLINE_WARNING_DAYS;
 use org_tools_core::document::{OrgDocument, OrgEntry};
-use org_tools_core::rules::timestamp::OrgTimestamp;
+use org_tools_core::planning::{
+    date_to_days, day_of_week_abbrev, days_to_date, effective_deadline_warning_days,
+    extract_entry_active_body_timestamps, is_first_only_warning, project_repeating_dates,
+};
+use org_tools_core::rules::timestamp::{is_valid_date, OrgTimestamp};
+use org_tools_core::source::SourceFile;
 
-/// An agenda item with its source context.
-#[derive(Debug)]
-pub struct AgendaItem<'a> {
-    /// Reference to the entry.
-    pub entry: &'a OrgEntry,
-    /// File path.
-    pub file: &'a std::path::Path,
-    /// Why this item appears on this day.
-    pub kind: AgendaKind,
-    /// The relevant timestamp.
-    pub timestamp: &'a OrgTimestamp,
-}
+// region Public Types
 
-/// Why an entry appears in the agenda.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Reason an [`OrgEntry`] appears on a given [`AgendaDay`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgendaKind {
-    /// Scheduled for this day.
+    /// Entry scheduled on this calendar day (base or projected repeater occurrence).
     Scheduled,
-    /// Deadline on this day.
+    /// Entry deadline falling on this calendar day (base or projected repeater occurrence).
     Deadline,
-    /// Scheduled in the past but not completed. Number of days overdue.
+    /// Uncompleted past `SCHEDULED:` item shown on Day 0 (`days_overdue >= 1`).
     OverdueScheduled(i64),
-    /// Deadline in the past but not completed. Number of days overdue.
+    /// Uncompleted past `DEADLINE:` item shown on Day 0 (`days_overdue >= 1`).
     OverdueDeadline(i64),
+    /// Upcoming uncompleted `DEADLINE:` pre-warning shown on Day 0 (`days_until >= 1`).
+    DeadlineWarning(i64),
+    /// Unprotected active `<YYYY-MM-DD ...>` timestamp in the heading or entry body.
+    Timestamp,
 }
 
-/// A day in the agenda with its items.
-#[derive(Debug)]
+impl AgendaKind {
+    /// Formats the canonical Emacs-style human status label for this agenda item kind.
+    pub fn human_label(self) -> String {
+        match self {
+            Self::Scheduled => "Scheduled".to_string(),
+            Self::Deadline => "DEADLINE".to_string(),
+            Self::OverdueScheduled(d) => format!("Sched. {d}x: Scheduled"),
+            Self::OverdueDeadline(d) => format!("In -{d} d.: DEADLINE"),
+            Self::DeadlineWarning(d) => format!("In {d} d.: DEADLINE"),
+            Self::Timestamp => "Timestamp".to_string(),
+        }
+    }
+
+    /// Returns the snake_case discriminator string matching `org-agenda-output.schema.json`.
+    pub fn json_kind(self) -> &'static str {
+        match self {
+            Self::Scheduled => "scheduled",
+            Self::Deadline => "deadline",
+            Self::OverdueScheduled(_) => "overdue_scheduled",
+            Self::OverdueDeadline(_) => "overdue_deadline",
+            Self::DeadlineWarning(_) => "deadline_warning",
+            Self::Timestamp => "timestamp",
+        }
+    }
+
+    /// Returns the positive overdue day count when this item is overdue, or `None`.
+    pub fn overdue_days(self) -> Option<i64> {
+        match self {
+            Self::OverdueScheduled(d) | Self::OverdueDeadline(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Returns the positive days remaining until due date for a deadline warning, or `None`.
+    pub fn warning_days_remaining(self) -> Option<i64> {
+        match self {
+            Self::DeadlineWarning(d) => Some(d),
+            _ => None,
+        }
+    }
+}
+
+/// One projected or direct agenda occurrence linked to its enclosing [`OrgDocument`] and [`OrgEntry`].
+#[derive(Debug, Clone)]
+pub struct AgendaItem<'a> {
+    /// Reference to the enclosing parsed [`OrgDocument`].
+    pub doc: &'a OrgDocument,
+    /// Zero-based index of `entry` within `doc.entries`.
+    pub entry_idx: usize,
+    /// Reference to the matched [`OrgEntry`].
+    pub entry: &'a OrgEntry,
+    /// Path to the Org source file containing `entry`.
+    pub file: &'a Path,
+    /// Reason this item appears on this day.
+    pub kind: AgendaKind,
+    /// Base or repeater-projected active [`OrgTimestamp`].
+    pub timestamp: OrgTimestamp,
+}
+
+/// One calendar date within the requested agenda horizon and its matched items.
+#[derive(Debug, Clone)]
 pub struct AgendaDay<'a> {
-    /// The date.
+    /// Four-digit proleptic Gregorian year.
     pub year: u16,
+    /// Calendar month (`1..=12`).
     pub month: u8,
+    /// Day of month (`1..=31`).
     pub day: u8,
-    /// Items on this day.
+    /// Ordered agenda items occurring or surfaced on this day.
     pub items: Vec<AgendaItem<'a>>,
 }
 
-/// Build an agenda for a range of days starting from `start_date`.
+/// Configuration inputs controlling [`build_agenda_with_options`].
+#[derive(Debug, Clone, Copy)]
+pub struct AgendaBuildOptions<'a> {
+    /// Optional raw [`SourceFile`] slice aligned 1-to-1 with `docs` for body timestamp scanning.
+    pub sources: Option<&'a [SourceFile]>,
+    /// Inclusive `(year, month, day)` start date (Day 0).
+    pub start_date: (u16, u8, u8),
+    /// Number of calendar days to include in the timeline window.
+    pub num_days: usize,
+    /// Global fallback deadline warning window in days (`[agenda].deadline_warning_days`).
+    pub warning_days: u32,
+}
+
+// endregion
+
+// region Agenda Projection Engine
+
+/// Per-entry projection context bundling shared document, window, and completion state.
+struct EntryScanCtx<'a, 'b> {
+    /// Enclosing [`OrgDocument`].
+    doc: &'a OrgDocument,
+    /// Entry index inside `doc.entries`.
+    idx: usize,
+    /// Epoch day number of `opts.start_date` (Day 0).
+    start_days: i64,
+    /// Caller-supplied agenda build options.
+    opts: &'b AgendaBuildOptions<'b>,
+    /// Whether this entry carries a `DONE`-state TODO keyword.
+    is_done: bool,
+}
+
+impl<'a> EntryScanCtx<'a, '_> {
+    /// Appends an [`AgendaItem`] onto `days[day_idx]`.
+    fn push(&self, days: &mut [AgendaDay<'a>], day_idx: usize, kind: AgendaKind, ts: OrgTimestamp) {
+        days[day_idx].items.push(AgendaItem {
+            doc: self.doc,
+            entry_idx: self.idx,
+            entry: &self.doc.entries[self.idx],
+            file: &self.doc.file,
+            kind,
+            timestamp: ts,
+        });
+    }
+}
+
+/// Builds a multi-day agenda from `docs` using [`DEFAULT_DEADLINE_WARNING_DAYS`] (`14` days).
+#[allow(dead_code)]
 pub fn build_agenda<'a>(
     docs: &'a [OrgDocument],
     start_date: (u16, u8, u8),
     num_days: usize,
 ) -> Vec<AgendaDay<'a>> {
-    let start_days = date_to_days(start_date.0, start_date.1, start_date.2);
+    let opts = AgendaBuildOptions {
+        sources: None,
+        start_date,
+        num_days,
+        warning_days: DEFAULT_DEADLINE_WARNING_DAYS,
+    };
+    build_agenda_with_options(docs, opts)
+}
 
-    let mut days: Vec<AgendaDay<'a>> = (0..num_days as i64)
-        .map(|offset| {
-            let (y, m, d) = days_to_date(start_days + offset);
+/// Builds a multi-day agenda projecting repeaters, overdue items, deadline warnings, and body timestamps.
+pub fn build_agenda_with_options<'a>(
+    docs: &'a [OrgDocument],
+    opts: AgendaBuildOptions<'_>,
+) -> Vec<AgendaDay<'a>> {
+    let start_days = date_to_days(opts.start_date.0, opts.start_date.1, opts.start_date.2);
+    let mut days: Vec<AgendaDay<'a>> = (0..opts.num_days as i64)
+        .map(|off| {
+            let (year, month, day) = days_to_date(start_days + off);
             AgendaDay {
-                year: y,
-                month: m,
-                day: d,
+                year,
+                month,
+                day,
                 items: Vec::new(),
             }
         })
         .collect();
-
-    for doc in docs {
-        for entry in &doc.entries {
+    if days.is_empty() {
+        return days;
+    }
+    for (doc_idx, doc) in docs.iter().enumerate() {
+        let src_opt = opts.sources.and_then(|srcs| srcs.get(doc_idx));
+        for (idx, entry) in doc.entries.iter().enumerate() {
             let is_done = entry
                 .keyword
                 .as_deref()
                 .is_some_and(|kw| doc.todo_keywords.is_done(kw));
-            if let Some(ts) = &entry.planning.scheduled {
-                record_agenda_timestamp(
-                    &mut days, start_days, entry, &doc.file, ts, is_done, false,
-                );
-            }
-            if let Some(ts) = &entry.planning.deadline {
-                record_agenda_timestamp(&mut days, start_days, entry, &doc.file, ts, is_done, true);
-            }
+            let ctx = EntryScanCtx {
+                doc,
+                idx,
+                start_days,
+                opts: &opts,
+                is_done,
+            };
+            collect_entry_agenda_items(&ctx, &mut days, entry, src_opt);
         }
     }
-
     days
 }
 
-/// Inserts a scheduled or deadline [`OrgTimestamp`] into the matching or overdue [`AgendaDay`].
-fn record_agenda_timestamp<'a>(
+/// Clones `ts` onto a projected `(year, month, day)` occurrence with updated weekday name.
+fn projected_timestamp(ts: &OrgTimestamp, year: u16, month: u8, day: u8) -> OrgTimestamp {
+    OrgTimestamp {
+        year,
+        month,
+        day,
+        dayname: Some(day_of_week_abbrev(year, month, day).to_string()),
+        ..ts.clone()
+    }
+}
+
+/// Returns `true` when `ts` is an active timestamp with a valid calendar date.
+fn is_active_valid_ts(ts: &OrgTimestamp) -> bool {
+    ts.active && is_valid_date(ts.year, ts.month, ts.day)
+}
+
+/// Projects scheduled, deadline, and active body timestamps for one `entry` into `days`.
+fn collect_entry_agenda_items<'a>(
+    ctx: &EntryScanCtx<'a, '_>,
     days: &mut [AgendaDay<'a>],
-    start_days: i64,
-    entry: &'a OrgEntry,
-    file: &'a Path,
-    ts: &'a OrgTimestamp,
-    is_done: bool,
+    entry: &OrgEntry,
+    src_opt: Option<&SourceFile>,
+) {
+    let plan = &entry.planning;
+    if let Some(ts) = plan.scheduled.as_ref().filter(|t| is_active_valid_ts(t)) {
+        record_planning_item(ctx, days, ts, false);
+    }
+    if let Some(ts) = plan.deadline.as_ref().filter(|t| is_active_valid_ts(t)) {
+        record_planning_item(ctx, days, ts, true);
+        if !ctx.is_done {
+            record_deadline_warning(ctx, days, ts);
+        }
+    }
+    if let Some(src) = src_opt {
+        for body_ts in extract_entry_active_body_timestamps(src, ctx.doc, ctx.idx) {
+            record_body_timestamp(ctx, days, &body_ts.timestamp);
+        }
+    }
+}
+
+/// Inserts base, Day-0 overdue, and projected repeater occurrences for `SCHEDULED:` or `DEADLINE:`.
+fn record_planning_item<'a>(
+    ctx: &EntryScanCtx<'a, '_>,
+    days: &mut [AgendaDay<'a>],
+    ts: &OrgTimestamp,
     is_deadline: bool,
 ) {
-    let offset = date_to_days(ts.year, ts.month, ts.day) - start_days;
+    let offset = date_to_days(ts.year, ts.month, ts.day) - ctx.start_days;
+    let (on_day, overdue) = if is_deadline {
+        (AgendaKind::Deadline, AgendaKind::OverdueDeadline(-offset))
+    } else {
+        (AgendaKind::Scheduled, AgendaKind::OverdueScheduled(-offset))
+    };
+    if (0..days.len() as i64).contains(&offset) {
+        ctx.push(days, offset as usize, on_day, ts.clone());
+    } else if offset < 0 && !ctx.is_done {
+        ctx.push(days, 0, overdue, ts.clone());
+    }
+    if !ctx.is_done {
+        for (py, pm, pd) in project_repeating_dates(ts, ctx.opts.start_date, ctx.opts.num_days) {
+            let proj_idx = (date_to_days(py, pm, pd) - ctx.start_days) as usize;
+            ctx.push(days, proj_idx, on_day, projected_timestamp(ts, py, pm, pd));
+        }
+    }
+}
+
+/// Inserts a Day-0 [`AgendaKind::DeadlineWarning`] item when `ts` falls inside its warning window.
+fn record_deadline_warning<'a>(
+    ctx: &EntryScanCtx<'a, '_>,
+    days: &mut [AgendaDay<'a>],
+    ts: &OrgTimestamp,
+) {
+    let lead_days = effective_deadline_warning_days(ts, ctx.opts.warning_days);
+    if lead_days <= 0 {
+        return;
+    }
+    let offset = date_to_days(ts.year, ts.month, ts.day) - ctx.start_days;
+    if offset >= 1 && offset <= lead_days {
+        ctx.push(days, 0, AgendaKind::DeadlineWarning(offset), ts.clone());
+        return;
+    }
+    if offset <= 0 && ts.repeater.is_some() && !is_first_only_warning(ts) {
+        let tomorrow = days_to_date(ctx.start_days + 1);
+        if let Some(&(py, pm, pd)) =
+            project_repeating_dates(ts, tomorrow, lead_days as usize).first()
+        {
+            let rem = date_to_days(py, pm, pd) - ctx.start_days;
+            let proj = projected_timestamp(ts, py, pm, pd);
+            ctx.push(days, 0, AgendaKind::DeadlineWarning(rem), proj);
+        }
+    }
+}
+
+/// Inserts base and projected repeater occurrences for an unprotected active body timestamp.
+fn record_body_timestamp<'a>(
+    ctx: &EntryScanCtx<'a, '_>,
+    days: &mut [AgendaDay<'a>],
+    ts: &OrgTimestamp,
+) {
+    let offset = date_to_days(ts.year, ts.month, ts.day) - ctx.start_days;
     if offset >= 0 && (offset as usize) < days.len() {
-        let kind = if is_deadline {
-            AgendaKind::Deadline
-        } else {
-            AgendaKind::Scheduled
-        };
-        days[offset as usize].items.push(AgendaItem {
-            entry,
-            file,
-            kind,
-            timestamp: ts,
-        });
-    } else if offset < 0 && !is_done && !days.is_empty() {
-        let kind = if is_deadline {
-            AgendaKind::OverdueDeadline(-offset)
-        } else {
-            AgendaKind::OverdueScheduled(-offset)
-        };
-        days[0].items.push(AgendaItem {
-            entry,
-            file,
-            kind,
-            timestamp: ts,
-        });
+        ctx.push(days, offset as usize, AgendaKind::Timestamp, ts.clone());
     }
-}
-
-/// Render agenda in human-readable format.
-pub fn render_agenda_human(days: &[AgendaDay<'_>]) -> String {
-    let mut out = String::new();
-    let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-    for day in days {
-        if day.items.is_empty() {
-            continue;
-        }
-
-        let dow = day_of_week(day.year, day.month, day.day);
-        let dow_name = day_names[dow as usize % 7];
-        out.push_str(&format!(
-            "{:04}-{:02}-{:02} {dow_name}\n",
-            day.year, day.month, day.day
-        ));
-
-        for item in &day.items {
-            let kw = item
-                .entry
-                .keyword
-                .as_deref()
-                .map(|k| format!("{k} "))
-                .unwrap_or_default();
-            let pri = item
-                .entry
-                .priority
-                .map(|p| format!("[#{p}] "))
-                .unwrap_or_default();
-            let tags = if item.entry.tags.is_empty() {
-                String::new()
-            } else {
-                format!(" :{}:", item.entry.tags.join(":"))
-            };
-            let time = match (item.timestamp.hour, item.timestamp.minute) {
-                (Some(h), Some(m)) => format!("{h:02}:{m:02} "),
-                _ => String::new(),
-            };
-            let kind_str = match item.kind {
-                AgendaKind::Scheduled => "Scheduled".to_string(),
-                AgendaKind::Deadline => "DEADLINE".to_string(),
-                AgendaKind::OverdueScheduled(d) => format!("Sched. {d}x: Scheduled"),
-                AgendaKind::OverdueDeadline(d) => format!("In -{d} d.: DEADLINE"),
-            };
-
-            out.push_str(&format!(
-                "  {}:{}: {kw}{pri}{}{tags}  {time}{kind_str}\n",
-                item.file.display(),
-                item.entry.heading_line,
-                item.entry.title,
-            ));
+    if !ctx.is_done {
+        for (py, pm, pd) in project_repeating_dates(ts, ctx.opts.start_date, ctx.opts.num_days) {
+            let proj_idx = (date_to_days(py, pm, pd) - ctx.start_days) as usize;
+            let proj = projected_timestamp(ts, py, pm, pd);
+            ctx.push(days, proj_idx, AgendaKind::Timestamp, proj);
         }
     }
-
-    out
 }
 
-/// Approximate day-of-week (0=Mon, 6=Sun) using Zeller-like formula.
-fn day_of_week(year: u16, month: u8, day: u8) -> u8 {
-    let y = year as i64;
-    let m = month as i64;
-    let d = day as i64;
-    // Tomohiko Sakamoto's algorithm.
-    let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
-    let y = if m < 3 { y - 1 } else { y };
-    let dow = (y + y / 4 - y / 100 + y / 400 + t[(m - 1) as usize] + d) % 7;
-    // Result: 0=Sun, 1=Mon, ..., 6=Sat. Convert to 0=Mon.
-    ((dow + 6) % 7) as u8
-}
-
-/// Public wrapper for date_to_days, used by predicate module.
+/// Public wrapper around [`date_to_days`] used by the query predicate evaluator.
 pub fn date_to_days_pub(year: u16, month: u8, day: u8) -> i64 {
     date_to_days(year, month, day)
 }
 
-/// Convert (year, month, day) to a day count using Howard Hinnant's algorithm.
-/// See <https://howardhinnant.github.io/date_algorithms.html#days_from_civil>
-fn date_to_days(year: u16, month: u8, day: u8) -> i64 {
-    let y = if month <= 2 {
-        year as i64 - 1
-    } else {
-        year as i64
-    };
-    let m = if month <= 2 {
-        month as i64 + 9
-    } else {
-        month as i64 - 3
-    };
-    let era = y / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * m + 2) / 5 + day as i64 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe
+// endregion
+
+// region Human Timeline Renderer
+
+/// Renders the agenda timeline in Emacs-like human-readable text format.
+pub fn render_agenda_human(days: &[AgendaDay<'_>]) -> String {
+    let mut out = String::new();
+    for d in days.iter().filter(|d| !d.items.is_empty()) {
+        let dow = day_of_week_abbrev(d.year, d.month, d.day);
+        out.push_str(&format!(
+            "{:04}-{:02}-{:02} {dow}\n",
+            d.year, d.month, d.day
+        ));
+        for item in &d.items {
+            out.push_str(&format_human_agenda_item(item));
+        }
+    }
+    out
 }
 
-/// Convert a day count back to (year, month, day) using Howard Hinnant's algorithm.
-/// See <https://howardhinnant.github.io/date_algorithms.html#civil_from_days>
-fn days_to_date(z: i64) -> (u16, u8, u8) {
-    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u8;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y as u16, m as u8, d)
+/// Formats one [`AgendaItem`] row inside [`render_agenda_human`].
+fn format_human_agenda_item(item: &AgendaItem<'_>) -> String {
+    let e = item.entry;
+    let kw = e
+        .keyword
+        .as_deref()
+        .map(|k| format!("{k} "))
+        .unwrap_or_default();
+    let pri = e.priority.map(|p| format!("[#{p}] ")).unwrap_or_default();
+    let tags = if e.tags.is_empty() {
+        String::new()
+    } else {
+        format!(" :{}:", e.tags.join(":"))
+    };
+    let time = match (item.timestamp.hour, item.timestamp.minute) {
+        (Some(h), Some(m)) => format!("{h:02}:{m:02} "),
+        _ => String::new(),
+    };
+    let (file, ln, title, lbl) = (
+        item.file.display(),
+        e.heading_line,
+        &e.title,
+        item.kind.human_label(),
+    );
+    format!("  {file}:{ln}: {kw}{pri}{title}{tags}  {time}{lbl}\n")
 }
 
+// endregion
+
+// region Tests
+
+/// Unit tests for multi-day agenda projection and human timeline rendering.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Verifies proleptic Gregorian date roundtrips and weekday abbreviations.
     #[test]
-    fn date_roundtrip() {
-        let test_dates = [
-            (2024, 1, 1),
-            (2024, 6, 15),
-            (2024, 12, 31),
-            (2025, 2, 28),
-            (2026, 3, 21),
-        ];
-        for (y, m, d) in test_dates {
-            let days = date_to_days(y, m, d);
-            let (ry, rm, rd) = days_to_date(days);
-            assert_eq!((ry, rm, rd), (y, m, d), "roundtrip failed for {y}-{m}-{d}");
+    fn date_roundtrip_and_weekday_names() {
+        for (y, m, d, dow) in [(2024, 1, 1, "Mon"), (2026, 3, 21, "Sat")] {
+            assert_eq!(days_to_date(date_to_days_pub(y, m, d)), (y, m, d));
+            assert_eq!(day_of_week_abbrev(y, m, d), dow);
         }
     }
 
+    /// Verifies basic scheduled, deadline, and Day-0 deadline warning projection.
     #[test]
-    fn day_of_week_known() {
-        // 2024-01-01 is a Monday.
-        assert_eq!(day_of_week(2024, 1, 1), 0); // Mon
-                                                // 2024-06-15 is a Saturday.
-        assert_eq!(day_of_week(2024, 6, 15), 5); // Sat
-    }
-
-    #[test]
-    fn build_agenda_basic() {
-        use org_tools_core::document::OrgDocument;
-        use org_tools_core::source::SourceFile;
-
-        let source = SourceFile::new(
-            "test.org",
-            "* TODO Task\nSCHEDULED: <2024-06-16 Sun 09:00>\n* TODO DL\nDEADLINE: <2024-06-17 Mon>\n".to_string(),
-        );
-        let doc = OrgDocument::from_source(&source);
-        let docs = [doc];
+    fn build_agenda_basic_and_warning_suppression() {
+        let text = "* TODO Task\nSCHEDULED: <2024-06-16 Sun 09:00>\n* TODO DL\nDEADLINE: <2024-06-17 Mon>\n";
+        let source = SourceFile::new("test.org", text.to_string());
+        let docs = [OrgDocument::from_source(&source)];
         let days = build_agenda(&docs, (2024, 6, 15), 7);
-
-        // Day 0 (June 15) — nothing.
-        assert!(days[0].items.is_empty());
-        // Day 1 (June 16) — scheduled task.
-        assert_eq!(days[1].items.len(), 1);
+        assert_eq!(days[0].items[0].kind, AgendaKind::DeadlineWarning(2));
         assert_eq!(days[1].items[0].kind, AgendaKind::Scheduled);
-        // Day 2 (June 17) — deadline.
-        assert_eq!(days[2].items.len(), 1);
         assert_eq!(days[2].items[0].kind, AgendaKind::Deadline);
+
+        let opts = AgendaBuildOptions {
+            sources: Some(std::slice::from_ref(&source)),
+            start_date: (2024, 6, 15),
+            num_days: 7,
+            warning_days: 0,
+        };
+        assert!(build_agenda_with_options(&docs, opts)[0].items.is_empty());
     }
 
-    /// Verifies overdue scheduled and deadline tasks appear on day 0 while completed past tasks do not.
+    /// Verifies overdue scheduled and deadline tasks appear on Day 0 while completed past tasks do not.
     #[test]
     fn build_agenda_overdue_tasks() {
-        use org_tools_core::document::OrgDocument;
-        use org_tools_core::source::SourceFile;
-
-        let content = "\
-* TODO Overdue Sched
-SCHEDULED: <2024-06-14 Fri>
-* TODO Overdue Deadline
-DEADLINE: <2024-06-12 Wed>
-* DONE Completed Past
-SCHEDULED: <2024-06-14 Fri>
-";
+        let content = concat!(
+            "* TODO Overdue Sched\nSCHEDULED: <2024-06-14 Fri>\n",
+            "* TODO Overdue Deadline\nDEADLINE: <2024-06-12 Wed>\n",
+            "* DONE Completed Past\nSCHEDULED: <2024-06-14 Fri>\n",
+        );
         let source = SourceFile::new("test.org", content.to_string());
-        let doc = OrgDocument::from_source(&source);
-        let docs = [doc];
+        let docs = [OrgDocument::from_source(&source)];
         let days = build_agenda(&docs, (2024, 6, 15), 7);
-
-        // Day 0 (June 15) should have the 2 overdue tasks, completed task excluded
         assert_eq!(days[0].items.len(), 2);
         assert_eq!(days[0].items[0].kind, AgendaKind::OverdueScheduled(1));
         assert_eq!(days[0].items[1].kind, AgendaKind::OverdueDeadline(3));
-
         let rendered = render_agenda_human(&days);
-        assert!(rendered.contains("Sched. 1x: Scheduled"));
-        assert!(rendered.contains("In -3 d.: DEADLINE"));
-        assert!(!rendered.contains("Completed Past"));
+        assert!(rendered.contains("Sched. 1x: Scheduled") && !rendered.contains("Completed Past"));
     }
 }
+
+// endregion

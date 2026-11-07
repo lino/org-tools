@@ -1,7 +1,11 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org query` subcommand definitions and search, agenda, and dependency graph handlers.
+//! Subcommand definitions and search, agenda, and dependency graph handlers for `org query`.
+
+/// Agenda subcommand CLI options, cache integration, and multi-format output dispatch.
+#[path = "query_agenda.rs"]
+pub(crate) mod query_agenda;
 
 use std::path::{Path, PathBuf};
 
@@ -58,18 +62,8 @@ pub(crate) enum QueryCommand {
         #[arg(long)]
         limit: Option<usize>,
     },
-    /// Show agenda view (scheduled/deadline timeline).
-    Agenda {
-        /// Files or directories to scan.
-        #[arg(default_value = ".")]
-        paths: Vec<PathBuf>,
-        /// Number of days to show.
-        #[arg(long, default_value = "7")]
-        days: usize,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: QueryOutputFormat,
-    },
+    /// Show agenda view (scheduled/deadline timeline and optional composite GTD sections).
+    Agenda(query_agenda::AgendaArgs),
     /// Show blocked entries with dependency details.
     Blocked {
         /// Files or directories to scan.
@@ -284,84 +278,7 @@ fn run_search(
 
 // endregion
 
-// region Agenda & Dependency Handlers
-
-/// Serializes one [`query::agenda::AgendaItem`] into its JSON object representation.
-fn agenda_item_to_json(item: &query::agenda::AgendaItem<'_>) -> serde_json::Value {
-    let time = match (item.timestamp.hour, item.timestamp.minute) {
-        (Some(h), Some(m)) => Some(format!("{h:02}:{m:02}")),
-        _ => None,
-    };
-    let (kind_str, overdue) = match item.kind {
-        query::agenda::AgendaKind::Scheduled => ("Scheduled", None),
-        query::agenda::AgendaKind::Deadline => ("Deadline", None),
-        query::agenda::AgendaKind::OverdueScheduled(d) => ("Scheduled", Some(d)),
-        query::agenda::AgendaKind::OverdueDeadline(d) => ("Deadline", Some(d)),
-    };
-    serde_json::json!({
-        "file": item.file.display().to_string(),
-        "line": item.entry.heading_line,
-        "keyword": item.entry.keyword,
-        "priority": item.entry.priority.map(|p| p.to_string()),
-        "title": item.entry.title,
-        "tags": item.entry.tags,
-        "kind": kind_str,
-        "overdue_days": overdue,
-        "time": time,
-    })
-}
-
-/// Serializes one non-empty [`query::agenda::AgendaDay`] into its JSON object representation.
-fn agenda_day_to_json(day: &query::agenda::AgendaDay<'_>) -> serde_json::Value {
-    let items: Vec<serde_json::Value> = day.items.iter().map(agenda_item_to_json).collect();
-    serde_json::json!({
-        "date": format!("{:04}-{:02}-{:02}", day.year, day.month, day.day),
-        "items": items,
-    })
-}
-
-/// Renders agenda output in human, JSON, or locator format.
-fn render_agenda_output(agenda_days: &[query::agenda::AgendaDay<'_>], format: QueryOutputFormat) {
-    match format {
-        QueryOutputFormat::Human => print!("{}", query::agenda::render_agenda_human(agenda_days)),
-        QueryOutputFormat::Json => {
-            let json_days: Vec<serde_json::Value> = agenda_days
-                .iter()
-                .filter(|d| !d.items.is_empty())
-                .map(agenda_day_to_json)
-                .collect();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json_days).unwrap_or_default()
-            );
-        }
-        QueryOutputFormat::Locator => {
-            for d in agenda_days {
-                for item in &d.items {
-                    println!("{}::{}", item.file.display(), item.entry.heading_line);
-                }
-            }
-        }
-    }
-}
-
-/// Executes `org query agenda`.
-fn run_agenda(paths: &[PathBuf], days: usize, format: QueryOutputFormat) -> i32 {
-    let files = collect_org_files(paths);
-    if files.is_empty() {
-        eprintln!("org: no .org files found");
-        return EXIT_ERROR;
-    }
-    let docs = parse_org_files(&files);
-    let agenda_days = query::agenda::build_agenda(&docs, date::current_date(), days);
-    let has_items = agenda_days.iter().any(|d| !d.items.is_empty());
-    render_agenda_output(&agenda_days, format);
-    if has_items {
-        EXIT_OK
-    } else {
-        EXIT_ISSUES
-    }
-}
+// region Dependency Graph Handler
 
 /// Executes `org query deps`.
 fn run_deps(paths: &[PathBuf], format: DepsOutputFormat) -> i32 {
@@ -399,11 +316,7 @@ pub(crate) fn run_query(command: QueryCommand, no_cache: bool) -> i32 {
             format,
             limit,
         } => run_search(&query_str, &paths, format, limit, no_cache),
-        QueryCommand::Agenda {
-            paths,
-            days,
-            format,
-        } => run_agenda(&paths, days, format),
+        QueryCommand::Agenda(args) => query_agenda::run_agenda(args, no_cache),
         QueryCommand::Blocked {
             paths,
             format,

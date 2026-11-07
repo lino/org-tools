@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-agenda-output.schema.json",
+  "title": "org query agenda JSON output",
+  "description": "Schema for the JSON output of 'org query agenda --format json'.",
+  "type": "object",
+  "required": ["from", "days", "warning_days", "days_timeline", "telemetry"],
+  "properties": {
+    "from": {
+      "type": "string",
+      "description": "Inclusive ISO 8601 start date (YYYY-MM-DD) for the agenda window."
+    },
+    "days": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of calendar days projected in the agenda timeline."
+    },
+    "warning_days": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Effective global deadline lead-time warning window in days."
+    },
+    "days_timeline": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/agenda_day" },
+      "description": "Chronologically ordered non-empty agenda days within the window."
+    },
+    "composite": {
+      "$ref": "#/$defs/agenda_composite"
+    },
+    "telemetry": {
+      "$ref": "#/$defs/telemetry"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "telemetry": {
+      "type": "object",
+      "required": ["duration_us", "files_scanned", "cache_hits", "cache_misses"],
+      "properties": {
+        "duration_us": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock execution duration in microseconds."
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of org files scanned during workspace evaluation."
+        },
+        "cache_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache hits."
+        },
+        "cache_misses": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache misses."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Execution duration and file-scan observability telemetry."
+    },
+    "agenda_day": {
+      "type": "object",
+      "required": ["date", "day_of_week", "items"],
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Calendar date in YYYY-MM-DD format."
+        },
+        "day_of_week": {
+          "type": "string",
+          "enum": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+          "description": "Three-letter English weekday abbreviation."
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agenda_item" },
+          "description": "Scheduled, deadline, overdue, warning, and active timestamp items on this day."
+        }
+      },
+      "additionalProperties": false
+    },
+    "agenda_item": {
+      "type": "object",
+      "required": [
+        "file",
+        "line",
+        "locator",
+        "keyword",
+        "priority",
+        "title",
+        "tags",
+        "kind",
+        "label",
+        "timestamp",
+        "time",
+        "overdue_days",
+        "warning_days_remaining"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Path to the org file containing this entry."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number of the heading."
+        },
+        "locator": {
+          "type": "string",
+          "description": "Canonical OrgLocator string for the entry."
+        },
+        "keyword": {
+          "type": ["string", "null"],
+          "description": "TODO keyword attached to the heading, or null."
+        },
+        "priority": {
+          "type": ["string", "null"],
+          "description": "Priority character (e.g., 'A', 'B', 'C'), or null."
+        },
+        "title": {
+          "type": "string",
+          "description": "Heading title text without keyword, priority, or tags."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Local tags attached to the heading."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "scheduled",
+            "deadline",
+            "overdue_scheduled",
+            "overdue_deadline",
+            "deadline_warning",
+            "timestamp"
+          ],
+          "description": "Reason this entry appears on this agenda day."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable agenda status label (e.g., 'Scheduled', 'In 3 d.: DEADLINE')."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Formatted active Org timestamp (base or projected repeater occurrence)."
+        },
+        "time": {
+          "type": ["string", "null"],
+          "description": "Optional HH:MM time-of-day component, or null."
+        },
+        "overdue_days": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Days overdue for overdue_scheduled / overdue_deadline items, or null."
+        },
+        "warning_days_remaining": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Days remaining until due date for deadline_warning items, or null."
+        }
+      },
+      "additionalProperties": false
+    },
+    "agenda_composite": {
+      "type": "object",
+      "required": ["next_actions", "blocked", "inbox"],
+      "properties": {
+        "next_actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/query_entry" },
+          "description": "Actionable GTD next-action entries."
+        },
+        "blocked": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/blocked_entry" },
+          "description": "Entries blocked by unresolved org-edna conditions."
+        },
+        "inbox": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/query_entry" },
+          "description": "Active TODO entries without tags or planning dates."
+        }
+      },
+      "additionalProperties": false
+    },
+    "checklist_summary": {
+      "type": "object",
+      "required": ["total", "checked", "partial", "unchecked"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "checked": { "type": "integer", "minimum": 0 },
+        "partial": { "type": "integer", "minimum": 0 },
+        "unchecked": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "checklist_item": {
+      "type": "object",
+      "required": ["line", "state", "text"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "state": { "type": "string", "enum": ["unchecked", "partial", "checked"] },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "query_entry": {
+      "type": "object",
+      "required": [
+        "file",
+        "line",
+        "locator",
+        "level",
+        "keyword",
+        "priority",
+        "title",
+        "tags",
+        "properties",
+        "scheduled",
+        "deadline",
+        "closed",
+        "clocked_minutes",
+        "blocked",
+        "checklist_summary",
+        "checklist"
+      ],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "locator": { "type": "string" },
+        "level": { "type": "integer", "minimum": 1 },
+        "keyword": { "type": ["string", "null"] },
+        "priority": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "properties": { "type": "object", "additionalProperties": { "type": "string" } },
+        "scheduled": { "type": ["string", "null"] },
+        "deadline": { "type": ["string", "null"] },
+        "closed": { "type": ["string", "null"] },
+        "clocked_minutes": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "boolean" },
+        "checklist_summary": { "$ref": "#/$defs/checklist_summary" },
+        "checklist": { "type": "array", "items": { "$ref": "#/$defs/checklist_item" } }
+      },
+      "additionalProperties": false
+    },
+    "blocking_entry": {
+      "type": "object",
+      "required": ["title", "keyword", "file", "line", "locator", "condition"],
+      "properties": {
+        "title": { "type": "string" },
+        "keyword": { "type": ["string", "null"] },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "locator": { "type": "string" },
+        "condition": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "blocked_entry": {
+      "type": "object",
+      "required": [
+        "file",
+        "line",
+        "locator",
+        "level",
+        "keyword",
+        "priority",
+        "title",
+        "tags",
+        "properties",
+        "scheduled",
+        "deadline",
+        "closed",
+        "clocked_minutes",
+        "blocked",
+        "blocking_entries"
+      ],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "locator": { "type": "string" },
+        "level": { "type": "integer", "minimum": 1 },
+        "keyword": { "type": ["string", "null"] },
+        "priority": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "properties": { "type": "object", "additionalProperties": { "type": "string" } },
+        "scheduled": { "type": ["string", "null"] },
+        "deadline": { "type": ["string", "null"] },
+        "closed": { "type": ["string", "null"] },
+        "clocked_minutes": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "boolean", "const": true },
+        "blocking_entries": { "type": "array", "items": { "$ref": "#/$defs/blocking_entry" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

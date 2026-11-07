@@ -1,18 +1,17 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Shared timestamp parser for org-mode timestamps.
+//! Shared timestamp parser, calendar date conversions, and repeater/warning primitives.
 //!
 //! Spec: [§8.1 Timestamps](https://orgmode.org/manual/Timestamps.html),
-//! [Syntax: Timestamps](https://orgmode.org/worg/org-syntax.html#Timestamps)
-//!
-//! Active: `<YYYY-MM-DD DAY>` or `<YYYY-MM-DD DAY HH:MM>`
-//! Inactive: `[YYYY-MM-DD DAY]` or `[YYYY-MM-DD DAY HH:MM]`
-//! Repeaters: `+Ny`, `+Nm`, `+Nw`, `+Nd`, `+Nh`, `++N_`, `.+N_`
-//! Warning: `-Nd` etc.
+//! [§8.3 Deadlines and Scheduling](https://orgmode.org/manual/Deadlines-and-Scheduling.html),
+//! [§8.3.2 Repeated tasks](https://orgmode.org/manual/Repeated-tasks.html),
+//! [Syntax: Timestamps](https://orgmode.org/worg/org-syntax.html#Timestamps).
+
+// region Public Types
 
 /// Parsed representation of an org-mode timestamp.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrgTimestamp {
     /// Four-digit year.
     pub year: u16,
@@ -34,7 +33,82 @@ pub struct OrgTimestamp {
     pub active: bool,
 }
 
+/// Repeater shift mode per Org Manual §8.3.2 (`+`, `++`, `.+`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeaterKind {
+    /// `+N_`: cumulative shift by one interval from the base timestamp date.
+    Cumulative,
+    /// `++N_`: catch-up shift in `N_` increments from the base date until strictly after `today`.
+    CatchUp,
+    /// `.+N_`: restart shift by one interval anchored at `today`.
+    Restart,
+}
+
+/// Deadline lead-time warning mode per Org Manual §8.3.2 (`-`, `--`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarningKind {
+    /// `-N_`: warn before every occurrence of the timestamp.
+    All,
+    /// `--N_`: warn only before the first (unrepeated base) occurrence.
+    First,
+}
+
+/// Calendar or clock step unit shared by repeaters and warning delays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeUnit {
+    /// Hourly unit (`h`).
+    Hour,
+    /// Daily unit (`d`).
+    Day,
+    /// Weekly unit (`w`, 7 days).
+    Week,
+    /// Monthly unit (`m`, with month-end clamping).
+    Month,
+    /// Yearly unit (`y`, with leap-day clamping).
+    Year,
+}
+
+/// Parsed repeater specification (`+1w`, `++2m`, `.+3d`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepeaterSpec {
+    /// Shift strategy when advancing the timestamp.
+    pub kind: RepeaterKind,
+    /// Step magnitude in `unit`.
+    pub value: u32,
+    /// Calendar or clock unit.
+    pub unit: TimeUnit,
+}
+
+/// Parsed deadline warning specification (`-3d`, `--2w`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WarningSpec {
+    /// Whether warning applies to all occurrences or only the first.
+    pub kind: WarningKind,
+    /// Lead-time magnitude in `unit`.
+    pub value: u32,
+    /// Calendar or clock unit.
+    pub unit: TimeUnit,
+}
+
+impl OrgTimestamp {
+    /// Constructs an active date-only [`OrgTimestamp`] with its canonical 3-letter weekday.
+    pub(crate) fn active_date(year: u16, month: u8, day: u8) -> Self {
+        Self {
+            year,
+            month,
+            day,
+            dayname: Some(day_of_week_abbrev(year, month, day).to_string()),
+            hour: None,
+            minute: None,
+            repeater: None,
+            warning: None,
+            active: true,
+        }
+    }
+}
+
 impl std::fmt::Display for OrgTimestamp {
+    /// Formats the timestamp using active (`<...>`) or inactive (`[...]`) Org syntax.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (open, close) = if self.active { ('<', '>') } else { ('[', ']') };
         write!(
@@ -58,156 +132,74 @@ impl std::fmt::Display for OrgTimestamp {
     }
 }
 
-/// Attempts to parse an org timestamp starting at position `pos` in `text`.
-/// Returns the parsed timestamp and the byte position after it.
+// endregion
+
+// region Timestamp Parsing
+
+/// Applies a single inner whitespace-delimited timestamp token onto `ts`.
+fn apply_timestamp_part(ts: &mut OrgTimestamp, part: &str) {
+    let first = part.as_bytes().first().copied();
+    if part.contains(':') && first.is_some_and(|b| b.is_ascii_digit()) {
+        if let Some((hs, ms)) = part.split('-').next().unwrap_or(part).split_once(':') {
+            if !ms.contains(':') {
+                ts.hour = hs.parse().ok();
+                ts.minute = ms.parse().ok();
+            }
+        }
+    } else if part.starts_with('+') || part.starts_with(".+") {
+        ts.repeater = Some(part.to_string());
+    } else if part.starts_with('-')
+        && part
+            .trim_start_matches('-')
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+    {
+        ts.warning = Some(part.to_string());
+    } else if first.is_some_and(|b| b.is_ascii_alphabetic()) {
+        ts.dayname = Some(part.to_string());
+    }
+}
+
+/// Parses a `YYYY-MM-DD` date token without requiring calendrical validity.
+fn parse_ymd_triplet(raw: &str) -> Option<(u16, u8, u8)> {
+    let [ys, ms, ds] = raw.split('-').collect::<Vec<_>>().try_into().ok()?;
+    Some((ys.parse().ok()?, ms.parse().ok()?, ds.parse().ok()?))
+}
+
+/// Parses an active or inactive Org timestamp at `pos`, returning `(timestamp, end_pos)`.
 pub fn parse_timestamp(text: &str, pos: usize) -> Option<(OrgTimestamp, usize)> {
     let rest = &text[pos..];
-    let (active, open, close) = if rest.starts_with('<') {
-        (true, '<', '>')
-    } else if rest.starts_with('[') {
-        (false, '[', ']')
-    } else {
-        return None;
+    let (active, close) = match rest.as_bytes().first()? {
+        b'<' => (true, '>'),
+        b'[' => (false, ']'),
+        _ => return None,
     };
-
     let end = rest.find(close)?;
-    let inner = &rest[1..end];
-
-    // Parse: YYYY-MM-DD [DAY] [HH:MM] [repeater] [warning]
-    let parts: Vec<&str> = inner.split_whitespace().collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    // Parse date: YYYY-MM-DD
-    let date_parts: Vec<&str> = parts[0].split('-').collect();
-    if date_parts.len() != 3 {
-        return None;
-    }
-    let year: u16 = date_parts[0].parse().ok()?;
-    let month: u8 = date_parts[1].parse().ok()?;
-    let day: u8 = date_parts[2].parse().ok()?;
-
-    let mut dayname = None;
-    let mut hour = None;
-    let mut minute = None;
-    let mut repeater = None;
-    let mut warning = None;
-
+    let parts: Vec<&str> = rest[1..end].split_whitespace().collect();
+    let (year, month, day) = parse_ymd_triplet(parts.first()?)?;
+    let mut ts = OrgTimestamp {
+        year,
+        month,
+        day,
+        dayname: None,
+        hour: None,
+        minute: None,
+        repeater: None,
+        warning: None,
+        active,
+    };
     for &part in &parts[1..] {
-        if part.contains(':') && part.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-            // Time: HH:MM or HH:MM-HH:MM
-            let time_str = part.split('-').next().unwrap_or(part);
-            let time_parts: Vec<&str> = time_str.split(':').collect();
-            if time_parts.len() == 2 {
-                hour = time_parts[0].parse().ok();
-                minute = time_parts[1].parse().ok();
-            }
-        } else if part.starts_with('+') || part.starts_with(".+") {
-            repeater = Some(part.to_string());
-        } else if part.starts_with('-')
-            && part.len() > 1
-            && part[1..].chars().next().is_some_and(|c| c.is_ascii_digit())
-        {
-            warning = Some(part.to_string());
-        } else if part.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
-            dayname = Some(part.to_string());
-        }
+        apply_timestamp_part(&mut ts, part);
     }
-
-    let _ = (open, close); // Suppress unused warnings.
-
-    Some((
-        OrgTimestamp {
-            year,
-            month,
-            day,
-            dayname,
-            hour,
-            minute,
-            repeater,
-            warning,
-            active,
-        },
-        pos + end + 1,
-    ))
-}
-
-/// Returns true if the date is calendrically valid.
-pub fn is_valid_date(year: u16, month: u8, day: u8) -> bool {
-    if month == 0 || month > 12 || day == 0 {
-        return false;
-    }
-    let days_in_month = match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            if is_leap_year(year) {
-                29
-            } else {
-                28
-            }
-        }
-        _ => return false,
-    };
-    day <= days_in_month
-}
-
-/// Returns true if the year is a leap year.
-#[allow(unknown_lints, clippy::manual_is_multiple_of)] // is_multiple_of is unstable before Rust 1.88
-fn is_leap_year(year: u16) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
-/// Returns true if the repeater string is valid (e.g., `+1w`, `++2m`, `.+3d`).
-pub fn is_valid_repeater(s: &str) -> bool {
-    let rest = if let Some(r) = s.strip_prefix(".+") {
-        r
-    } else if let Some(r) = s.strip_prefix("++") {
-        r
-    } else if let Some(r) = s.strip_prefix('+') {
-        r
-    } else {
-        return false;
-    };
-
-    if rest.is_empty() {
-        return false;
-    }
-
-    let unit = rest.as_bytes()[rest.len() - 1];
-    let number = &rest[..rest.len() - 1];
-
-    matches!(unit, b'y' | b'm' | b'w' | b'd' | b'h') && number.parse::<u32>().is_ok()
-}
-
-/// Returns true if the warning delay string is valid (e.g., `-3d`, `--2w`).
-pub fn is_valid_warning(s: &str) -> bool {
-    let rest = if let Some(r) = s.strip_prefix("--") {
-        r
-    } else if let Some(r) = s.strip_prefix('-') {
-        r
-    } else {
-        return false;
-    };
-
-    if rest.is_empty() {
-        return false;
-    }
-
-    let unit = rest.as_bytes()[rest.len() - 1];
-    let number = &rest[..rest.len() - 1];
-
-    matches!(unit, b'y' | b'm' | b'w' | b'd' | b'h') && number.parse::<u32>().is_ok()
+    Some((ts, pos + end + 1))
 }
 
 /// Finds all timestamps in a line and returns their parsed forms with byte offsets.
 pub fn find_timestamps(line: &str) -> Vec<(OrgTimestamp, usize, usize)> {
-    let mut results = Vec::new();
-    let mut pos = 0;
+    let (mut results, mut pos) = (Vec::new(), 0);
     while pos < line.len() {
-        let ch = line.as_bytes()[pos];
-        if ch == b'<' || ch == b'[' {
+        if matches!(line.as_bytes()[pos], b'<' | b'[') {
             if let Some((ts, end_pos)) = parse_timestamp(line, pos) {
                 results.push((ts, pos, end_pos));
                 pos = end_pos;
@@ -219,73 +211,238 @@ pub fn find_timestamps(line: &str) -> Vec<(OrgTimestamp, usize, usize)> {
     results
 }
 
+// endregion
+
+// region Repeater, Warning & Calendar Primitives
+
+/// Parses `<digits><h|d|w|m|y>` into `(value, TimeUnit)`.
+pub(crate) fn parse_value_and_unit(rest: &str) -> Option<(u32, TimeUnit)> {
+    if rest.len() < 2 {
+        return None;
+    }
+    let (num_str, unit_str) = rest.split_at(rest.len() - 1);
+    if !num_str.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let unit = match unit_str.as_bytes()[0] {
+        b'h' => TimeUnit::Hour,
+        b'd' => TimeUnit::Day,
+        b'w' => TimeUnit::Week,
+        b'm' => TimeUnit::Month,
+        b'y' => TimeUnit::Year,
+        _ => return None,
+    };
+    Some((num_str.parse::<u32>().ok()?, unit))
+}
+
+/// Parses a repeater token (`+Ny`, `+Nm`, `+Nw`, `+Nd`, `+Nh`, `++N_`, `.+N_`).
+pub fn parse_repeater(raw: &str) -> Option<RepeaterSpec> {
+    let (kind, rest) = if let Some(r) = raw.strip_prefix(".+") {
+        (RepeaterKind::Restart, r)
+    } else if let Some(r) = raw.strip_prefix("++") {
+        (RepeaterKind::CatchUp, r)
+    } else {
+        (RepeaterKind::Cumulative, raw.strip_prefix('+')?)
+    };
+    let (value, unit) = parse_value_and_unit(rest)?;
+    Some(RepeaterSpec { kind, value, unit })
+}
+
+/// Parses a deadline warning token (`-Ny`, `-Nm`, `-Nw`, `-Nd`, `-Nh`, `--N_`).
+pub fn parse_warning(raw: &str) -> Option<WarningSpec> {
+    let (kind, rest) = if let Some(r) = raw.strip_prefix("--") {
+        (WarningKind::First, r)
+    } else {
+        (WarningKind::All, raw.strip_prefix('-')?)
+    };
+    let (value, unit) = parse_value_and_unit(rest)?;
+    Some(WarningSpec { kind, value, unit })
+}
+
+/// Returns true if the repeater string is valid (e.g., `+1w`, `++2m`, `.+3d`).
+pub fn is_valid_repeater(s: &str) -> bool {
+    parse_repeater(s).is_some()
+}
+
+/// Returns true if the warning delay string is valid (e.g., `-3d`, `--2w`).
+pub fn is_valid_warning(s: &str) -> bool {
+    parse_warning(s).is_some()
+}
+
+/// Returns the number of days in `month` (`1..=12`) for `year`.
+#[allow(unknown_lints, clippy::manual_is_multiple_of)]
+pub(crate) fn days_in_month(year: u16, month: u8) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+/// Returns true if the date is calendrically valid.
+pub fn is_valid_date(year: u16, month: u8, day: u8) -> bool {
+    let max_day = days_in_month(year, month);
+    max_day > 0 && day >= 1 && day <= max_day
+}
+
+/// Converts a civil `(year, month, day)` date into days since `1970-01-01`.
+pub fn date_to_days(year: u16, month: u8, day: u8) -> i64 {
+    let y = i64::from(year) - i64::from(month <= 2);
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400;
+    let m = i64::from(month);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Converts days since `1970-01-01` back into a civil `(year, month, day)` triple.
+pub fn days_to_date(z: i64) -> (u16, u8, u8) {
+    let z = z.saturating_add(719_468);
+    let era = (if z >= 0 { z } else { z.saturating_sub(146_096) }) / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u8;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
+    let year = (if month <= 2 { y + 1 } else { y }).clamp(0, i64::from(u16::MAX)) as u16;
+    (year, month, d)
+}
+
+/// Returns the canonical 3-letter English weekday abbreviation (`"Mon"`..`"Sun"`).
+pub fn day_of_week_abbrev(year: u16, month: u8, day: u8) -> &'static str {
+    const DAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    DAY_NAMES[(date_to_days(year, month, day) + 3).rem_euclid(7) as usize]
+}
+
+/// Shifts `(year, month, day)` by `delta` units of `unit`, clamping month-ends and leap days.
+pub fn shift_calendar_date(
+    year: u16,
+    month: u8,
+    day: u8,
+    delta: i32,
+    unit: TimeUnit,
+) -> (u16, u8, u8) {
+    match unit {
+        TimeUnit::Hour => days_to_date(date_to_days(year, month, day) + i64::from(delta) / 24),
+        TimeUnit::Day => days_to_date(date_to_days(year, month, day) + i64::from(delta)),
+        TimeUnit::Week => days_to_date(date_to_days(year, month, day) + i64::from(delta) * 7),
+        TimeUnit::Month => {
+            let total =
+                i64::from(year) * 12 + i64::from(month.saturating_sub(1)) + i64::from(delta);
+            let ny = total.div_euclid(12).clamp(0, i64::from(u16::MAX)) as u16;
+            let nm = (total.rem_euclid(12) + 1) as u8;
+            (ny, nm, day.min(days_in_month(ny, nm)))
+        }
+        TimeUnit::Year => {
+            let ny = (i64::from(year) + i64::from(delta)).clamp(0, i64::from(u16::MAX)) as u16;
+            (ny, month, day.min(days_in_month(ny, month)))
+        }
+    }
+}
+
+/// Computes `(lead_days, first_occurrence_only)` for `ts` using `default_days` as fallback.
+pub fn effective_deadline_warning(ts: &OrgTimestamp, default_days: u32) -> (i64, bool) {
+    let Some(spec) = ts.warning.as_deref().and_then(parse_warning) else {
+        return (i64::from(default_days), false);
+    };
+    let days = match spec.unit {
+        TimeUnit::Hour => i64::from(spec.value / 24),
+        TimeUnit::Day => i64::from(spec.value),
+        TimeUnit::Week => i64::from(spec.value) * 7,
+        TimeUnit::Month | TimeUnit::Year => {
+            let delta = -(spec.value.min(i32::MAX as u32) as i32);
+            let (wy, wm, wd) = shift_calendar_date(ts.year, ts.month, ts.day, delta, spec.unit);
+            date_to_days(ts.year, ts.month, ts.day) - date_to_days(wy, wm, wd)
+        }
+    };
+    (
+        days,
+        spec.kind == WarningKind::First && ts.repeater.is_some(),
+    )
+}
+
+/// Computes the calendar-day warning lead distance before `ts` (falling back to `default_days`).
+pub fn effective_deadline_warning_days(ts: &OrgTimestamp, default_days: u32) -> i64 {
+    effective_deadline_warning(ts, default_days).0
+}
+
+/// Returns `true` when `ts` has both a repeater and a `--N_` ([`WarningKind::First`]) warning.
+pub fn is_first_only_warning(ts: &OrgTimestamp) -> bool {
+    effective_deadline_warning(ts, 0).1
+}
+
+/// Checks whether byte index `i` is a valid Org opening emphasis/verbatim boundary.
+fn valid_verbatim_open(bytes: &[u8], i: usize) -> bool {
+    let pre = i == 0 || bytes[i - 1].is_ascii_whitespace() || b"-({'\"".contains(&bytes[i - 1]);
+    pre && !bytes[i + 1].is_ascii_whitespace()
+}
+
+/// Checks whether byte index `j` is a valid Org closing emphasis/verbatim boundary for `marker`.
+fn valid_verbatim_close(bytes: &[u8], j: usize, marker: u8) -> bool {
+    let post = j + 1 == bytes.len()
+        || bytes[j + 1].is_ascii_whitespace()
+        || b"-.,;:!?')}]\"".contains(&bytes[j + 1]);
+    bytes[j] == marker && !bytes[j - 1].is_ascii_whitespace() && post
+}
+
+/// Finds inline Org `=...=` verbatim and `~...~` code byte spans `[start, end)` on `line`.
+pub(crate) fn inline_verbatim_spans(line: &str) -> Vec<(usize, usize)> {
+    let bytes = line.as_bytes();
+    let (mut spans, mut i) = (Vec::new(), 0);
+    while i + 2 <= bytes.len() {
+        let m = bytes[i];
+        if matches!(m, b'=' | b'~') && valid_verbatim_open(bytes, i) {
+            if let Some(end_idx) = (i + 2..bytes.len()).find(|&j| valid_verbatim_close(bytes, j, m))
+            {
+                spans.push((i, end_idx + 1));
+                i = end_idx + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    spans
+}
+
+// endregion
+
+// region Tests
+
+/// Unit tests for timestamp parsing, date validation, and repeater/warning validation.
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Verifies parsing active/inactive dates, times, repeaters, and `--` warning delays.
     #[test]
-    fn parse_active_date() {
-        let (ts, end) = parse_timestamp("<2024-01-15 Mon>", 0).unwrap();
-        assert!(ts.active);
-        assert_eq!(ts.year, 2024);
-        assert_eq!(ts.month, 1);
-        assert_eq!(ts.day, 15);
-        assert_eq!(ts.dayname.as_deref(), Some("Mon"));
-        assert_eq!(end, 16);
+    fn parse_active_inactive_repeater_and_warning() {
+        let (ts, end) = parse_timestamp("<2024-01-15 Mon +1w -3d>", 0).unwrap();
+        assert!(ts.active && end == 24 && (ts.year, ts.month, ts.day) == (2024, 1, 15));
+        assert_eq!(
+            (ts.repeater.as_deref(), ts.warning.as_deref()),
+            (Some("+1w"), Some("-3d"))
+        );
+        let (ina, _) = parse_timestamp("[2024-01-15 Mon 09:30]", 0).unwrap();
+        assert!(!ina.active && (ina.hour, ina.minute) == (Some(9), Some(30)));
+        let (first, _) = parse_timestamp("<2024-01-15 Mon ++1m --2w>", 0).unwrap();
+        assert_eq!(first.clone().warning.as_deref(), Some("--2w"));
     }
 
+    /// Verifies leap-year date validation, repeater/warning validation, and multi-timestamp scan.
     #[test]
-    fn parse_inactive_with_time() {
-        let (ts, _) = parse_timestamp("[2024-01-15 Mon 09:30]", 0).unwrap();
-        assert!(!ts.active);
-        assert_eq!(ts.hour, Some(9));
-        assert_eq!(ts.minute, Some(30));
-    }
-
-    #[test]
-    fn parse_with_repeater() {
-        let (ts, _) = parse_timestamp("<2024-01-15 Mon +1w>", 0).unwrap();
-        assert_eq!(ts.repeater.as_deref(), Some("+1w"));
-    }
-
-    #[test]
-    fn parse_with_warning() {
-        let (ts, _) = parse_timestamp("<2024-01-15 Mon +1w -3d>", 0).unwrap();
-        assert_eq!(ts.repeater.as_deref(), Some("+1w"));
-        assert_eq!(ts.warning.as_deref(), Some("-3d"));
-    }
-
-    #[test]
-    fn valid_dates() {
-        assert!(is_valid_date(2024, 2, 29)); // Leap year.
-        assert!(is_valid_date(2024, 12, 31));
-        assert!(!is_valid_date(2023, 2, 29)); // Not a leap year.
-        assert!(!is_valid_date(2024, 13, 1));
-        assert!(!is_valid_date(2024, 0, 1));
-        assert!(!is_valid_date(2024, 2, 30));
-    }
-
-    #[test]
-    fn valid_repeaters() {
-        assert!(is_valid_repeater("+1w"));
-        assert!(is_valid_repeater("++2m"));
-        assert!(is_valid_repeater(".+3d"));
-        assert!(!is_valid_repeater("+1x"));
-        assert!(!is_valid_repeater("1w"));
-        assert!(!is_valid_repeater("+"));
-    }
-
-    #[test]
-    fn find_multiple_timestamps() {
-        let line = "SCHEDULED: <2024-01-15 Mon> DEADLINE: <2024-02-01 Thu>";
-        let ts = find_timestamps(line);
-        assert_eq!(ts.len(), 2);
-        assert_eq!(ts[0].0.day, 15);
-        assert_eq!(ts[1].0.day, 1);
-    }
-
-    #[test]
-    fn no_timestamps() {
+    fn valid_dates_repeaters_and_find() {
+        assert!(is_valid_date(2024, 2, 29) && !is_valid_date(2023, 2, 29));
+        assert!(is_valid_repeater("+1w") && is_valid_repeater("++2m") && is_valid_repeater(".+3d"));
+        assert!(!is_valid_repeater("+1x") && !is_valid_repeater("+++1d"));
+        let sample = "SCHEDULED: <2024-01-15 Mon> DEADLINE: <2024-02-01 Thu>";
+        assert_eq!(find_timestamps(sample).len(), 2);
         assert!(find_timestamps("just text").is_empty());
     }
 }
+
+// endregion

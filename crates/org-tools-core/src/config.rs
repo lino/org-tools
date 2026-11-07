@@ -26,6 +26,7 @@ pub enum ConfigError {
 }
 
 impl std::fmt::Display for ConfigError {
+    /// Formats the configuration error with its file path and underlying cause.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConfigError::Read { path, source } => {
@@ -39,6 +40,7 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {
+    /// Returns the underlying filesystem or TOML deserialization error.
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             ConfigError::Read { source, .. } => Some(source),
@@ -46,6 +48,9 @@ impl std::error::Error for ConfigError {
         }
     }
 }
+
+/// Default lead-time days before an unwarned `DEADLINE:` appears in the agenda.
+pub const DEFAULT_DEADLINE_WARNING_DAYS: u32 = 14;
 
 /// Configuration for org-tools, loaded from `.org-tools.toml`.
 ///
@@ -59,6 +64,26 @@ pub struct Config {
     pub format: FormatConfig,
     /// Lint rule configuration.
     pub lint: LintConfig,
+    /// Agenda view configuration.
+    #[serde(default)]
+    pub agenda: AgendaConfig,
+}
+
+/// Configuration for agenda views (`[agenda]` section in `.org-tools.toml`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct AgendaConfig {
+    /// Lead-time warning window in days for deadlines without an explicit `-Nd` suffix.
+    pub deadline_warning_days: u32,
+}
+
+impl Default for AgendaConfig {
+    /// Returns default agenda settings matching Emacs (`deadline_warning_days = 14`).
+    fn default() -> Self {
+        Self {
+            deadline_warning_days: DEFAULT_DEADLINE_WARNING_DAYS,
+        }
+    }
 }
 
 /// Configuration for auto-fixable formatting rules (`F001`–`F005`).
@@ -98,6 +123,7 @@ pub struct LintConfig {
 }
 
 impl Default for FormatConfig {
+    /// Returns default formatting settings matching Emacs org-mode defaults.
     fn default() -> Self {
         Self {
             trailing_whitespace: true,
@@ -152,6 +178,7 @@ impl Config {
     }
 }
 
+/// Unit tests for `.org-tools.toml` configuration loading and defaults.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +256,19 @@ blank_lines = true
         let result = Config::load(dir.path());
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ConfigError::Parse { .. }));
+    }
+
+    /// Verifies `[agenda] deadline_warning_days` defaults to `14` and deserializes overrides.
+    #[test]
+    fn agenda_deadline_warning_days_default_and_override() {
+        let default_cfg = Config::default();
+        assert_eq!(
+            default_cfg.agenda.deadline_warning_days,
+            DEFAULT_DEADLINE_WARNING_DAYS
+        );
+        assert_eq!(default_cfg.agenda.deadline_warning_days, 14);
+
+        let custom: Config = toml::from_str("[agenda]\ndeadline_warning_days = 7\n").unwrap();
+        assert_eq!(custom.agenda.deadline_warning_days, 7);
     }
 }

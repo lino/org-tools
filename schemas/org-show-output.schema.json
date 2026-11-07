@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-show-output.schema.json",
+  "title": "org show JSON output",
+  "description": "Schema for the JSON output of 'org show <locator> --format json'.",
+  "type": "object",
+  "required": [
+    "locator",
+    "file",
+    "line",
+    "end_line",
+    "level",
+    "title",
+    "keyword",
+    "priority",
+    "tags",
+    "properties",
+    "planning",
+    "checklist_summary",
+    "checklist",
+    "no_children",
+    "truncated",
+    "char_count",
+    "content",
+    "telemetry"
+  ],
+  "properties": {
+    "locator": {
+      "type": "string",
+      "description": "Canonical OrgLocator string for the resolved entry or file node."
+    },
+    "file": {
+      "type": "string",
+      "description": "Path to the org file containing the resolved node."
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based start line number of the resolved node."
+    },
+    "end_line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based inclusive end line number of the extracted slice."
+    },
+    "level": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Heading level (0 for a level-0 file node, >= 1 for headings)."
+    },
+    "title": {
+      "type": "string",
+      "description": "Heading title text or level-0 file #+TITLE: / file stem."
+    },
+    "keyword": {
+      "type": ["string", "null"],
+      "description": "TODO keyword (e.g., 'TODO', 'NEXT', 'DONE') or null."
+    },
+    "priority": {
+      "type": ["string", "null"],
+      "description": "Priority cookie character (e.g., 'A', 'B', 'C') or null."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tags attached directly to the heading or #+FILETAGS: for file nodes."
+    },
+    "properties": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Properties from the node's :PROPERTIES: drawer."
+    },
+    "planning": {
+      "type": "object",
+      "required": ["scheduled", "deadline", "closed"],
+      "properties": {
+        "scheduled": {
+          "type": ["string", "null"],
+          "description": "SCHEDULED timestamp in YYYY-MM-DD [HH:MM] format, or null."
+        },
+        "deadline": {
+          "type": ["string", "null"],
+          "description": "DEADLINE timestamp in YYYY-MM-DD [HH:MM] format, or null."
+        },
+        "closed": {
+          "type": ["string", "null"],
+          "description": "CLOSED timestamp in YYYY-MM-DD [HH:MM] format, or null."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Planning timestamps attached to the heading."
+    },
+    "checklist_summary": {
+      "type": "object",
+      "required": ["total", "checked", "partial", "unchecked"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of plain-list checklist items in the node's own body."
+        },
+        "checked": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of checked ([X] / [x]) items."
+        },
+        "partial": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of partially completed ([-]) items."
+        },
+        "unchecked": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of unchecked ([ ]) items."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Aggregate counts across the node's plain-list checklist items."
+    },
+    "checklist": {
+      "type": "array",
+      "description": "Plain-list checklist items in the node's own body.",
+      "items": {
+        "type": "object",
+        "required": ["line", "state", "text"],
+        "properties": {
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based line number of the checklist item."
+          },
+          "state": {
+            "type": "string",
+            "enum": ["unchecked", "partial", "checked"],
+            "description": "Checkbox completion state."
+          },
+          "text": {
+            "type": "string",
+            "description": "Trimmed checklist item text."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "no_children": {
+      "type": "boolean",
+      "description": "Whether child headings were omitted via --no-children."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "Whether content was truncated to honour --max-chars."
+    },
+    "char_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of Unicode scalar values in content."
+    },
+    "content": {
+      "type": "string",
+      "description": "Bounded raw Org slice for the resolved node."
+    },
+    "markdown": {
+      "type": ["string", "null"],
+      "description": "Optional bounded GitHub Flavored Markdown rendering when requested."
+    },
+    "telemetry": {
+      "type": "object",
+      "required": ["duration_us", "files_scanned", "cache_hits", "cache_misses"],
+      "properties": {
+        "duration_us": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock execution duration in microseconds."
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of org files scanned during locator resolution."
+        },
+        "cache_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache hits."
+        },
+        "cache_misses": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache misses."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Execution duration and file-scan observability telemetry."
+    }
+  },
+  "additionalProperties": false
+}

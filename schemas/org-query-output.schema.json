@@ -6,7 +6,18 @@
   "type": "array",
   "items": {
     "type": "object",
-    "required": ["file", "line", "locator", "level", "title", "tags", "clocked_minutes"],
+    "required": [
+      "file",
+      "line",
+      "locator",
+      "level",
+      "title",
+      "tags",
+      "clocked_minutes",
+      "blocked",
+      "checklist_summary",
+      "checklist"
+    ],
     "properties": {
       "file": {
         "type": "string",
@@ -64,6 +75,63 @@
         "type": "integer",
         "minimum": 0,
         "description": "Total clocked time in minutes for this entry."
+      },
+      "blocked": {
+        "type": "boolean",
+        "description": "Whether this entry is currently blocked by an edna BLOCKER condition."
+      },
+      "checklist_summary": {
+        "type": "object",
+        "required": ["total", "checked", "partial", "unchecked"],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of plain-list checklist items on the entry."
+          },
+          "checked": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of checked ([X] / [x]) items."
+          },
+          "partial": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of partially completed ([-]) items."
+          },
+          "unchecked": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of unchecked ([ ]) items."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Aggregate completion counts across the entry's direct checklist items."
+      },
+      "checklist": {
+        "type": "array",
+        "description": "Plain-list checklist items in this entry's own body.",
+        "items": {
+          "type": "object",
+          "required": ["line", "state", "text"],
+          "properties": {
+            "line": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "1-based line number of the checklist item."
+            },
+            "state": {
+              "type": "string",
+              "enum": ["unchecked", "partial", "checked"],
+              "description": "Checkbox completion state."
+            },
+            "text": {
+              "type": "string",
+              "description": "Trimmed checklist item text."
+            }
+          },
+          "additionalProperties": false
+        }
       }
     },
     "additionalProperties": false

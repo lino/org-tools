@@ -14,6 +14,7 @@ pub mod diagnostic;
 pub mod document;
 pub mod edna;
 pub mod entry;
+pub mod export_md;
 pub mod files;
 pub mod formatter;
 pub mod id;

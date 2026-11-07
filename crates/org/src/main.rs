@@ -24,6 +24,7 @@ use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
 use commands::query::{run_query, QueryCommand};
 use commands::schema::{run_schema, SchemaArgs};
+use commands::show::{run_show, ShowArgs};
 use commands::update::{run_update, UpdateCommand};
 
 /// Operation completed successfully.
@@ -85,12 +86,14 @@ enum OrgCommand {
         #[command(subcommand)]
         command: ClockCommand,
     },
-    /// Export org entries to calendar formats.
+    /// Export org entries to calendar or Markdown formats.
     Export {
         /// Export subcommand.
         #[command(subcommand)]
         command: ExportCommand,
     },
+    /// Extract a scoped entry subtree or file node by locator.
+    Show(ShowArgs),
     /// Archive done entries to a separate file.
     Archive(ArchiveArgs),
     /// Print the JSON schema for a given output type.
@@ -139,6 +142,7 @@ fn dispatch_command(command: OrgCommand) -> i32 {
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
+        OrgCommand::Show(args) => run_show(args),
         OrgCommand::Archive(args) => run_archive(args),
         OrgCommand::Schema(args) => run_schema(&args.name),
     }

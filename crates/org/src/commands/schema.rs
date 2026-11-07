@@ -10,7 +10,7 @@ use crate::{EXIT_ERROR, EXIT_OK};
 /// CLI arguments for `org schema`.
 #[derive(Args)]
 pub(crate) struct SchemaArgs {
-    /// Schema name (diagnostic, query, blocked, stuck, deps, clock-report, clock-status, mutation).
+    /// Schema name (diagnostic, query, show, blocked, stuck, deps, clock-report, clock-status, mutation).
     pub(crate) name: String,
 }
 
@@ -23,6 +23,10 @@ const SCHEMA_REGISTRY: &[(&[&str], &str)] = &[
     (
         &["query", "entry", "entries"],
         include_str!("../../schemas/org-query-output.schema.json"),
+    ),
+    (
+        &["show"],
+        include_str!("../../schemas/org-show-output.schema.json"),
     ),
     (
         &["blocked"],
@@ -63,7 +67,7 @@ pub(crate) fn run_schema(name: &str) -> i32 {
     let Some(schema) = lookup_schema(name) else {
         eprintln!("org: unknown schema: {name}");
         eprintln!(
-            "Available: diagnostic, query, blocked, stuck, deps, clock-report, clock-status, mutation"
+            "Available: diagnostic, query, show, blocked, stuck, deps, clock-report, clock-status, mutation"
         );
         return EXIT_ERROR;
     };

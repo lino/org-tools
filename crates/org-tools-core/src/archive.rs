@@ -131,7 +131,7 @@ pub fn find_archivable_entries(
 
         // Extract the full subtree content.
         let start_line = entry.heading_line - 1; // 0-based
-        let end_line = entry.content_end_line - 1; // 0-based, exclusive
+        let end_line = entry.subtree_end_line - 1; // 0-based, exclusive
         let outline_path = doc.outline_path(idx).join("/");
 
         // Add archive metadata as properties.
@@ -143,22 +143,6 @@ pub fn find_archivable_entries(
         archived_content.push_str(heading_line);
         archived_content.push('\n');
 
-        // Check if entry has a property drawer.
-        let has_drawer = start_line + 1 < end_line
-            && lines
-                .get(start_line + 1)
-                .or_else(|| {
-                    // Skip planning line.
-                    let next = start_line + 1;
-                    if next < lines.len() && is_planning(lines[next]) {
-                        lines.get(next + 1)
-                    } else {
-                        None
-                    }
-                })
-                .is_some_and(|l| l.trim().eq_ignore_ascii_case(":PROPERTIES:"));
-
-        // If no planning line after heading, check for properties directly.
         let mut body_start = start_line + 1;
 
         // Copy planning line if present.
@@ -168,12 +152,12 @@ pub fn find_archivable_entries(
             body_start += 1;
         }
 
-        if has_drawer
-            || (body_start < end_line
-                && lines[body_start]
-                    .trim()
-                    .eq_ignore_ascii_case(":PROPERTIES:"))
-        {
+        let has_drawer = body_start < end_line
+            && lines[body_start]
+                .trim()
+                .eq_ignore_ascii_case(":PROPERTIES:");
+
+        if has_drawer {
             // Insert archive properties into existing drawer.
             archived_content.push_str(lines[body_start].trim_end()); // :PROPERTIES:
             archived_content.push('\n');
@@ -181,7 +165,7 @@ pub fn find_archivable_entries(
             archived_content.push_str(&format!(":ARCHIVE_FILE: {}\n", doc.file.display()));
             archived_content.push_str(&format!(":ARCHIVE_OLPATH: {outline_path}\n"));
             body_start += 1;
-            // Copy rest of drawer and body.
+            // Copy rest of drawer, children, and body.
             for line in &lines[body_start..end_line] {
                 archived_content.push_str(line);
                 archived_content.push('\n');
@@ -193,7 +177,7 @@ pub fn find_archivable_entries(
             archived_content.push_str(&format!(":ARCHIVE_FILE: {}\n", doc.file.display()));
             archived_content.push_str(&format!(":ARCHIVE_OLPATH: {outline_path}\n"));
             archived_content.push_str(":END:\n");
-            // Copy body content.
+            // Copy body content and children.
             for line in &lines[body_start..end_line] {
                 archived_content.push_str(line);
                 archived_content.push('\n');
@@ -206,7 +190,7 @@ pub fn find_archivable_entries(
             source_file: doc.file.display().to_string(),
             outline_path,
             start_line: entry.heading_line,
-            end_line: entry.content_end_line,
+            end_line: entry.subtree_end_line,
         });
 
         // Skip children of this entry.
@@ -335,6 +319,17 @@ mod tests {
         // Parent is done, so the whole subtree is archived as one unit.
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].title, "Parent");
+        assert!(entries[0].content.contains("** DONE Child"));
+        assert!(entries[0].content.contains("*** DONE Grandchild"));
+
+        let target = parse_archive_target("archive.org::* Archived", Path::new("test.org"));
+        let result = build_archive(&source, &doc, &entries, &target).unwrap();
+        assert!(!result.source_content.contains("Parent"));
+        assert!(!result.source_content.contains("Child"));
+        assert!(!result.source_content.contains("Grandchild"));
+        assert!(result.source_content.contains("* TODO Other"));
+        assert!(result.archive_content.contains("** DONE Child"));
+        assert!(result.archive_content.contains("*** DONE Grandchild"));
     }
 
     #[test]

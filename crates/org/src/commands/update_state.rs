@@ -263,7 +263,7 @@ fn commit_single_file_state(
     mutation: &mut MutationResult,
 ) -> bool {
     if !dry_run {
-        if let Err(e) = std::fs::write(file, &r.content) {
+        if let Err(e) = org_tools_core::files::write_file_atomic(file, &r.content) {
             let msg = format!("error writing {}: {e}", file.display());
             eprintln!("org: {msg}");
             mutation.errors.push(msg);
@@ -432,8 +432,11 @@ pub(crate) fn run_set_state(mut args: SetStateArgs) -> i32 {
 
     if args.format == MutationOutputFormat::Json {
         output_mutation(&mutation, MutationOutputFormat::Json);
-    } else if mutation.entries_affected == 0 && !args.dry_run {
+    } else if mutation.entries_affected == 0 && !args.dry_run && mutation.errors.is_empty() {
         println!("No entries to change");
+    }
+    if !mutation.errors.is_empty() {
+        return EXIT_ERROR;
     }
     EXIT_OK
 }

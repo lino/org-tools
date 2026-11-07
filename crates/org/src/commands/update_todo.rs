@@ -279,7 +279,7 @@ pub(crate) fn run_add_todo(args: AddTodoArgs) -> i32 {
         };
 
     if !args.dry_run {
-        if let Err(e) = std::fs::write(&file_path, &finalized.content) {
+        if let Err(e) = org_tools_core::files::write_file_atomic(&file_path, &finalized.content) {
             eprintln!("org: error writing {}: {e}", file_path.display());
             return EXIT_ERROR;
         }

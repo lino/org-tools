@@ -218,12 +218,57 @@ fn remove_closed_timestamp(entry: &OrgEntry, lines: &[&str], content: &str) -> O
     Some(Fix::new(Span::new(remove_start, remove_end), String::new()))
 }
 
-/// Returns a formatted Org inactive timestamp payload for the current UTC time (`YYYY-MM-DD Day HH:MM`).
+/// Extracts local `(year, month, day, hour, minute, dow)` from Unix epoch `secs` via `libc`.
+fn local_timestamp_parts(secs: i64) -> Option<(u16, u8, u8, u32, u32, u8)> {
+    #[cfg(unix)]
+    unsafe {
+        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+        let time_t = secs as libc::time_t;
+        if !libc::localtime_r(&time_t, tm.as_mut_ptr()).is_null() {
+            let tm = tm.assume_init();
+            return Some((
+                (tm.tm_year + 1900) as u16,
+                (tm.tm_mon + 1) as u8,
+                tm.tm_mday as u8,
+                tm.tm_hour as u32,
+                tm.tm_min as u32,
+                ((tm.tm_wday + 6) % 7) as u8,
+            ));
+        }
+    }
+
+    #[cfg(windows)]
+    unsafe {
+        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+        let time_t = secs as libc::time_t;
+        if libc::localtime_s(tm.as_mut_ptr(), &time_t) == 0 {
+            let tm = tm.assume_init();
+            return Some((
+                (tm.tm_year + 1900) as u16,
+                (tm.tm_mon + 1) as u8,
+                tm.tm_mday as u8,
+                tm.tm_hour as u32,
+                tm.tm_min as u32,
+                ((tm.tm_wday + 6) % 7) as u8,
+            ));
+        }
+    }
+
+    None
+}
+
+/// Returns a formatted Org inactive timestamp payload for the current local time (`YYYY-MM-DD Day HH:MM`).
 pub fn now_timestamp() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
+
+    if let Some((year, month, d, h, m, dow)) = local_timestamp_parts(secs) {
+        const DAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let day_name = DAY_NAMES[dow as usize % 7];
+        return format!("{year:04}-{month:02}-{d:02} {day_name} {h:02}:{m:02}");
+    }
 
     let days = secs / 86_400;
     let time_of_day = secs % 86_400;

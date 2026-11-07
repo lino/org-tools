@@ -1540,3 +1540,39 @@ fn file_node_id_locator_mutations_handle_sentinel_cleanly() {
         .assert()
         .code(2);
 }
+
+/// Verifies `org archive` leaves the source file intact and exits 2 when writing the archive fails.
+#[test]
+fn archive_failure_preserves_source_and_exits_2() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("source.org");
+    let original = "* DONE Task to archive\nSome body text\n";
+    fs::write(&file, original).unwrap();
+
+    let bad_target = format!("{}/cannot_create_dir/archive.org", file.display());
+    org()
+        .args(["archive", "--target", &bad_target])
+        .arg(file.to_str().unwrap())
+        .assert()
+        .code(2);
+
+    assert_eq!(fs::read_to_string(&file).unwrap(), original);
+}
+
+/// Verifies malformed `.org-tools.toml` files cause `org` to report a parse error and exit 2.
+#[test]
+fn invalid_config_file_exits_2() {
+    let dir = TempDir::new().unwrap();
+    let config_file = dir.path().join(".org-tools.toml");
+    let org_file = dir.path().join("test.org");
+    fs::write(&config_file, "invalid toml = [[[").unwrap();
+    fs::write(&org_file, "* TODO Test\n").unwrap();
+
+    org()
+        .current_dir(dir.path())
+        .args(["fmt", "check"])
+        .arg(org_file.to_str().unwrap())
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("error parsing"));
+}

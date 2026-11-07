@@ -162,7 +162,7 @@ pub(crate) fn collect_predicate_matches<'a>(
     let mut matches = Vec::new();
     for doc in docs {
         for (idx, entry) in doc.entries.iter().enumerate() {
-            if query::predicate::matches(pred, entry, doc, doc_refs, today) {
+            if query::predicate::matches_with_body(pred, entry, idx, None, doc, doc_refs, today) {
                 matches.push(query::output::MatchedEntry {
                     doc,
                     entry_idx: idx,
@@ -292,6 +292,12 @@ fn agenda_item_to_json(item: &query::agenda::AgendaItem<'_>) -> serde_json::Valu
         (Some(h), Some(m)) => Some(format!("{h:02}:{m:02}")),
         _ => None,
     };
+    let (kind_str, overdue) = match item.kind {
+        query::agenda::AgendaKind::Scheduled => ("Scheduled", None),
+        query::agenda::AgendaKind::Deadline => ("Deadline", None),
+        query::agenda::AgendaKind::OverdueScheduled(d) => ("Scheduled", Some(d)),
+        query::agenda::AgendaKind::OverdueDeadline(d) => ("Deadline", Some(d)),
+    };
     serde_json::json!({
         "file": item.file.display().to_string(),
         "line": item.entry.heading_line,
@@ -299,7 +305,8 @@ fn agenda_item_to_json(item: &query::agenda::AgendaItem<'_>) -> serde_json::Valu
         "priority": item.entry.priority.map(|p| p.to_string()),
         "title": item.entry.title,
         "tags": item.entry.tags,
-        "kind": format!("{:?}", item.kind),
+        "kind": kind_str,
+        "overdue_days": overdue,
         "time": time,
     })
 }

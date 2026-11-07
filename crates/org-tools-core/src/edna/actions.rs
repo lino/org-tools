@@ -637,7 +637,7 @@ fn apply_archive_action(
 
     let lines: Vec<&str> = source.content.split('\n').collect();
     let start = (entry.heading_line - 1).min(lines.len());
-    let end = (entry.content_end_line - 1).min(lines.len());
+    let end = (entry.subtree_end_line - 1).min(lines.len());
     let archived_block = build_archived_subtree(doc, entry_idx, &lines[start..end]);
 
     let mut remaining = lines;

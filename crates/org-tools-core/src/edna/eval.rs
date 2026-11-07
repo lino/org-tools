@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=690 reason="Cohesive multi-finder scope evaluator, structural/file/olp finders, and condition predicates"
+// fritz: allow-file-length=710 reason="Cohesive multi-finder scope evaluator, structural/file/olp finders, and condition predicates"
 
 //! Multi-finder scope evaluation, condition predicates, and `:BLOCKER:` analysis.
 //!
@@ -201,15 +201,26 @@ pub(crate) fn resolve_finder_eval<'a>(
 
 /// Resolves `ids(...)` across heading `:ID:` properties and level-0 file `:ID:` drawers.
 fn resolve_ids_finder<'a>(ids: &[String], ctx: &EdnaContext<'a>) -> Vec<EvalTarget<'a>> {
+    resolve_ids_with_missing(ids, ctx).0
+}
+
+/// Resolves `ids(...)` into matched [`EvalTarget`]s and any unresolved clean IDs.
+fn resolve_ids_with_missing<'a>(
+    ids: &[String],
+    ctx: &EdnaContext<'a>,
+) -> (Vec<EvalTarget<'a>>, Vec<String>) {
     let mut results = Vec::new();
+    let mut missing = Vec::new();
     for raw_id in ids {
         let clean_id = raw_id.strip_prefix("id:").unwrap_or(raw_id.as_str());
+        let mut found = false;
         for &doc in ctx.all_docs {
             if let Some(idx) = doc.find_by_id(clean_id) {
                 results.push(EvalTarget {
                     doc: DocHandle::Borrowed(doc),
                     entry_idx: idx,
                 });
+                found = true;
                 break;
             }
             if doc.has_file_id(clean_id) {
@@ -217,11 +228,15 @@ fn resolve_ids_finder<'a>(ids: &[String], ctx: &EdnaContext<'a>) -> Vec<EvalTarg
                     doc: DocHandle::Borrowed(doc),
                     entry_idx: FILE_NODE_ENTRY_INDEX,
                 });
+                found = true;
                 break;
             }
         }
+        if !found {
+            missing.push(clean_id.to_string());
+        }
     }
-    results
+    (results, missing)
 }
 
 /// Resolves `match("tag")` across all workspace documents.
@@ -526,7 +541,7 @@ fn evaluate_re_search(
         if let Some(entry) = target.entry() {
             let lines: Vec<&str> = content.split('\n').collect();
             let start = (entry.heading_line - 1).min(lines.len());
-            let end = (entry.content_end_line - 1).min(lines.len());
+            let end = (entry.subtree_end_line - 1).min(lines.len());
             let subtree = lines[start..end].join("\n");
             return regex.is_match(&subtree);
         }
@@ -621,7 +636,23 @@ fn evaluate_blocker_exprs<'a>(
                     *scope = BlockerScope::new();
                 }
                 scope.has_finder = true;
-                scope.merge_targets(resolve_finder_eval(finder, ctx));
+                if let Finder::Ids(ids) = finder {
+                    let (targets, missing) = resolve_ids_with_missing(ids, ctx);
+                    for missing_id in missing {
+                        details.push(BlockerDetail {
+                            title: format!("Unresolved blocker target ID: {missing_id}"),
+                            keyword: None,
+                            file: String::new(),
+                            line: 0,
+                            locator: format!("id:{missing_id}"),
+                            condition_desc: "referenced blocker ID not found in documents"
+                                .to_string(),
+                        });
+                    }
+                    scope.merge_targets(targets);
+                } else {
+                    scope.merge_targets(resolve_finder_eval(finder, ctx));
+                }
             }
             EdnaExpr::Condition(condition) => {
                 evaluate_blocker_condition(condition, ctx, scope, details);

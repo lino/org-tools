@@ -994,7 +994,7 @@ fn get_cell_value(table: &EvalTable, row: usize, col: usize) -> Result<f64, Tblf
                 match &cells[col] {
                     CellValue::Number(n) => Ok(*n),
                     CellValue::Empty => Ok(0.0),
-                    CellValue::Text(s) => s.parse::<f64>().map_err(|_| {
+                    CellValue::Text(s) => parse_number(s).ok_or_else(|| {
                         TblfmError::Eval(format!(
                             "cell @{}${} is not numeric: {s}",
                             row + 1,
@@ -1606,7 +1606,7 @@ mod tests {
     #[allow(clippy::approx_constant)]
     fn format_result_decimal() {
         assert_eq!(format_result(4.5), "4.5");
-        assert_eq!(format_result(3.14), "3.14");
+        assert_eq!(format_result(3.25), "3.25");
     }
 
     #[test]
@@ -1629,5 +1629,16 @@ mod tests {
         let assignments = parse_tblfm_line("$2=round(abs($1))").unwrap();
         let updates = evaluate(&assignments[0], &table, &constants).unwrap();
         assert_eq!(updates[0].2, "4");
+    }
+
+    /// Verifies cell references strip currency prefixes and comma group separators via `parse_number`.
+    #[test]
+    fn eval_cell_with_currency_and_commas() {
+        let table = parse_eval_table(&["| Price | Subtotal |", "|---|---|", "| $1,250.50 | |"]);
+        let constants = HashMap::new();
+
+        let assignments = parse_tblfm_line("$2=$1*2").unwrap();
+        let updates = evaluate(&assignments[0], &table, &constants).unwrap();
+        assert_eq!(updates[0].2, "2501");
     }
 }

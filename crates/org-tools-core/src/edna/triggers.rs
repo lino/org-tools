@@ -230,15 +230,11 @@ impl WorkspaceOverlay {
             .collect()
     }
 
-    /// Writes all modified overlay files to disk, returning the number of files written.
+    /// Writes all modified overlay files atomically to disk, returning the number of files written.
     pub fn commit_to_disk(&self) -> Result<usize, String> {
         let modified = self.modified_files();
         for (path, content) in &modified {
-            if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("error creating directory {}: {e}", parent.display()))?;
-            }
-            std::fs::write(path, content)
+            crate::files::write_file_atomic(path, content)
                 .map_err(|e| format!("error writing {}: {e}", path.display()))?;
         }
         Ok(modified.len())

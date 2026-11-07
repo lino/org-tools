@@ -32,6 +32,7 @@ fn make_doc_with_entries(entries_data: &[(&str, Option<&str>, Option<usize>)]) -
             heading_line: i + 1,
             heading_offset: 0,
             content_end_line: i + 2,
+            subtree_end_line: i + 2,
             parent: *parent,
             children: Vec::new(),
             raw_heading: format!("* {title}"),
@@ -56,6 +57,8 @@ fn make_doc_with_entries(entries_data: &[(&str, Option<&str>, Option<usize>)]) -
         tag_spec: Default::default(),
         link_abbreviations: HashMap::new(),
         table_constants: HashMap::new(),
+        id_index: HashMap::new(),
+        custom_id_index: HashMap::new(),
     }
 }
 
@@ -71,42 +74,31 @@ fn parse_simple_finder() {
     assert_eq!(exprs, vec![EdnaExpr::Finder(Finder::NextSibling)]);
 }
 
-/// Verifies parsing quoted `ids(...)` arguments.
+/// Verifies parsing both quoted and bare-word `ids(...)` arguments.
 #[test]
 fn parse_ids_finder() {
-    let (exprs, errors) = parse_edna("ids(\"abc-123\" \"def-456\")");
-    assert!(errors.is_empty());
-    assert_eq!(
-        exprs,
-        vec![EdnaExpr::Finder(Finder::Ids(vec![
-            "abc-123".to_string(),
-            "def-456".to_string()
-        ]))]
-    );
+    let expected = vec![EdnaExpr::Finder(Finder::Ids(vec![
+        "abc-123".to_string(),
+        "def-456".to_string(),
+    ]))];
+    for raw in ["ids(\"abc-123\" \"def-456\")", "ids(abc-123 def-456)"] {
+        let (exprs, errors) = parse_edna(raw);
+        assert!(errors.is_empty());
+        assert_eq!(exprs, expected);
+    }
 }
 
-/// Verifies parsing bare-word `ids(...)` arguments.
-#[test]
-fn parse_ids_bare_words() {
-    let (exprs, errors) = parse_edna("ids(abc-123 def-456)");
-    assert!(errors.is_empty());
-    assert_eq!(
-        exprs,
-        vec![EdnaExpr::Finder(Finder::Ids(vec![
-            "abc-123".to_string(),
-            "def-456".to_string()
-        ]))]
-    );
-}
-
-/// Verifies parsing `todo!("DONE")` action expressions.
+/// Verifies parsing `todo!("DONE")` and two-argument `set-property!("KEY" "VALUE")` actions.
 #[test]
 fn parse_action() {
-    let (exprs, errors) = parse_edna("todo!(\"DONE\")");
+    let (exprs, errors) = parse_edna("todo!(\"DONE\") set-property!(\"KEY\" \"VALUE\")");
     assert!(errors.is_empty());
     assert_eq!(
         exprs,
-        vec![EdnaExpr::Action(Action::Todo("DONE".to_string()))]
+        vec![
+            EdnaExpr::Action(Action::Todo("DONE".into())),
+            EdnaExpr::Action(Action::SetProperty("KEY".into(), "VALUE".into())),
+        ]
     );
 }
 
@@ -136,20 +128,6 @@ fn parse_multiple_exprs() {
     assert_eq!(exprs.len(), 2);
     assert!(matches!(exprs[0], EdnaExpr::Finder(Finder::Ids(_))));
     assert!(matches!(exprs[1], EdnaExpr::Action(Action::Todo(_))));
-}
-
-/// Verifies parsing two-argument `set-property!` actions.
-#[test]
-fn parse_set_property_action() {
-    let (exprs, errors) = parse_edna("set-property!(\"KEY\" \"VALUE\")");
-    assert!(errors.is_empty());
-    assert_eq!(
-        exprs,
-        vec![EdnaExpr::Action(Action::SetProperty(
-            "KEY".to_string(),
-            "VALUE".to_string()
-        ))]
-    );
 }
 
 /// Verifies parsing `match("work")` tag finders.
@@ -434,6 +412,31 @@ fn chained_trigger_conditions_short_circuit_when_first_fails() {
     let res = execute_trigger_cascade(&mut overlay, vec![seed], false);
     assert_eq!(res.entries_affected, 0);
     assert!(!overlay.content(&f_path).unwrap().contains(":FIRED:"));
+}
+
+/// Verifies unresolved and partially-unresolved `:BLOCKER:` IDs report blocked details.
+#[test]
+fn unresolved_and_partial_blocker_ids_are_blocked() {
+    let mut doc = make_doc_with_entries(&[
+        ("Dep Done", Some("DONE"), None),
+        ("Blocked", Some("TODO"), None),
+    ]);
+    doc.entries[0]
+        .properties
+        .insert("ID".into(), "dep-done".into());
+    doc.entries[1]
+        .properties
+        .insert("BLOCKER".into(), "ids(\"dep-done\" \"missing-id\")".into());
+    let docs: Vec<&OrgDocument> = vec![&doc];
+    let ctx = EdnaContext {
+        all_docs: &docs,
+        doc: &doc,
+        entry_idx: 1,
+    };
+    assert!(is_blocked(&ctx));
+    let details = blocking_details(&ctx);
+    assert_eq!(details.len(), 1);
+    assert_eq!(details[0].locator, "id:missing-id");
 }
 
 // endregion

@@ -27,6 +27,7 @@ ignore = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+libc = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

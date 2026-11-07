@@ -474,6 +474,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "ignore",
+ "libc",
  "org-tools-core",
  "predicates",
  "serde",
@@ -488,6 +489,7 @@ version = "0.1.4"
 dependencies = [
  "clap",
  "ignore",
+ "libc",
  "regex",
  "rusqlite",
  "serde",

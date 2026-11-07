@@ -48,6 +48,10 @@ run = "cargo install --locked --path crates/org"
 description = "Build in debug mode and run"
 run = "cargo run --"
 
+[tasks."hooks:install"]
+description = "Install git pre-commit and pre-push hooks"
+run = "pre-commit install --hook-type pre-commit --hook-type pre-push"
+
 [tasks.check]
 description = "Run org-tools check on edge case fixtures"
 run = "cargo run -- fmt check tests/fixtures/edge_cases/"

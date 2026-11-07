@@ -246,7 +246,7 @@ fn process_add_id_file(
     let (new_content, details) = applied;
     let added_count = details.len();
     if !args.dry_run {
-        if let Err(e) = std::fs::write(file, &new_content) {
+        if let Err(e) = org_tools_core::files::write_file_atomic(file, &new_content) {
             let msg = format!("error writing {}: {e}", file.display());
             eprintln!("org: {msg}");
             mutation.errors.push(msg);
@@ -329,8 +329,11 @@ pub(crate) fn run_add_id(args: AddIdArgs) -> i32 {
 
     if args.format == MutationOutputFormat::Json {
         output_mutation(&mutation, MutationOutputFormat::Json);
-    } else if mutation.entries_affected == 0 && !args.dry_run {
+    } else if mutation.entries_affected == 0 && !args.dry_run && mutation.errors.is_empty() {
         println!("All entries already have IDs");
+    }
+    if !mutation.errors.is_empty() {
+        return EXIT_ERROR;
     }
     EXIT_OK
 }

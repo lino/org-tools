@@ -323,6 +323,9 @@ fn resolve_id_across_paths(
     for file_path in &files {
         let source =
             SourceFile::from_path(file_path).map_err(|e| LocatorError::IoError(e.to_string()))?;
+        if !source.content.contains(id) {
+            continue;
+        }
         let doc = OrgDocument::from_source(&source);
         if let Ok(resolved) = resolve_in_document(&locator, &doc) {
             return Ok(resolved);

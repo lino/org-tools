@@ -2,7 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 repos:
-  # Rust: formatting, all-targets linting, and Org documentation dogfooding
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+
+  # Rust: formatting, all-targets linting, test pre-push gate, and Org doc dogfooding
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -18,6 +25,14 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
 
       # org-tools: lint and check formatting on docs/ and README.org
       - id: org-fmt

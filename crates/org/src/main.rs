@@ -149,7 +149,13 @@ fn load_config(cli_config: &Option<PathBuf>) -> Config {
         return load_explicit_config(path);
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    Config::load(&cwd)
+    match Config::load(&cwd) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("org: {e}");
+            process::exit(EXIT_ERROR);
+        }
+    }
 }
 
 /// Dispatches agent, graph, cache, archive, and schema subcommands.

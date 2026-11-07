@@ -259,9 +259,9 @@ fn format_entry_block(opts: &NewEntryOpts) -> String {
     heading
 }
 
-/// Inserts `block` at the end of `parent`'s content section.
+/// Inserts `block` at the end of `parent`'s full subtree (after existing children).
 fn insert_after_parent(content: &mut String, parent: &OrgEntry, block: &str) {
-    let insert_line = parent.content_end_line - 1;
+    let insert_line = parent.subtree_end_line - 1;
     let lines: Vec<&str> = content.split('\n').collect();
     let clamped_line = insert_line.min(lines.len());
     let insert_offset: usize = lines[..clamped_line].iter().map(|l| l.len() + 1).sum();
@@ -305,25 +305,25 @@ mod tests {
         (source, doc)
     }
 
+    /// Builds default `TODO` [`NewEntryOpts`] for `title` at `level`.
+    fn todo_opts(title: &str, level: usize) -> NewEntryOpts {
+        NewEntryOpts {
+            title: title.to_string(),
+            level,
+            keyword: Some("TODO".to_string()),
+            priority: None,
+            tags: vec![],
+            scheduled: None,
+            deadline: None,
+        }
+    }
+
     /// Verifies adding a top-level TODO entry to an empty document.
     #[test]
     fn add_entry_to_empty_file() {
         let source = SourceFile::new("test.org", "".to_string());
         let doc = OrgDocument::from_source(&source);
-        let result = add_entry(
-            &source,
-            &doc,
-            None,
-            &NewEntryOpts {
-                title: "New task".to_string(),
-                level: 1,
-                keyword: Some("TODO".to_string()),
-                priority: None,
-                tags: vec![],
-                scheduled: None,
-                deadline: None,
-            },
-        );
+        let result = add_entry(&source, &doc, None, &todo_opts("New task", 1));
         assert!(result.content.contains("* TODO New task"));
     }
 
@@ -331,20 +331,7 @@ mod tests {
     #[test]
     fn add_entry_at_end() {
         let (source, doc) = make_doc("* Existing\n");
-        let result = add_entry(
-            &source,
-            &doc,
-            None,
-            &NewEntryOpts {
-                title: "Second".to_string(),
-                level: 1,
-                keyword: Some("TODO".to_string()),
-                priority: None,
-                tags: vec![],
-                scheduled: None,
-                deadline: None,
-            },
-        );
+        let result = add_entry(&source, &doc, None, &todo_opts("Second", 1));
         assert!(result.content.contains("* Existing\n"));
         assert!(result.content.contains("* TODO Second\n"));
     }
@@ -375,22 +362,20 @@ mod tests {
     #[test]
     fn add_entry_as_child() {
         let (source, doc) = make_doc("* Parent\nSome text.\n");
-        let result = add_entry(
-            &source,
-            &doc,
-            Some(0),
-            &NewEntryOpts {
-                title: "Child".to_string(),
-                level: 2,
-                keyword: Some("TODO".to_string()),
-                priority: None,
-                tags: vec![],
-                scheduled: None,
-                deadline: None,
-            },
-        );
+        let result = add_entry(&source, &doc, Some(0), &todo_opts("Child", 2));
         assert!(result.content.contains("* Parent\n"));
         assert!(result.content.contains("** TODO Child\n"));
+    }
+
+    /// Verifies inserting a second child places it after the first child's subtree and before the next sibling.
+    #[test]
+    fn add_entry_as_second_child() {
+        let (source, doc) = make_doc("* Parent\n** First Child\nBody of first child\n* Sibling\n");
+        let result = add_entry(&source, &doc, Some(0), &todo_opts("Second Child", 2));
+        let first_pos = result.content.find("** First Child").unwrap();
+        let second_pos = result.content.find("** TODO Second Child").unwrap();
+        let sibling_pos = result.content.find("* Sibling").unwrap();
+        assert!(first_pos < second_pos && second_pos < sibling_pos);
     }
 
     /// Verifies that `CheckboxState`, `ChecklistItem`, and `ChecklistSummary` round-trip through JSON.

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::Subcommand;
 
 use org_tools_core::document::OrgDocument;
-use org_tools_core::files::collect_org_files;
+use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
 use org_tools_core::runner::Runner;
 use org_tools_core::source::SourceFile;
@@ -95,45 +95,50 @@ fn run_check_stdin(format: OutputFormat, fix: bool, runner: &Runner) -> i32 {
     EXIT_OK
 }
 
-/// Applies auto-fixes to a single file for `org fmt check --fix`, returning whether lint issues remain.
+/// Applies auto-fixes to one file for `org fmt check --fix`, returning `(has_lint_issues, has_io_error)`.
 fn fix_single_file(
     file: &Path,
     format: OutputFormat,
     runner: &Runner,
     workspace_docs: &[OrgDocument],
-) -> bool {
+) -> (bool, bool) {
     let source = match SourceFile::from_path(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("org: error reading {}: {}", file.display(), e);
-            return false;
+            return (false, true);
         }
     };
     let (formatted, lint_diags) = runner.format_with_workspace(&source, workspace_docs);
+    let mut io_error = false;
     if formatted != source.content {
-        if let Err(e) = std::fs::write(file, &formatted) {
+        if let Err(e) = write_file_atomic(file, &formatted) {
             eprintln!("org: error writing {}: {}", file.display(), e);
+            io_error = true;
         } else {
             println!("Fixed: {}", file.display());
         }
     }
     if !lint_diags.is_empty() {
         print!("{}", render_diagnostics(&lint_diags, format));
-        return true;
+        return (true, io_error);
     }
-    false
+    (false, io_error)
 }
 
 /// Runs `org fmt check --fix` across all collected Org files.
 fn run_check_fix_files(files: &[PathBuf], format: OutputFormat, runner: &Runner) -> i32 {
     let workspace_docs = parse_workspace_docs(files);
     let mut has_issues = false;
+    let mut has_io_error = false;
     for file in files {
-        if fix_single_file(file, format, runner, &workspace_docs) {
-            has_issues = true;
-        }
+        let (issues, io_err) = fix_single_file(file, format, runner, &workspace_docs);
+        has_issues |= issues;
+        has_io_error |= io_err;
     }
-    if has_issues {
+    if has_io_error {
+        EXIT_ERROR
+    } else if has_issues {
         EXIT_ISSUES
     } else {
         EXIT_OK
@@ -144,15 +149,21 @@ fn run_check_fix_files(files: &[PathBuf], format: OutputFormat, runner: &Runner)
 fn run_check_readonly_files(files: &[PathBuf], format: OutputFormat, runner: &Runner) -> i32 {
     let workspace_docs = parse_workspace_docs(files);
     let mut all_diagnostics = Vec::new();
+    let mut has_io_error = false;
     for file in files {
         match SourceFile::from_path(file) {
             Ok(source) => {
                 all_diagnostics.extend(runner.check_with_workspace(&source, &workspace_docs))
             }
-            Err(e) => eprintln!("org: error reading {}: {}", file.display(), e),
+            Err(e) => {
+                eprintln!("org: error reading {}: {}", file.display(), e);
+                has_io_error = true;
+            }
         }
     }
-    if !all_diagnostics.is_empty() {
+    if has_io_error {
+        EXIT_ERROR
+    } else if !all_diagnostics.is_empty() {
         print!("{}", render_diagnostics(&all_diagnostics, format));
         EXIT_ISSUES
     } else {
@@ -201,24 +212,25 @@ fn run_format_stdin(check: bool, runner: &Runner) -> i32 {
     EXIT_OK
 }
 
-/// Formats a single file and returns `(changed, has_lint_issues)`.
+/// Formats a single file and returns `(changed, has_lint_issues, has_io_error)`.
 fn format_single_file(
     file: &Path,
     check: bool,
     stdout: bool,
     runner: &Runner,
     workspace_docs: &[OrgDocument],
-) -> (bool, bool) {
+) -> (bool, bool, bool) {
     let source = match SourceFile::from_path(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("org: error reading {}: {}", file.display(), e);
-            return (false, false);
+            return (false, false, true);
         }
     };
     let (formatted, lint_diags) = runner.format_with_workspace(&source, workspace_docs);
     let changed = formatted != source.content;
     let has_lint = !lint_diags.is_empty();
+    let mut io_error = false;
     if has_lint {
         print!("{}", render_diagnostics(&lint_diags, OutputFormat::Human));
     }
@@ -229,13 +241,14 @@ fn format_single_file(
     } else if stdout {
         print!("{formatted}");
     } else if changed {
-        if let Err(e) = std::fs::write(file, &formatted) {
+        if let Err(e) = write_file_atomic(file, &formatted) {
             eprintln!("org: error writing {}: {}", file.display(), e);
+            io_error = true;
         } else {
             println!("Formatted: {}", file.display());
         }
     }
-    (changed, has_lint)
+    (changed, has_lint, io_error)
 }
 
 /// Dispatches `org fmt format` between piped stdin and filesystem targets.
@@ -251,12 +264,17 @@ fn run_format(paths: &[PathBuf], check: bool, stdout: bool, runner: &Runner) -> 
     let workspace_docs = parse_workspace_docs(&files);
     let mut has_changes = false;
     let mut has_lint_issues = false;
+    let mut has_io_error = false;
     for file in &files {
-        let (changed, lint) = format_single_file(file, check, stdout, runner, &workspace_docs);
+        let (changed, lint, io_err) =
+            format_single_file(file, check, stdout, runner, &workspace_docs);
         has_changes |= changed;
         has_lint_issues |= lint;
+        has_io_error |= io_err;
     }
-    if (check && has_changes) || has_lint_issues {
+    if has_io_error {
+        EXIT_ERROR
+    } else if (check && has_changes) || has_lint_issues {
         EXIT_ISSUES
     } else {
         EXIT_OK

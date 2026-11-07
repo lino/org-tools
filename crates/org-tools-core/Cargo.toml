@@ -19,6 +19,12 @@ regex = { workspace = true }
 rusqlite = { workspace = true }
 unicode-width = { workspace = true }
 uuid = { workspace = true }
+tempfile = { workspace = true }
+libc = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
+
+[[bench]]
+name = "core_bench"
+harness = false
+

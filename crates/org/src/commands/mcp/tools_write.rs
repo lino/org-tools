@@ -3,7 +3,6 @@
 
 //! Mutating MCP tool handlers (`org_update_state`, `org_fmt_file`) with warm cache invalidation.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -197,7 +196,7 @@ fn apply_state_and_cascade(
         return run_confined_cascade(file, doc, primary, details, display_ws, canon_ws, dry_run);
     }
     if !dry_run {
-        fs::write(file, &primary.content)
+        org_tools_core::files::write_file_atomic(file, &primary.content)
             .map_err(|e| format!("error writing {}: {e}", file.display()))?;
     }
     Ok((
@@ -354,7 +353,8 @@ fn execute_fmt_on_file(
         .filter_map(|p| SourceFile::from_path(&p).ok())
         .map(|s| OrgDocument::from_source(&s))
         .collect();
-    let runner = Runner::new(Config::load(norm_ws));
+    let cfg = Config::load(norm_ws).map_err(|e| format!("invalid config: {e}"))?;
+    let runner = Runner::new(cfg);
 
     if check_only {
         let diags = runner.check_with_workspace(&source, &workspace_docs);
@@ -368,7 +368,7 @@ fn execute_fmt_on_file(
     let (formatted, diags) = runner.format_with_workspace(&source, &workspace_docs);
     let changed = formatted != source.content;
     if changed {
-        fs::write(target, &formatted)
+        org_tools_core::files::write_file_atomic(target, &formatted)
             .map_err(|e| format!("error writing {}: {e}", target.display()))?;
     }
     let json_diags: Vec<Value> =

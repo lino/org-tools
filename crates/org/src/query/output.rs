@@ -332,13 +332,8 @@ fn evaluate_stuck_candidate<'a>(
 
     let (mut done, mut actionable, mut blocked_count, mut waiting) = (0, 0, 0, 0);
     for &ci in &entry.children {
-        classify_project_child(
-            doc,
-            ci,
-            doc_refs,
-            today,
-            (&mut done, &mut actionable, &mut blocked_count, &mut waiting),
-        );
+        let counts = (&mut done, &mut actionable, &mut blocked_count, &mut waiting);
+        classify_project_child(doc, ci, doc_refs, today, counts);
     }
 
     (actionable == 0).then_some(StuckProject {
@@ -354,24 +349,25 @@ fn evaluate_stuck_candidate<'a>(
 /// Classifies a single project child into done, waiting, blocked, or actionable buckets.
 fn classify_project_child(
     doc: &OrgDocument,
-    child_idx: usize,
-    doc_refs: &[&OrgDocument],
+    ci: usize,
+    refs: &[&OrgDocument],
     today: (u16, u8, u8),
     counts: (&mut usize, &mut usize, &mut usize, &mut usize),
 ) {
-    let child = &doc.entries[child_idx];
+    let child = &doc.entries[ci];
     let Some(kw) = child.keyword.as_deref() else {
         return;
     };
-    let is_actionable = predicate::matches(&Predicate::Actionable, child, doc, doc_refs, today);
+    let act = Predicate::Actionable;
+    let is_actionable = predicate::matches_with_body(&act, child, ci, None, doc, refs, today);
     if doc.todo_keywords.is_done(kw) {
         *counts.0 += 1;
     } else if kw.to_uppercase().contains("WAIT") || child.properties.contains_key("WAITING_FOR") {
         *counts.3 += 1;
     } else if edna::is_blocked(&EdnaContext {
-        all_docs: doc_refs,
+        all_docs: refs,
         doc,
-        entry_idx: child_idx,
+        entry_idx: ci,
     }) {
         *counts.2 += 1;
     } else if is_actionable {

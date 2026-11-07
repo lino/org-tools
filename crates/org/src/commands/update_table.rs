@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use org_tools_core::document::OrgDocument;
-use org_tools_core::files::collect_org_files;
+use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::source::SourceFile;
 
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
@@ -77,7 +77,7 @@ fn process_add_cookie_file(
     };
 
     if !dry_run {
-        if let Err(e) = std::fs::write(file, &result.content) {
+        if let Err(e) = write_file_atomic(file, &result.content) {
             let msg = format!("error writing {}: {e}", file.display());
             eprintln!("org: {msg}");
             mutation.errors.push(msg);
@@ -120,8 +120,11 @@ pub(crate) fn run_add_cookie(
 
     if format == MutationOutputFormat::Json {
         output_mutation(&mutation, MutationOutputFormat::Json);
-    } else if mutation.entries_affected == 0 && !dry_run {
+    } else if mutation.entries_affected == 0 && !dry_run && mutation.errors.is_empty() {
         println!("All cookies are up to date");
+    }
+    if !mutation.errors.is_empty() {
+        return EXIT_ERROR;
     }
     EXIT_OK
 }
@@ -162,7 +165,7 @@ fn process_calc_file(file: &Path, dry_run: bool, mutation: &mut MutationResult) 
         });
 
         if !dry_run {
-            if let Err(e) = std::fs::write(file, &result.content) {
+            if let Err(e) = write_file_atomic(file, &result.content) {
                 mutation
                     .errors
                     .push(format!("{}: write error: {e}", file.display()));
@@ -193,6 +196,9 @@ pub(crate) fn run_calc(paths: Vec<PathBuf>, dry_run: bool, format: MutationOutpu
 
     if has_emacs_error {
         return EXIT_REQUIRES_EMACS;
+    }
+    if !mutation.errors.is_empty() {
+        return EXIT_ERROR;
     }
     EXIT_OK
 }

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=1820 reason="Cohesive OrgDocument and OrgEntry single-pass parser with comprehensive behavioural unit test suite"
+// fritz: allow-file-length=1860 reason="Cohesive OrgDocument and OrgEntry single-pass parser with comprehensive behavioural unit test suite"
 
 //! Lightweight heading tree model for org-mode documents.
 //!
@@ -74,6 +74,10 @@ pub struct OrgDocument {
     ///
     /// Spec: [§3.5.2 References](https://orgmode.org/manual/References.html)
     pub table_constants: HashMap<String, String>,
+    /// Index mapping heading `:ID:` values to entry indices in [`Self::entries`].
+    pub id_index: HashMap<String, usize>,
+    /// Index mapping heading `:CUSTOM_ID:` values to entry indices in [`Self::entries`].
+    pub custom_id_index: HashMap<String, usize>,
 }
 
 /// A single heading entry in an org document.
@@ -105,6 +109,8 @@ pub struct OrgEntry {
     pub heading_offset: usize,
     /// Line number where this entry's content ends (exclusive, 1-based).
     pub content_end_line: usize,
+    /// Line number where this entry's full subtree ends (exclusive, 1-based).
+    pub subtree_end_line: usize,
     /// Index of parent entry in [`OrgDocument::entries`], or `None` for top-level.
     pub parent: Option<usize>,
     /// Indices of direct children in [`OrgDocument::entries`].
@@ -220,16 +226,29 @@ impl OrgDocument {
 
     /// Find a heading entry index by its `:ID:` property.
     pub fn find_by_id(&self, id: &str) -> Option<usize> {
-        self.entries
-            .iter()
-            .position(|e| lookup_case_insensitive(&e.properties, "ID") == Some(id))
+        if let Some(&idx) = self.id_index.get(id) {
+            return Some(idx);
+        }
+        if self.id_index.is_empty() {
+            return self
+                .entries
+                .iter()
+                .position(|e| lookup_case_insensitive(&e.properties, "ID") == Some(id));
+        }
+        None
     }
 
     /// Find a heading entry index by its `:CUSTOM_ID:` property.
     pub fn find_by_custom_id(&self, custom_id: &str) -> Option<usize> {
-        self.entries
-            .iter()
-            .position(|e| lookup_case_insensitive(&e.properties, "CUSTOM_ID") == Some(custom_id))
+        if let Some(&idx) = self.custom_id_index.get(custom_id) {
+            return Some(idx);
+        }
+        if self.custom_id_index.is_empty() {
+            return self.entries.iter().position(|e| {
+                lookup_case_insensitive(&e.properties, "CUSTOM_ID") == Some(custom_id)
+            });
+        }
+        None
     }
 
     /// Get the outline path for an entry (ancestor titles from root to entry).
@@ -351,6 +370,17 @@ struct FinalizedPreamble {
 impl FinalizedPreamble {
     /// Assembles an [`OrgDocument`] from finalized preamble metadata and parsed `entries`.
     fn into_document(self, file: PathBuf, entries: Vec<OrgEntry>) -> OrgDocument {
+        let mut id_index = HashMap::new();
+        let mut custom_id_index = HashMap::new();
+        for (i, entry) in entries.iter().enumerate() {
+            if let Some(id) = lookup_case_insensitive(&entry.properties, "ID") {
+                id_index.entry(id.to_string()).or_insert(i);
+            }
+            if let Some(cid) = lookup_case_insensitive(&entry.properties, "CUSTOM_ID") {
+                custom_id_index.entry(cid.to_string()).or_insert(i);
+            }
+        }
+
         OrgDocument {
             file,
             entries,
@@ -364,6 +394,8 @@ impl FinalizedPreamble {
             tag_spec: self.tag_spec,
             link_abbreviations: self.link_abbreviations,
             table_constants: self.table_constants,
+            id_index,
+            custom_id_index,
         }
     }
 }
@@ -789,7 +821,8 @@ fn parse_heading_entry(
         checklist: Vec::new(),
         heading_line: heading_idx + 1,
         heading_offset,
-        content_end_line: ctx.lines.len(),
+        content_end_line: ctx.lines.len() + 1,
+        subtree_end_line: ctx.lines.len() + 1,
         parent,
         children: Vec::new(),
         raw_heading: ctx.lines[heading_idx].to_string(),
@@ -812,7 +845,7 @@ fn parse_heading_entry(
     (entry, next_i)
 }
 
-/// Assigns exclusive 1-based `content_end_line` boundaries across `entries`.
+/// Assigns exclusive 1-based `content_end_line` and `subtree_end_line` boundaries across `entries`.
 fn assign_content_end_lines(entries: &mut [OrgEntry], line_count: usize) {
     for idx in 0..entries.len() {
         let end = if idx + 1 < entries.len() {
@@ -821,6 +854,14 @@ fn assign_content_end_lines(entries: &mut [OrgEntry], line_count: usize) {
             line_count + 1
         };
         entries[idx].content_end_line = end;
+
+        let current_level = entries[idx].level;
+        let subtree_end = entries
+            .iter()
+            .skip(idx + 1)
+            .find(|next| next.level <= current_level)
+            .map_or(line_count + 1, |next| next.heading_line);
+        entries[idx].subtree_end_line = subtree_end;
     }
 }
 
@@ -1790,6 +1831,16 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// Verifies that an unclosed heading `:PROPERTIES:` drawer does not swallow subsequent headings.
+    #[test]
+    fn unclosed_property_drawer_does_not_swallow_headings() {
+        let source = make_source("* First\n:PROPERTIES:\n:ID: 123\n* Second\nBody\n");
+        let doc = OrgDocument::from_source(&source);
+        assert_eq!(doc.entries.len(), 2);
+        assert_eq!(doc.entries[0].title, "First");
+        assert_eq!(doc.entries[1].title, "Second");
     }
 }
 

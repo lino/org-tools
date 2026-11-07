@@ -92,7 +92,7 @@ fn record_single_entry_change(
         return Ok(());
     }
     if !mutation.dry_run {
-        std::fs::write(file, content).map_err(|e| {
+        org_tools_core::files::write_file_atomic(file, content).map_err(|e| {
             eprintln!("org: error writing {}: {e}", file.display());
             EXIT_ERROR
         })?;

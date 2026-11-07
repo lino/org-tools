@@ -9,6 +9,7 @@ use std::fs;
 use std::path::Path;
 
 use assert_cmd::Command;
+use org_tools_core::files::join_slash_rel;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
@@ -315,12 +316,12 @@ fn show_ancestor_workspace_discovery_and_missing_locator_error() {
     )
     .unwrap();
     write_org(
-        &dir.path().join("docs/target.org"),
+        &join_slash_rel(dir.path(), "docs/target.org"),
         &format!(
             "* Architecture\n:PROPERTIES:\n:ID: {HEADING_NODE_UUID}\n:END:\nFound via root.\n"
         ),
     );
-    let nested_cwd = dir.path().join("sub/work");
+    let nested_cwd = join_slash_rel(dir.path(), "sub/work");
     fs::create_dir_all(&nested_cwd).unwrap();
 
     org()
@@ -540,7 +541,7 @@ fn export_md_directory_output_mirrors_relative_paths_and_show_md_works() {
         &format!("#+TITLE: Home\n\nSee [[id:{TARGET_HEADING_UUID}][Deep Guide]].\n"),
     );
     write_org(
-        &src_dir.join("nested/deep.org"),
+        &join_slash_rel(&src_dir, "nested/deep.org"),
         &format!("* Deep Section\n:PROPERTIES:\n:ID: {TARGET_HEADING_UUID}\n:END:\nBody.\n"),
     );
 
@@ -553,8 +554,8 @@ fn export_md_directory_output_mirrors_relative_paths_and_show_md_works() {
     ]);
 
     let home_md = fs::read_to_string(out_dir.join("index.md")).expect("index.md created");
-    let deep_md =
-        fs::read_to_string(out_dir.join("nested/deep.md")).expect("nested/deep.md created");
+    let deep_md = fs::read_to_string(join_slash_rel(&out_dir, "nested/deep.md"))
+        .expect("nested/deep.md created");
     assert!(home_md.contains("[Deep Guide](nested/deep.md#deep-section)"));
     assert!(deep_md.contains("# Deep Section\n"));
 
@@ -562,7 +563,9 @@ fn export_md_directory_output_mirrors_relative_paths_and_show_md_works() {
     run_org_stdout(&[
         "export",
         "md",
-        src_dir.join("nested/deep.org").to_str().unwrap(),
+        join_slash_rel(&src_dir, "nested/deep.org")
+            .to_str()
+            .unwrap(),
         "-o",
         single_out.to_str().unwrap(),
     ]);
@@ -628,11 +631,11 @@ fn export_md_cross_subdir_links_and_relative_workspace_discovery() {
     let dir = TempDir::new().unwrap();
     write_org(&dir.path().join(".fritz.toml"), "[workspace]\n");
     write_org(
-        &dir.path().join("specs/a.org"),
+        &join_slash_rel(dir.path(), "specs/a.org"),
         &format!("* Spec\nSee [[id:{TARGET_HEADING_UUID}][Work Spec]].\n"),
     );
     write_org(
-        &dir.path().join("work/b.org"),
+        &join_slash_rel(dir.path(), "work/b.org"),
         &format!("* Target Section\n:PROPERTIES:\n:ID: {TARGET_HEADING_UUID}\n:END:\nDetails.\n"),
     );
 
@@ -641,7 +644,7 @@ fn export_md_cross_subdir_links_and_relative_workspace_discovery() {
         .args(["export", "md", ".", "-o", "out"])
         .assert()
         .success();
-    let mirrored = fs::read_to_string(dir.path().join("out/specs/a.md")).unwrap();
+    let mirrored = fs::read_to_string(join_slash_rel(dir.path(), "out/specs/a.md")).unwrap();
     assert!(
         mirrored.contains("[Work Spec](../work/b.md#target-section)"),
         "expected ../work/b.md#target-section in mirrored export, got: {mirrored}"

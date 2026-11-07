@@ -789,6 +789,7 @@ fn assert_installation_manual_contents(install_doc: &str) {
         "https://github.com/lino/org-tools.git",
         "cargo install org-tools",
         "brew install --cask lino/tap/org-tools",
+        "ghcr.io/lino/org-tools",
         "dpkg -i",
         "rpm -Uvh",
         "sha256sum -c checksums.txt",
@@ -907,6 +908,9 @@ fn ci_workflow_and_gitattributes_enforce_cross_platform_slos_and_lf_endings() {
             "ci.yml job `{job_name}` must run `cargo test --release --test cache_tests`"
         );
     }
+    assert_eq!(ci_doc["jobs"]["container"]["needs"], "validate");
+    let (_, rel_doc) = load_release_workflow();
+    assert_eq!(rel_doc["jobs"]["publish-container"]["needs"], "validate");
     let gitattributes = read_workspace_file(".gitattributes");
     assert_gitattributes_enforces_lf(&gitattributes);
 }

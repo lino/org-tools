@@ -316,16 +316,20 @@ fn slice2_incremental_modify_add_delete_reindexes_single_file_with_full_parity()
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (4, 0));
     assert_full_parity(ws);
 
-    std::thread::sleep(std::time::Duration::from_millis(5));
+    let rewrite_bump = |p: &Path, text: &str| {
+        let m = fs::metadata(p).unwrap().modified().unwrap() + std::time::Duration::from_secs(2);
+        write_org(p, text);
+        let f = fs::OpenOptions::new().write(true).open(p).unwrap();
+        f.set_modified(m).unwrap();
+    };
     let gamma = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000003\n:END:\n#+TITLE: Gamma Revised\n* TODO Gamma Updated\nLinks [[id:10000000-0000-4000-8000-000000000002][Beta]] and Herzmaschine Herzmaschine.\n";
-    write_org(&join_slash_rel(dir.path(), "notes/gamma.org"), gamma);
+    rewrite_bump(&join_slash_rel(dir.path(), "notes/gamma.org"), gamma);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (3, 1));
     assert_full_parity(ws);
 
     let delta_p = join_slash_rel(dir.path(), "notes/delta.org");
     let existing = fs::read_to_string(&delta_p).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    write_org(&delta_p, &existing);
+    rewrite_bump(&delta_p, &existing);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (4, 0));
 
     let eps = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000005\n:END:\n#+TITLE: Epsilon\n* TODO Epsilon Herzmaschine\n";
@@ -424,10 +428,7 @@ fn slice3_corpus_1k_cold_rebuild_warm_fts_bm25_and_roam_within_budget() {
     let cold_start = Instant::now();
     let (_, st) = MabuseCache::rebuild(dir.path()).expect("cold rebuild must succeed");
     let cold_us = cold_start.elapsed().as_micros();
-    assert!(
-        cold_us <= cold_budget_us,
-        "cold: {cold_us} > {cold_budget_us}"
-    );
+    assert!(cold_us <= cold_budget_us, "{cold_us} > {cold_budget_us}");
     let (fi, nc, lc) = (st.files_indexed, st.nodes_count, st.links_count);
     let got = (fi, nc, lc, st.edna_edges_count, st.fts_entries_count);
     assert_eq!(got, CORPUS_1K_ROW_COUNTS);

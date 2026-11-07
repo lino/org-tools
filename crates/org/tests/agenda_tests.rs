@@ -8,6 +8,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use org_tools_core::files::join_slash_rel;
 use serde_json::{Map, Value};
 use tempfile::TempDir;
 
@@ -418,7 +419,7 @@ fn slice4_json_conforms_to_schema_and_syncs_only_existing_mabuse_cache() {
     let ws = ws_dir.path();
 
     let plain_raw = agenda_ok(ws, "--from 2026-06-10 --days 14 --format json");
-    assert!(!ws.join(".cache/mabuse.db").exists());
+    assert!(!join_slash_rel(ws, ".cache/mabuse.db").exists());
     let plain_val: Value = serde_json::from_str(&plain_raw).expect("valid plain JSON");
     validate_schema_node(&plain_val, &schema, &schema).expect("plain JSON matches schema");
     assert!(plain_val.get("composite").is_none());
@@ -427,7 +428,7 @@ fn slice4_json_conforms_to_schema_and_syncs_only_existing_mabuse_cache() {
     assert_eq!(plain_val["telemetry"]["cache_misses"], 1);
 
     assert_org_code(&["cache", "rebuild", ws.to_str().unwrap()], EXIT_OK);
-    assert!(ws.join(".cache/mabuse.db").is_file());
+    assert!(join_slash_rel(ws, ".cache/mabuse.db").is_file());
 
     let comp_raw = agenda_ok(ws, "--from 2026-06-10 --days 14 --composite --format json");
     let comp_val: Value = serde_json::from_str(&comp_raw).expect("valid composite JSON");

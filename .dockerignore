@@ -1,0 +1,11 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+target/
+dist/
+.git/
+.cache/
+.plan/
+*.db
+*.db-shm
+*.db-wal

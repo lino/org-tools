@@ -96,8 +96,10 @@ When an entry has an =:ID:= property, that is always preferred.
 * Quick Start
 
 #+begin_src sh
-# Install
+# Install via Homebrew (macOS / Linux), Cargo, or run directly via GHCR container
+brew install --cask lino/tap/org-tools
 cargo install org-tools
+docker run --rm -v "$PWD:/workspace" ghcr.io/lino/org-tools:latest fmt check README.org
 
 # Lint
 org fmt check file.org

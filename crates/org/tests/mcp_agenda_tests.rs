@@ -10,6 +10,7 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+use org_tools_core::files::join_slash_rel;
 use serde_json::{json, Map, Value};
 use tempfile::TempDir;
 
@@ -24,11 +25,8 @@ const TASK_BLOCKED_ID: &str = "20000000-0000-4000-8000-000000000203";
 
 /// Returns the repository workspace root derived from `CARGO_MANIFEST_DIR`.
 fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .unwrap()
-        .to_path_buf()
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    dir.ancestors().nth(2).unwrap().to_path_buf()
 }
 
 /// Writes UTF-8 fixture text to `path`, creating parent directories as needed.
@@ -41,7 +39,7 @@ fn write_fixture(path: &Path, content: &str) {
 
 /// Seeds a multi-file workspace for agenda projection and planning mutation tests.
 fn seed_agenda_workspace(root: &Path) {
-    let put = |rel: &str, s: &str| write_fixture(&root.join(rel), s);
+    let put = |rel: &str, s: &str| write_fixture(&join_slash_rel(root, rel), s);
     put(".org-tools.toml", "[agenda]\ndeadline_warning_days = 5\n");
     let h = format!(":PROPERTIES:\n:ID: {FILE_NODE_ID}\n:END:\n#+TITLE: Hub Spec\n\n* NEXT Review design <2026-04-08 Wed 14:00>                            :@arch:\n:PROPERTIES:\n:CUSTOM_ID: design-review\n:END:\n");
     let t = format!("#+TITLE: Tasks\n\n* TODO Ship sprint milestone                                           :@code:\nSCHEDULED: <2026-04-06 Mon 09:00 +1w>\n:PROPERTIES:\n:ID: {TASK_ALPHA_ID}\n:END:\n\n* TODO Prepare release notes                                           :@docs:\nDEADLINE: <2026-04-10 Fri>\n:PROPERTIES:\n:CUSTOM_ID: rel-notes\n:END:\n\n* TODO Triage raw capture\n");
@@ -348,7 +346,7 @@ fn slice2_query_agenda_empty_workspace_and_confinement_validation() {
 fn slice2_update_planning_mutates_clears_and_refreshes_warm_session() {
     let ws = TempDir::new().unwrap();
     seed_agenda_workspace(ws.path());
-    let tasks_path = ws.path().join("plan/tasks.org");
+    let tasks_path = join_slash_rel(ws.path(), "plan/tasks.org");
     let frozen_mtime = fs::metadata(&tasks_path).unwrap().modified().unwrap();
     let before_disk = fs::read_to_string(&tasks_path).unwrap();
     let mut c = McpAgendaClient::spawn(ws.path(), None);
@@ -370,9 +368,10 @@ fn slice2_update_planning_mutates_clears_and_refreshes_warm_session() {
     let set_res = c.ok("org_update_planning", set_q);
     assert_repo_schema(&set_res, "org-mutation-output.schema.json");
     assert_telemetry(&set_res["telemetry"], (3, 2, 1));
-    let f = OpenOptions::new().write(true).open(&tasks_path).unwrap();
-    f.set_modified(frozen_mtime).unwrap();
-
+    {
+        let f = OpenOptions::new().write(true).open(&tasks_path).unwrap();
+        f.set_modified(frozen_mtime).unwrap();
+    }
     let after_ag = c.ok("org_query_agenda", q_win);
     assert_eq!(after_ag["days_timeline"].as_array().unwrap().len(), 1);
     let shown = c.ok("org_show", json!({ "locator": &loc }));
@@ -438,7 +437,7 @@ fn slice2_update_planning_rejects_file_nodes_conflicts_and_escapes() {
 #[test]
 fn slice3_docs_cover_agenda_planning_mcp_tools_and_pass_org_fmt_check() {
     let root = repo_root();
-    let rd = |p: &str| fs::read_to_string(root.join(p)).unwrap();
+    let rd = |p: &str| fs::read_to_string(join_slash_rel(&root, p)).unwrap();
     let r = "set-scheduled|set-deadline|deadline_warning_days|org_query_agenda|org_update_planning";
     assert_contains_pipe_tokens("README.org", &rd("README.org"), r);
     assert_contains_pipe_tokens("usage.org", &rd("docs/user/usage.org"), "--from|--warning-days|--composite|--no-repeat|set-scheduled|set-deadline|deadline_warning_days|org_query_agenda|org_update_planning|=agenda=");

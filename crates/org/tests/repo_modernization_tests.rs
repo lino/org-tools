@@ -315,11 +315,63 @@ fn architecture_and_release_docs_are_refreshed() {
         "GoReleaser",
         "homebrew-tap",
         "CARGO_REGISTRY_TOKEN",
+        "publish-container",
+        "ghcr.io/lino/org-tools",
     ] {
         assert!(
             release.contains(needle),
             "release.org missing expected refreshed content '{needle}'"
         );
+    }
+}
+
+/// Verifies `Dockerfile`, `.dockerignore`, and GHCR container jobs in `ci.yml` and `release.yml`.
+#[test]
+fn dockerfile_and_ghcr_workflows_provide_zero_toolchain_container_runtime() {
+    let dockerignore = read_repo_file(".dockerignore");
+    assert_no_hardcoded_user_paths(".dockerignore", &dockerignore);
+    assert!(dockerignore.contains("SPDX-License-Identifier: GPL-3.0-or-later"));
+    for ignored in ["target/", "dist/", ".git/", ".cache/"] {
+        assert!(
+            dockerignore.lines().any(|l| l.trim() == ignored),
+            ".dockerignore must exclude `{ignored}`"
+        );
+    }
+
+    let dockerfile = read_repo_file("Dockerfile");
+    assert_no_hardcoded_user_paths("Dockerfile", &dockerfile);
+    for token in [
+        "SPDX-License-Identifier: GPL-3.0-or-later",
+        "cargo build --release --locked -p org-tools",
+        "scripts/build-completions.sh",
+        "ENV ORG_TOOLS_WORKSPACE=/workspace",
+        "WORKDIR /workspace",
+        "ENTRYPOINT [\"org\"]",
+    ] {
+        assert!(
+            dockerfile.contains(token),
+            "Dockerfile missing required directive `{token}`"
+        );
+    }
+
+    let ci_yml = read_repo_file(".github/workflows/ci.yml");
+    for token in [
+        "packages: write",
+        "ghcr.io/${{ github.repository }}",
+        "docker/build-push-action@v6",
+        "docker run --rm org-tools:ci --version",
+    ] {
+        assert!(ci_yml.contains(token), "ci.yml missing `{token}`");
+    }
+
+    let release_yml = read_repo_file(".github/workflows/release.yml");
+    for token in [
+        "packages: write",
+        "publish-container:",
+        "platforms: linux/amd64,linux/arm64",
+        "docker/build-push-action@v6",
+    ] {
+        assert!(release_yml.contains(token), "release.yml missing `{token}`");
     }
 }
 

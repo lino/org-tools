@@ -7,10 +7,8 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use ignore::WalkBuilder;
-
 use crate::export_md::normalize_workspace_path;
-use crate::files::join_slash_rel;
+use crate::files::{build_org_walk_builder, join_slash_rel};
 
 /// Minimum top-level subdirectory count before fanning out scoped parallel `read_dir` workers.
 const PARALLEL_SUBDIR_THRESHOLD: usize = 16;
@@ -193,9 +191,9 @@ fn has_ancestor_vcs_or_ignore(workspace_root: &Path) -> bool {
         .any(|dir| dir.join(".git").exists() || dir.join(".ignore").exists())
 }
 
-/// Walks `workspace_root` via `WalkBuilder::new` matching `files::collect_org_files`, skipping `.cache`.
+/// Walks `workspace_root` via `build_org_walk_builder` matching `files::collect_org_files`, skipping `.cache`.
 fn scan_dir_with_ignore(workspace_root: &Path) -> Result<Vec<DiskOrgFile>, String> {
-    let mut builder = WalkBuilder::new(workspace_root);
+    let mut builder = build_org_walk_builder(workspace_root);
     builder.filter_entry(|e| e.depth() == 0 || e.file_name() != ".cache");
     let mut out = Vec::new();
     for entry in builder.build().flatten() {

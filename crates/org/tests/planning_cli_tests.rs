@@ -10,6 +10,7 @@ use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
 use org_tools_core::cache::{MabuseCache, DEFAULT_CACHE_REL_PATH};
+use org_tools_core::files::join_slash_rel;
 use org_tools_core::planning::{day_of_week_abbrev, shift_calendar_date, TimeUnit};
 use org_tools_core::state::now_timestamp;
 use predicates::prelude::*;
@@ -58,7 +59,7 @@ fn run_err_in(cwd: &Path, args: &[&str]) {
 
 /// Writes `content` to `dir/rel_path`, creating parent directories automatically.
 fn write_org(dir: &Path, rel_path: &str, content: &str) -> PathBuf {
-    let path = dir.join(rel_path);
+    let path = join_slash_rel(dir, rel_path);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create fixture parent directories");
     }
@@ -281,7 +282,7 @@ fn slice2_invalidates_warm_mabuse_cache_without_autocreating_cold_cache() {
     let raw = "#+TODO: TODO NEXT | DONE\n* TODO Task\nSCHEDULED: <2026-04-10 Fri> DEADLINE: <2026-04-15 Wed>\n";
     let file = write_org(dir.path(), "sub/tasks.org", raw);
     let p = file.to_str().unwrap();
-    let db_path = dir.path().join(DEFAULT_CACHE_REL_PATH);
+    let db_path = join_slash_rel(dir.path(), DEFAULT_CACHE_REL_PATH);
 
     run_ok(&["update", "set-scheduled", "2026-04-11", p]);
     run_ok(&["update", "set-deadline", "2026-04-16", p]);
@@ -293,12 +294,10 @@ fn slice2_invalidates_warm_mabuse_cache_without_autocreating_cold_cache() {
 
     let old_mtime = fs::metadata(&file).unwrap().modified().unwrap();
     run_ok(&["update", "set-scheduled", "2026-04-20", p]);
-    File::options()
-        .write(true)
-        .open(&file)
-        .unwrap()
-        .set_times(FileTimes::new().set_modified(old_mtime))
+    let fh = File::options().write(true).open(&file).unwrap();
+    fh.set_times(FileTimes::new().set_modified(old_mtime))
         .unwrap();
+    drop(fh);
     assert_eq!(sync_misses(dir.path()), 1);
 
     run_ok(&["update", "set-deadline", "2026-04-25", p]);

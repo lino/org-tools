@@ -11,6 +11,7 @@ use std::path::Path;
 use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
+use org_tools_core::files::join_slash_rel;
 use predicates::prelude::*;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -69,7 +70,7 @@ fn assert_valid_mutation_json(val: &Value, expected_cmd: &str, expected_dry_run:
 
 /// Writes `content` to `dir/rel_path`, creating parent directories automatically.
 fn write_org(dir: &Path, rel_path: &str, content: &str) -> std::path::PathBuf {
-    let path = dir.join(rel_path);
+    let path = join_slash_rel(dir, rel_path);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create parent dirs");
     }

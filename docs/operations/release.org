@@ -64,10 +64,18 @@ runs =.github/workflows/release.yml=:
    - When =CARGO_REGISTRY_TOKEN= is unset (or during snapshot =workflow_dispatch=
      runs), the job logs a GitHub Actions notice and exits =0= cleanly without
      blocking GitHub Releases or Homebrew tap updates.
+4. *GHCR multi-arch container publish* (=publish-container= job):
+   - Builds the multi-stage =Dockerfile= for =linux/amd64= and =linux/arm64= via
+     Docker Buildx and pushes =ghcr.io/lino/org-tools:<version>=,
+     =:<major>.<minor>=, =:<major>=, and =:latest= using =GITHUB_TOKEN=
+     (=packages: write=).
+   - Snapshot =workflow_dispatch= runs verify the multi-arch Buildx build
+     without pushing tags to =ghcr.io=.
 
 * Post-release Checklist
 
 - [ ] Verify GitHub Actions =Release= workflow succeeded and uploaded =release-telemetry=
 - [ ] Verify GitHub Release page lists multi-OS archives, =.deb= / =.rpm= packages, and =checksums.txt=
+- [ ] Verify =docker run --rm ghcr.io/lino/org-tools:vX.Y.Z --version= resolves the published multi-arch GHCR image
 - [ ] Verify =brew install --cask lino/tap/org-tools= installs =vX.Y.Z= when tap publishing is enabled
 - [ ] Verify =crates.io= shows =vX.Y.Z= if =CARGO_REGISTRY_TOKEN= is configured

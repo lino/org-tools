@@ -8,6 +8,20 @@ use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
 
+/// Constructs a [`WalkBuilder`] for `root` with Windows `.git\info\exclude` verbatim-path support.
+pub fn build_org_walk_builder(root: &Path) -> WalkBuilder {
+    #[cfg(windows)]
+    {
+        let mut builder = WalkBuilder::new(root);
+        builder.add_custom_ignore_filename(r".git\info\exclude");
+        builder
+    }
+    #[cfg(not(windows))]
+    {
+        WalkBuilder::new(root)
+    }
+}
+
 /// Collects all `.org` files from the given paths, recursing into directories.
 ///
 /// Respects `.gitignore` rules via the [`ignore`] crate. Files are returned
@@ -19,7 +33,7 @@ pub fn collect_org_files(paths: &[PathBuf]) -> Vec<PathBuf> {
         if path.is_file() {
             files.push(path.clone());
         } else if path.is_dir() {
-            for entry in WalkBuilder::new(path).build().flatten() {
+            for entry in build_org_walk_builder(path).build().flatten() {
                 let p = entry.path();
                 if p.is_file() && p.extension().is_some_and(|ext| ext == "org") {
                     files.push(p.to_path_buf());
@@ -102,7 +116,7 @@ mod tests {
     #[test]
     fn test_write_file_atomic_new_and_overwrite() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("sub/test.org");
+        let file = join_slash_rel(dir.path(), "sub/test.org");
 
         write_file_atomic(&file, "initial content\n").unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "initial content\n");

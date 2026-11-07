@@ -78,7 +78,7 @@ fn walker_matches_collect_org_files_across_git_subdir_and_standalone_dir() {
     write_file(&standalone.path().join(".gitignore"), "ignored/\n");
     write_file(&standalone.path().join("visible.org"), "* TODO Visible\n");
     write_file(
-        &standalone.path().join("ignored/included_without_git.org"),
+        &join_slash_rel(standalone.path(), "ignored/included_without_git.org"),
         "* TODO Included Outside Git\n",
     );
     let direct_standalone = collect_org_files(&[standalone.path().to_path_buf()]);
@@ -86,17 +86,26 @@ fn walker_matches_collect_org_files_across_git_subdir_and_standalone_dir() {
     assert_eq!(st_tel.files_scanned, direct_standalone.len());
 
     let repo = TempDir::new().unwrap();
-    write_file(&repo.path().join(".git/HEAD"), "ref: refs/heads/main\n");
     write_file(
-        &repo.path().join(".git/info/exclude"),
+        &join_slash_rel(repo.path(), ".git/HEAD"),
+        "ref: refs/heads/main\n",
+    );
+    write_file(
+        &join_slash_rel(repo.path(), ".git/info/exclude"),
         "specs/info_excluded.org\n",
     );
     write_file(&repo.path().join(".gitignore"), "build/\n");
     let specs = repo.path().join("specs");
     write_file(&specs.join("kept.org"), "* TODO Kept\n");
     write_file(&specs.join("info_excluded.org"), "* TODO Excluded\n");
-    write_file(&specs.join("build/generated.org"), "* TODO Generated\n");
-    write_file(&specs.join(".cache/stale.org"), "* TODO Cache Internal\n");
+    write_file(
+        &join_slash_rel(&specs, "build/generated.org"),
+        "* TODO Generated\n",
+    );
+    write_file(
+        &join_slash_rel(&specs, ".cache/stale.org"),
+        "* TODO Cache Internal\n",
+    );
 
     let direct_specs: Vec<PathBuf> = collect_org_files(std::slice::from_ref(&specs));
     let (_, repo_tel) = MabuseCache::open_and_sync(&specs).unwrap();

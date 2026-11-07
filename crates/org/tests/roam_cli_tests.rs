@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use assert_cmd::Command;
+use org_tools_core::files::join_slash_rel;
 use predicates::prelude::*;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -57,7 +58,7 @@ fn run_ok_stdout(args: &[&str]) -> String {
 fn seed_babelsberg_workspace(dir: &Path) {
     fs::write(dir.join("kb.toml"), "[workspace]\nname = \"test\"\n").unwrap();
     write_org(
-        &dir.join("specs/agent.org"),
+        &join_slash_rel(dir, "specs/agent.org"),
         &format!(
             concat!(
                 ":PROPERTIES:\n",
@@ -81,7 +82,7 @@ fn seed_babelsberg_workspace(dir: &Path) {
         ),
     );
     write_org(
-        &dir.join("adr/adr-0005.org"),
+        &join_slash_rel(dir, "adr/adr-0005.org"),
         &format!(
             concat!(
                 ":PROPERTIES:\n",

@@ -19,6 +19,31 @@ brew upgrade --cask lino/tap/org-tools
 
 On macOS, the Cask post-install hook automatically clears the =com.apple.quarantine= extended attribute so the unsigned open-source binary runs immediately without Gatekeeper prompts. Operators maintaining the tap can consult [[file:homebrew-tap.org]].
 
+* Container Image (Docker / Podman via GHCR — Zero Local Toolchain)
+
+Run =org= directly from GitHub Container Registry (=ghcr.io/lino/org-tools=) without installing Rust, Emacs, or any host packages. Multi-architecture images (=linux/amd64= and =linux/arm64=) are published automatically on =main= and on every =vX.Y.Z= release:
+
+#+begin_src sh
+# Pull the latest image
+docker pull ghcr.io/lino/org-tools:latest
+
+# Lint and format an Org workspace mounted at /workspace
+docker run --rm -v "$PWD:/workspace" ghcr.io/lino/org-tools:latest fmt check .
+
+# Project a multi-day agenda or export a Zensical Markdown report
+docker run --rm -v "$PWD:/workspace" ghcr.io/lino/org-tools:latest query agenda /workspace
+
+# Run the stdio MCP server over Docker without a local binary
+docker run -i --rm -v "$PWD:/workspace" ghcr.io/lino/org-tools:latest mcp --workspace /workspace
+#+end_src
+
+To build the image locally from the repository =Dockerfile=:
+
+#+begin_src sh
+docker build -t org-tools:local .
+docker run --rm -v "$PWD:/workspace" org-tools:local --version
+#+end_src
+
 * Linux System Packages (=.deb= & =.rpm=)
 
 Every [[https://github.com/lino/org-tools/releases][GitHub Release]] publishes static =musl= Linux packages containing =/usr/bin/org=, shell completions, and license documentation.

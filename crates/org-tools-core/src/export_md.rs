@@ -23,7 +23,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::document::{ChecklistItem, OrgDocument};
 use crate::entry::{parse_checklist_item, CheckboxState};
-use crate::files::{canonicalize_clean, collect_org_files, strip_windows_verbatim};
+use crate::files::{canonicalize_clean, collect_org_files, join_slash_rel, strip_windows_verbatim};
 use crate::locator::{resolve_in_document, OrgLocator, ResolvedEntry};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::heading::{parse_heading_with_keywords, HeadingParts};
@@ -387,8 +387,11 @@ fn resolve_file_scoped_node(
 ) -> Result<ResolvedWorkspaceNode, String> {
     let target_path = if raw_file.is_file() {
         raw_file.to_path_buf()
-    } else if let Some(ws) = explicit_ws.filter(|ws| ws.join(raw_file).is_file()) {
-        ws.join(raw_file)
+    } else if let Some(ws) = explicit_ws
+        .map(|ws| join_slash_rel(ws, &raw_file.to_string_lossy()))
+        .filter(|p| p.is_file())
+    {
+        ws
     } else {
         return Err(format!("file not found: {}", raw_file.display()));
     };

@@ -4,6 +4,7 @@
 //! Modular CLI subcommand handlers and shared mutation/document helpers.
 
 pub(crate) mod archive;
+pub(crate) mod cache;
 pub(crate) mod clock;
 pub(crate) mod export;
 pub(crate) mod fmt;

@@ -3,10 +3,11 @@
 
 //! `org query` subcommand definitions and search, agenda, and dependency graph handlers.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Subcommand, ValueEnum};
 
+use org_tools_core::cache::{load_cached_fts_candidate_docs, load_docs_with_bodies, MabuseCache};
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 
@@ -47,15 +48,12 @@ pub(crate) enum QueryCommand {
     Search {
         /// Query expression (e.g., "todo:TODO tags:work").
         query: String,
-
         /// Files or directories to search.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
-
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
@@ -65,11 +63,9 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Number of days to show.
         #[arg(long, default_value = "7")]
         days: usize,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
@@ -79,11 +75,9 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
-
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
@@ -93,15 +87,12 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Filter to a specific @context tag.
         #[arg(long)]
         context: Option<String>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
-
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
@@ -111,11 +102,9 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
-
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
@@ -125,11 +114,9 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
-
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
@@ -139,11 +126,9 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
         format: QueryOutputFormat,
-
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
@@ -153,11 +138,9 @@ pub(crate) enum QueryCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
-
         /// Output format.
         #[arg(long, value_enum, default_value = "mermaid")]
         format: DepsOutputFormat,
-
         /// Only include entries with TODO keywords.
         #[arg(long, default_value = "true")]
         todo_only: bool,
@@ -206,34 +189,97 @@ pub(crate) fn render_standard_matches(
     }
 }
 
+/// Renders `(doc_idx, entry_idx)` body-search pairs and returns `EXIT_OK` or `EXIT_ISSUES`.
+fn render_body_pairs(
+    loaded: &[org_tools_core::cache::BodyLoadedDoc],
+    doc_refs: &[&OrgDocument],
+    pairs: Vec<(usize, usize)>,
+    format: QueryOutputFormat,
+) -> i32 {
+    if pairs.is_empty() {
+        return EXIT_ISSUES;
+    }
+    let matches: Vec<_> = pairs
+        .into_iter()
+        .map(|(di, ei)| query::output::MatchedEntry {
+            doc: &loaded[di].doc,
+            entry_idx: ei,
+        })
+        .collect();
+    render_standard_matches(&matches, doc_refs, format);
+    EXIT_OK
+}
+
+/// Attempts an FTS5-accelerated `org query search` when `!no_cache` targets a single directory.
+fn try_cached_fts_search(
+    pred: &query::parser::Predicate,
+    scan_dir: &Path,
+    format: QueryOutputFormat,
+    limit: Option<usize>,
+) -> Option<i32> {
+    let req = pred.required_body_phrases();
+    if req.is_empty() || req != pred.positive_body_phrases() || pred.uses_edna() {
+        return None;
+    }
+    let (cache, tel) = MabuseCache::open_and_sync(scan_dir).ok()?;
+    if tel.files_scanned == 0 {
+        eprintln!("org: no .org files found");
+        return Some(EXIT_ERROR);
+    }
+    let (hits, loaded) = load_cached_fts_candidate_docs(&cache, scan_dir, &req).ok()??;
+    if hits.is_empty() {
+        return Some(EXIT_ISSUES);
+    }
+    let doc_refs: Vec<&OrgDocument> = loaded.iter().map(|d| &d.doc).collect();
+    let today = date::current_date();
+    let pairs =
+        query::predicate::filter_fts_hits(pred, scan_dir, hits, &loaded, &doc_refs, today, limit);
+    Some(render_body_pairs(&loaded, &doc_refs, pairs, format))
+}
+
 /// Executes `org query search`.
 fn run_search(
     query_str: &str,
     paths: &[PathBuf],
     format: QueryOutputFormat,
     limit: Option<usize>,
+    no_cache: bool,
 ) -> i32 {
-    let pred = match query::parser::parse_query(query_str) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("org: {e}");
-            return EXIT_ERROR;
-        }
+    let Ok(pred) = query::parser::parse_query(query_str).map_err(|e| eprintln!("org: {e}")) else {
+        return EXIT_ERROR;
     };
+    if !no_cache && paths.len() == 1 && paths[0].is_dir() {
+        if let Some(code) = try_cached_fts_search(&pred, &paths[0], format, limit) {
+            return code;
+        }
+        let _ = MabuseCache::open_and_sync(&paths[0]);
+    }
     let files = collect_org_files(paths);
     if files.is_empty() {
         eprintln!("org: no .org files found");
         return EXIT_ERROR;
     }
-
+    if pred.uses_body() {
+        let loaded = load_docs_with_bodies(&files);
+        let doc_refs: Vec<&OrgDocument> = loaded.iter().map(|d| &d.doc).collect();
+        let pairs = query::predicate::eval_and_rank_body_docs(
+            &pred,
+            &loaded,
+            &doc_refs,
+            date::current_date(),
+            limit,
+        );
+        return render_body_pairs(&loaded, &doc_refs, pairs, format);
+    }
     let docs = parse_org_files(&files);
     let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
     let matches = collect_predicate_matches(&pred, &docs, &doc_refs, date::current_date(), limit);
     if matches.is_empty() {
-        return EXIT_ISSUES;
+        EXIT_ISSUES
+    } else {
+        render_standard_matches(&matches, &doc_refs, format);
+        EXIT_OK
     }
-    render_standard_matches(&matches, &doc_refs, format);
-    EXIT_OK
 }
 
 // endregion
@@ -338,14 +384,14 @@ fn run_deps(paths: &[PathBuf], format: DepsOutputFormat) -> i32 {
 // region Entrypoint
 
 /// Runs the `query` subcommand.
-pub(crate) fn run_query(command: QueryCommand) -> i32 {
+pub(crate) fn run_query(command: QueryCommand, no_cache: bool) -> i32 {
     match command {
         QueryCommand::Search {
             query: query_str,
             paths,
             format,
             limit,
-        } => run_search(&query_str, &paths, format, limit),
+        } => run_search(&query_str, &paths, format, limit, no_cache),
         QueryCommand::Agenda {
             paths,
             days,

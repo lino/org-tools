@@ -19,6 +19,7 @@ use org_tools_core::config::Config;
 use org_tools_core::runner::Runner;
 
 use commands::archive::{run_archive, ArchiveArgs};
+use commands::cache::{run_cache, CacheCommand};
 use commands::clock::{run_clock, ClockCommand};
 use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
@@ -54,6 +55,10 @@ struct Cli {
     /// Generate shell completions and exit.
     #[arg(long, value_enum)]
     completions: Option<Shell>,
+
+    /// Bypass the `.cache/mabuse.db` SQLite index and parse `.org` files directly.
+    #[arg(long, global = true)]
+    no_cache: bool,
 }
 
 /// Top-level subcommands dispatched by `org`.
@@ -99,6 +104,12 @@ enum OrgCommand {
         #[command(subcommand)]
         command: RoamCommand,
     },
+    /// Inspect, rebuild, or clear the Mabuse SQLite + FTS5 workspace cache.
+    Cache {
+        /// Cache management subcommand.
+        #[command(subcommand)]
+        command: CacheCommand,
+    },
     /// Extract a scoped entry subtree or file node by locator.
     Show(ShowArgs),
     /// Archive done entries to a separate file.
@@ -139,17 +150,18 @@ fn load_config(cli_config: &Option<PathBuf>) -> Config {
 }
 
 /// Dispatches a parsed [`OrgCommand`] to its corresponding module handler.
-fn dispatch_command(command: OrgCommand) -> i32 {
+fn dispatch_command(command: OrgCommand, no_cache: bool) -> i32 {
     match command {
         OrgCommand::Fmt { command, config } => {
             let runner = Runner::new(load_config(&config));
             run_fmt(command, &runner)
         }
-        OrgCommand::Query { command } => run_query(command),
+        OrgCommand::Query { command } => run_query(command, no_cache),
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
-        OrgCommand::Roam { command } => run_roam(command),
+        OrgCommand::Roam { command } => run_roam(command, no_cache),
+        OrgCommand::Cache { command } => run_cache(command),
         OrgCommand::Show(args) => run_show(args),
         OrgCommand::Archive(args) => run_archive(args),
         OrgCommand::Schema(args) => run_schema(&args.name),
@@ -171,5 +183,5 @@ fn main() {
         process::exit(EXIT_OK);
     };
 
-    process::exit(dispatch_command(command));
+    process::exit(dispatch_command(command, cli.no_cache));
 }

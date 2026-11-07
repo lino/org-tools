@@ -1,5 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=870 reason="Pre-existing cohesive query language AST, tokenizer, recursive-descent parser, and behavioural unit tests"
 
 //! Query language parser for org-mode entry matching.
 //!
@@ -7,6 +8,7 @@
 //! - `todo:TODO` — match specific TODO keyword
 //! - `tags:work,urgent` — match entries with all listed tags
 //! - `heading:meeting` — substring match on heading title
+//! - `body:"Herzmaschine"` — full-text BM25 phrase/term match across title and body
 //! - `property:KEY=VALUE` — property match
 //! - `priority:A` or `priority:>=B` — priority match
 //! - `level:2` or `level:<=3` — heading level match
@@ -19,6 +21,8 @@
 
 use std::fmt;
 
+// region Public Types
+
 /// A parsed query predicate.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Predicate {
@@ -30,6 +34,8 @@ pub enum Predicate {
     Tags(Vec<String>),
     /// Substring match on heading title (case-insensitive).
     Heading(String),
+    /// Full-text BM25 phrase/term match across heading title and body.
+    Body(String),
     /// Match entries with a property key/value pair.
     Property {
         /// Property key.
@@ -144,12 +150,59 @@ pub enum DateUnit {
 pub struct ParseError(pub String);
 
 impl fmt::Display for ParseError {
+    /// Formats this query parse error for human display.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "query parse error: {}", self.0)
     }
 }
 
 impl std::error::Error for ParseError {}
+
+impl Predicate {
+    /// Returns `true` when `Predicate::Body` appears anywhere inside this AST.
+    pub fn uses_body(&self) -> bool {
+        match self {
+            Self::Body(_) => true,
+            Self::And(ps) | Self::Or(ps) => ps.iter().any(Self::uses_body),
+            Self::Not(inner) => inner.uses_body(),
+            _ => false,
+        }
+    }
+
+    /// Returns `true` when `Blocked` or `Actionable` appears anywhere inside this AST.
+    pub fn uses_edna(&self) -> bool {
+        match self {
+            Self::Blocked | Self::Actionable => true,
+            Self::And(ps) | Self::Or(ps) => ps.iter().any(Self::uses_edna),
+            Self::Not(inner) => inner.uses_edna(),
+            _ => false,
+        }
+    }
+
+    /// Collects positive `Body` phrases that MUST hold on every matching entry (`Body` / `And`).
+    pub fn required_body_phrases(&self) -> Vec<String> {
+        match self {
+            Self::Body(s) => vec![s.clone()],
+            Self::And(ps) => ps.iter().flat_map(Self::required_body_phrases).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Collects all positive (non-negated) `Body` phrases used for BM25 relevance scoring.
+    pub fn positive_body_phrases(&self) -> Vec<String> {
+        match self {
+            Self::Body(s) => vec![s.clone()],
+            Self::And(ps) | Self::Or(ps) => {
+                ps.iter().flat_map(Self::positive_body_phrases).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+}
+
+// endregion
+
+// region Tokenizer
 
 /// Parse a query string into a [`Predicate`].
 pub fn parse_query(input: &str) -> Result<Predicate, ParseError> {
@@ -164,12 +217,13 @@ pub fn parse_query(input: &str) -> Result<Predicate, ParseError> {
     Ok(pred)
 }
 
-// --- Tokenizer ---
-
+/// Lexical token emitted by the query tokenizer.
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
-    /// A `key:value` term or bare keyword.
+    /// A `key:value` term or unquoted bare keyword.
     Term(String),
+    /// A top-level double-quoted bare heading phrase (`"..."`).
+    QuotedHeading(String),
     /// `and`.
     And,
     /// `or`.
@@ -182,49 +236,82 @@ enum Token {
     RParen,
 }
 
+/// Consumes a double-quoted segment (`"..."`) after the opening `"`, handling `\"` and `\\`.
+fn read_quoted_segment(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    out: &mut String,
+) -> Result<(), ParseError> {
+    while let Some(ch) = chars.next() {
+        if ch == '"' {
+            return Ok(());
+        }
+        if ch == '\\' {
+            if let Some(esc) = chars.next() {
+                out.push(esc);
+            } else {
+                return Err(ParseError("unterminated quoted string".to_string()));
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    Err(ParseError("unterminated quoted string".to_string()))
+}
+
+/// Consumes one bare word or `key:"quoted"` term from `chars`.
+fn read_word_token(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<Token, ParseError> {
+    let mut word = String::new();
+    let mut had_quotes = false;
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() || matches!(c, '(' | ')') {
+            break;
+        }
+        chars.next();
+        if c == '"' {
+            had_quotes = true;
+            read_quoted_segment(chars, &mut word)?;
+        } else {
+            word.push(c);
+        }
+    }
+    Ok(match (had_quotes, word.as_str()) {
+        (false, "and" | "AND") => Token::And,
+        (false, "or" | "OR") => Token::Or,
+        (false, "not" | "NOT") => Token::Not,
+        _ => Token::Term(word),
+    })
+}
+
+/// Tokenizes `input` into [`Token`] values while preserving double-quoted phrases.
 fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
-
     while let Some(&ch) = chars.peek() {
         if ch.is_whitespace() {
             chars.next();
-            continue;
-        }
-
-        if ch == '(' {
+        } else if ch == '(' {
+            chars.next();
             tokens.push(Token::LParen);
+        } else if ch == ')' {
             chars.next();
-            continue;
-        }
-        if ch == ')' {
             tokens.push(Token::RParen);
+        } else if ch == '"' {
             chars.next();
-            continue;
-        }
-
-        // Read a word (until whitespace or paren).
-        let mut word = String::new();
-        while let Some(&c) = chars.peek() {
-            if c.is_whitespace() || c == '(' || c == ')' {
-                break;
-            }
-            word.push(c);
-            chars.next();
-        }
-
-        match word.as_str() {
-            "and" | "AND" => tokens.push(Token::And),
-            "or" | "OR" => tokens.push(Token::Or),
-            "not" | "NOT" => tokens.push(Token::Not),
-            _ => tokens.push(Token::Term(word)),
+            let mut phrase = String::new();
+            read_quoted_segment(&mut chars, &mut phrase)?;
+            tokens.push(Token::QuotedHeading(phrase));
+        } else {
+            tokens.push(read_word_token(&mut chars)?);
         }
     }
-
     Ok(tokens)
 }
 
-// --- Recursive descent parser ---
+// endregion
+
+// region Recursive-Descent Parser
 
 /// Parse OR expressions: `A or B or C`.
 fn parse_or(tokens: &[Token]) -> Result<(Predicate, &[Token]), ParseError> {
@@ -266,7 +353,7 @@ fn parse_and(tokens: &[Token]) -> Result<(Predicate, &[Token]), ParseError> {
 
         // Implicit AND: next token is a term, not, or lparen (not or/rparen/end).
         match rest.first() {
-            Some(Token::Term(_) | Token::Not | Token::LParen) => {
+            Some(Token::Term(_) | Token::QuotedHeading(_) | Token::Not | Token::LParen) => {
                 let (right, new_rest) = parse_not(rest)?;
                 left = match left {
                     Predicate::And(mut v) => {
@@ -307,14 +394,76 @@ fn parse_atom(tokens: &[Token]) -> Result<(Predicate, &[Token]), ParseError> {
             let pred = parse_term(term)?;
             Ok((pred, &tokens[1..]))
         }
+        Some(Token::QuotedHeading(phrase)) => {
+            if phrase.is_empty() {
+                return Err(ParseError("empty heading value".to_string()));
+            }
+            Ok((Predicate::Heading(phrase.clone()), &tokens[1..]))
+        }
         Some(tok) => Err(ParseError(format!("unexpected token: {tok:?}"))),
         None => Err(ParseError("unexpected end of query".to_string())),
     }
 }
 
-/// Parse a single term like `todo:TODO`, `tags:work,urgent`, `done`, `clocked`.
+// endregion
+
+// region Term Parsers
+
+/// Parses a comma-separated `tags:a,b` value into [`Predicate::Tags`].
+fn parse_tags_term(value: &str) -> Result<Predicate, ParseError> {
+    let tags: Vec<String> = value
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if tags.is_empty() {
+        Err(ParseError("empty tags value".to_string()))
+    } else {
+        Ok(Predicate::Tags(tags))
+    }
+}
+
+/// Parses a `scheduled:`, `deadline:`, or `closed:` planning predicate term.
+fn parse_planning_term(key: &str, value: &str) -> Result<Predicate, ParseError> {
+    match key {
+        "scheduled" | "sched" => Ok(Predicate::Scheduled(parse_date_match(value)?)),
+        "deadline" | "dl" => Ok(Predicate::Deadline(parse_date_match(value)?)),
+        "closed" => Ok(Predicate::Closed(parse_date_match(value)?)),
+        _ => Err(ParseError(format!("unknown predicate: {key}"))),
+    }
+}
+
+/// Validates a required text argument (`heading:` or `body:`) and wraps it via `ctor`.
+fn parse_non_empty_text(
+    value: &str,
+    label: &str,
+    ctor: fn(String) -> Predicate,
+) -> Result<Predicate, ParseError> {
+    if value.is_empty() {
+        Err(ParseError(format!("empty {label} value")))
+    } else {
+        Ok(ctor(value.to_string()))
+    }
+}
+
+/// Parses a `key:value` predicate term after splitting on the first `:` separator.
+fn parse_key_value_term(key: &str, value: &str) -> Result<Predicate, ParseError> {
+    match key {
+        "todo" => Ok(Predicate::Todo(
+            (!value.is_empty()).then(|| value.to_string()),
+        )),
+        "tags" | "tag" => parse_tags_term(value),
+        "heading" | "h" => parse_non_empty_text(value, "heading", Predicate::Heading),
+        "body" | "b" => parse_non_empty_text(value, "body", Predicate::Body),
+        "property" | "prop" => parse_property_term(value),
+        "priority" | "pri" => parse_priority_term(value),
+        "level" | "lvl" => parse_level_term(value),
+        other => parse_planning_term(other, value),
+    }
+}
+
+/// Parses a single term like `todo:TODO`, `body:"Herzmaschine"`, `done`, or `clocked`.
 fn parse_term(term: &str) -> Result<Predicate, ParseError> {
-    // Bare keywords.
     match term {
         "done" | "DONE" => return Ok(Predicate::Done),
         "clocked" => return Ok(Predicate::Clocked),
@@ -325,61 +474,14 @@ fn parse_term(term: &str) -> Result<Predicate, ParseError> {
         _ => {}
     }
 
-    // key:value terms.
-    if let Some(colon_pos) = term.find(':') {
-        let key = &term[..colon_pos];
-        let value = &term[colon_pos + 1..];
-
-        match key {
-            "todo" => {
-                if value.is_empty() {
-                    Ok(Predicate::Todo(None))
-                } else {
-                    Ok(Predicate::Todo(Some(value.to_string())))
-                }
-            }
-            "tags" | "tag" => {
-                let tags: Vec<String> = value
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                if tags.is_empty() {
-                    Err(ParseError("empty tags value".to_string()))
-                } else {
-                    Ok(Predicate::Tags(tags))
-                }
-            }
-            "heading" | "h" => {
-                if value.is_empty() {
-                    Err(ParseError("empty heading value".to_string()))
-                } else {
-                    Ok(Predicate::Heading(value.to_string()))
-                }
-            }
-            "property" | "prop" => parse_property_term(value),
-            "priority" | "pri" => parse_priority_term(value),
-            "level" | "lvl" => parse_level_term(value),
-            "scheduled" | "sched" => {
-                let dm = parse_date_match(value)?;
-                Ok(Predicate::Scheduled(dm))
-            }
-            "deadline" | "dl" => {
-                let dm = parse_date_match(value)?;
-                Ok(Predicate::Deadline(dm))
-            }
-            "closed" => {
-                let dm = parse_date_match(value)?;
-                Ok(Predicate::Closed(dm))
-            }
-            _ => Err(ParseError(format!("unknown predicate: {key}"))),
-        }
+    if let Some((key, value)) = term.split_once(':') {
+        parse_key_value_term(key, value)
     } else {
-        // Bare word — treat as heading substring search.
         Ok(Predicate::Heading(term.to_string()))
     }
 }
 
+/// Parses `property:KEY` or `property:KEY=VALUE`.
 fn parse_property_term(value: &str) -> Result<Predicate, ParseError> {
     if let Some(eq_pos) = value.find('=') {
         let key = value[..eq_pos].to_string();
@@ -397,6 +499,7 @@ fn parse_property_term(value: &str) -> Result<Predicate, ParseError> {
     }
 }
 
+/// Parses `priority:A` or `priority:>=B`.
 fn parse_priority_term(value: &str) -> Result<Predicate, ParseError> {
     if value.len() == 1 && value.chars().next().unwrap().is_ascii_alphabetic() {
         return Ok(Predicate::Priority(PriorityMatch::Exact(
@@ -416,6 +519,7 @@ fn parse_priority_term(value: &str) -> Result<Predicate, ParseError> {
     }
 }
 
+/// Parses `level:2` or `level:<=3`.
 fn parse_level_term(value: &str) -> Result<Predicate, ParseError> {
     // Try exact number first.
     if let Ok(n) = value.parse::<usize>() {
@@ -435,6 +539,7 @@ fn parse_level_term(value: &str) -> Result<Predicate, ParseError> {
     }))
 }
 
+/// Parses a `scheduled:`, `deadline:`, or `closed:` date value.
 fn parse_date_match(value: &str) -> Result<DateMatch, ParseError> {
     match value {
         "" => Ok(DateMatch::Any),
@@ -454,6 +559,7 @@ fn parse_date_match(value: &str) -> Result<DateMatch, ParseError> {
     }
 }
 
+/// Parses a relative (`+7d`) or absolute (`YYYY-MM-DD`) date reference.
 fn parse_date_ref(value: &str) -> Result<DateRef, ParseError> {
     if value == "today" {
         return Ok(DateRef::Today);
@@ -498,6 +604,7 @@ fn parse_date_ref(value: &str) -> Result<DateRef, ParseError> {
     Err(ParseError(format!("invalid date reference: {value}")))
 }
 
+/// Splits a leading comparison operator (`<=`, `>=`, `<`, `>`, `=`) from `value`.
 fn parse_cmp_op(value: &str) -> Result<(CmpOp, &str), ParseError> {
     if let Some(rest) = value.strip_prefix("<=") {
         Ok((CmpOp::Lte, rest))
@@ -516,28 +623,36 @@ fn parse_cmp_op(value: &str) -> Result<(CmpOp, &str), ParseError> {
     }
 }
 
+// endregion
+
+// region Tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Verifies bare `todo` parses as `Predicate::Todo(None)`.
     #[test]
     fn parse_bare_todo() {
         let p = parse_query("todo").unwrap();
         assert_eq!(p, Predicate::Todo(None));
     }
 
+    /// Verifies `todo:TODO` parses as a specific keyword predicate.
     #[test]
     fn parse_todo_keyword() {
         let p = parse_query("todo:TODO").unwrap();
         assert_eq!(p, Predicate::Todo(Some("TODO".to_string())));
     }
 
+    /// Verifies bare `done` parses as `Predicate::Done`.
     #[test]
     fn parse_done() {
         let p = parse_query("done").unwrap();
         assert_eq!(p, Predicate::Done);
     }
 
+    /// Verifies comma-separated `tags:` parses into `Predicate::Tags`.
     #[test]
     fn parse_tags() {
         let p = parse_query("tags:work,urgent").unwrap();
@@ -547,12 +662,14 @@ mod tests {
         );
     }
 
+    /// Verifies `heading:` parses into `Predicate::Heading`.
     #[test]
     fn parse_heading() {
         let p = parse_query("heading:meeting").unwrap();
         assert_eq!(p, Predicate::Heading("meeting".to_string()));
     }
 
+    /// Verifies `property:KEY=VALUE` parses into `Predicate::Property`.
     #[test]
     fn parse_property() {
         let p = parse_query("property:CATEGORY=project").unwrap();
@@ -565,18 +682,21 @@ mod tests {
         );
     }
 
+    /// Verifies `priority:A` parses as an exact priority predicate.
     #[test]
     fn parse_priority_exact() {
         let p = parse_query("priority:A").unwrap();
         assert_eq!(p, Predicate::Priority(PriorityMatch::Exact('A')));
     }
 
+    /// Verifies `priority:>=B` parses as a relational priority predicate.
     #[test]
     fn parse_priority_comparison() {
         let p = parse_query("priority:>=B").unwrap();
         assert_eq!(p, Predicate::Priority(PriorityMatch::Cmp(CmpOp::Gte, 'B')));
     }
 
+    /// Verifies exact and relational `level:` predicates.
     #[test]
     fn parse_level() {
         assert_eq!(
@@ -589,6 +709,7 @@ mod tests {
         );
     }
 
+    /// Verifies `scheduled:<=today` parses into `Predicate::Scheduled`.
     #[test]
     fn parse_scheduled() {
         let p = parse_query("scheduled:<=today").unwrap();
@@ -598,6 +719,7 @@ mod tests {
         );
     }
 
+    /// Verifies relative `+7d` deadline expressions parse cleanly.
     #[test]
     fn parse_deadline_relative() {
         let p = parse_query("deadline:<=+7d").unwrap();
@@ -610,12 +732,14 @@ mod tests {
         );
     }
 
+    /// Verifies bare `clocked` parses as `Predicate::Clocked`.
     #[test]
     fn parse_clocked() {
         let p = parse_query("clocked").unwrap();
         assert_eq!(p, Predicate::Clocked);
     }
 
+    /// Verifies adjacent terms combine via implicit logical `And`.
     #[test]
     fn parse_implicit_and() {
         let p = parse_query("todo:TODO tags:work").unwrap();
@@ -628,6 +752,7 @@ mod tests {
         );
     }
 
+    /// Verifies explicit `or` combines predicates via `Predicate::Or`.
     #[test]
     fn parse_explicit_or() {
         let p = parse_query("todo:TODO or todo:NEXT").unwrap();
@@ -640,12 +765,14 @@ mod tests {
         );
     }
 
+    /// Verifies `not` negates the following predicate atom.
     #[test]
     fn parse_not() {
         let p = parse_query("not done").unwrap();
         assert_eq!(p, Predicate::Not(Box::new(Predicate::Done)));
     }
 
+    /// Verifies parenthesized `or` nested inside `and` preserves operator precedence.
     #[test]
     fn parse_complex_query() {
         let p = parse_query("(todo:TODO or todo:NEXT) and tags:work").unwrap();
@@ -661,29 +788,34 @@ mod tests {
         );
     }
 
+    /// Verifies unrecognized bare words fall back to `Predicate::Heading`.
     #[test]
     fn parse_bare_word_as_heading() {
         let p = parse_query("meeting").unwrap();
         assert_eq!(p, Predicate::Heading("meeting".to_string()));
     }
 
+    /// Verifies empty queries return a [`ParseError`].
     #[test]
     fn parse_empty_fails() {
         assert!(parse_query("").is_err());
     }
 
+    /// Verifies `deadline:past` parses as `DateMatch::Past`.
     #[test]
     fn parse_deadline_past() {
         let p = parse_query("deadline:past").unwrap();
         assert_eq!(p, Predicate::Deadline(DateMatch::Past));
     }
 
+    /// Verifies bare `waiting` parses as `Predicate::Waiting`.
     #[test]
     fn parse_waiting() {
         let p = parse_query("waiting").unwrap();
         assert_eq!(p, Predicate::Waiting);
     }
 
+    /// Verifies ISO-8601 `YYYY-MM-DD` dates parse as `DateRef::Absolute`.
     #[test]
     fn parse_absolute_date() {
         let p = parse_query("scheduled:2024-01-15").unwrap();
@@ -692,4 +824,32 @@ mod tests {
             Predicate::Scheduled(DateMatch::Cmp(CmpOp::Eq, DateRef::Absolute(2024, 1, 15)))
         );
     }
+
+    /// Verifies `body:<term>` and `body:"<phrase>"` parse into `Predicate::Body`.
+    #[test]
+    fn parse_body_term_and_quoted_phrase() {
+        assert_eq!(
+            parse_query("body:Herzmaschine").unwrap(),
+            Predicate::Body("Herzmaschine".to_string())
+        );
+        assert_eq!(
+            parse_query("body:\"Herzmaschine\"").unwrap(),
+            Predicate::Body("Herzmaschine".to_string())
+        );
+        assert_eq!(
+            parse_query("body:\"multi word (v2)\"").unwrap(),
+            Predicate::Body("multi word (v2)".to_string())
+        );
+        assert_eq!(
+            parse_query("property:CATEGORY=\"project plan\"").unwrap(),
+            Predicate::Property {
+                key: "CATEGORY".to_string(),
+                value: "project plan".to_string(),
+            }
+        );
+        assert!(parse_query("body:\"").is_err());
+        assert!(parse_query("body:\"\"").is_err());
+    }
 }
+
+// endregion

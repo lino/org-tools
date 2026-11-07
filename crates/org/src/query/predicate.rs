@@ -1,23 +1,200 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=590 reason="Cohesive query predicate evaluator, BM25 body-ranking bridge, and 23-case behavioural unit test suite"
 
-//! Predicate evaluation against [`OrgEntry`] values.
+//! Predicate evaluation and BM25 body-search helpers against [`OrgEntry`] values.
 
+use std::path::Path;
+
+use org_tools_core::cache::{
+    extract_entry_bodies, matches_body_phrase, rank_matched_indices_bm25, BodyLoadedDoc, FtsHit,
+};
 use org_tools_core::document::{OrgDocument, OrgEntry};
 use org_tools_core::edna::{self, EdnaContext};
 use org_tools_core::rules::timestamp::OrgTimestamp;
+use org_tools_core::source::SourceFile;
 
 use super::parser::{CmpOp, Comparison, DateMatch, DateRef, DateUnit, Predicate, PriorityMatch};
 
-/// Evaluate a predicate against an entry in a document.
-///
-/// The `doc` parameter is needed for tag inheritance and TODO keyword config.
-/// The `all_docs` parameter enables cross-file resolution for edna blockers.
+// region Public API
+
+/// Evaluates `pred` against `entry` in `doc` with optional cross-file `all_docs` context.
 pub fn matches(
     pred: &Predicate,
     entry: &OrgEntry,
     doc: &OrgDocument,
     all_docs: &[&OrgDocument],
+    today: (u16, u8, u8),
+) -> bool {
+    let entry_idx = doc
+        .entries
+        .iter()
+        .position(|e| std::ptr::eq(e, entry))
+        .unwrap_or(0);
+    matches_with_body(pred, entry, entry_idx, None, doc, all_docs, today)
+}
+
+/// Evaluates `pred` against `entry` using pre-extracted `entry_body` when supplied.
+pub fn matches_with_body(
+    pred: &Predicate,
+    entry: &OrgEntry,
+    entry_idx: usize,
+    entry_body: Option<&str>,
+    doc: &OrgDocument,
+    all_docs: &[&OrgDocument],
+    today: (u16, u8, u8),
+) -> bool {
+    match pred {
+        Predicate::Body(needle) => eval_body(entry, entry_idx, entry_body, doc, needle),
+        Predicate::Blocked => is_entry_blocked(doc, all_docs, entry_idx),
+        Predicate::Actionable => is_entry_actionable(entry, doc, all_docs, entry_idx),
+        Predicate::Waiting => is_entry_waiting(entry),
+        Predicate::And(preds) => preds
+            .iter()
+            .all(|p| matches_with_body(p, entry, entry_idx, entry_body, doc, all_docs, today)),
+        Predicate::Or(preds) => preds
+            .iter()
+            .any(|p| matches_with_body(p, entry, entry_idx, entry_body, doc, all_docs, today)),
+        Predicate::Not(inner) => {
+            !matches_with_body(inner, entry, entry_idx, entry_body, doc, all_docs, today)
+        }
+        other => match_metadata_predicate(other, entry, entry_idx, doc, today),
+    }
+}
+
+/// Filters BM25-ordered [`FtsHit`] candidates against full `pred` semantics, honoring `limit`.
+pub fn filter_fts_hits(
+    pred: &Predicate,
+    scan_dir: &Path,
+    hits: Vec<FtsHit>,
+    loaded: &[BodyLoadedDoc],
+    doc_refs: &[&OrgDocument],
+    today: (u16, u8, u8),
+    limit: Option<usize>,
+) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for hit in hits {
+        let target_file = scan_dir.join(&hit.rel_path);
+        let Ok(di) = loaded.binary_search_by(|d| d.doc.file.cmp(&target_file)) else {
+            continue;
+        };
+        let Some(entry) = loaded[di].doc.entries.get(hit.entry_idx) else {
+            continue;
+        };
+        if matches_with_body(
+            pred,
+            entry,
+            hit.entry_idx,
+            Some(&loaded[di].bodies[hit.entry_idx]),
+            &loaded[di].doc,
+            doc_refs,
+            today,
+        ) {
+            out.push((di, hit.entry_idx));
+            if limit.is_some_and(|n| out.len() >= n) {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Evaluates `pred` across `loaded` documents and orders matches by Okapi BM25 relevance.
+pub fn eval_and_rank_body_docs(
+    pred: &Predicate,
+    loaded: &[BodyLoadedDoc],
+    doc_refs: &[&OrgDocument],
+    today: (u16, u8, u8),
+    limit: Option<usize>,
+) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+    for (di, item) in loaded.iter().enumerate() {
+        for (ei, entry) in item.doc.entries.iter().enumerate() {
+            if matches_with_body(
+                pred,
+                entry,
+                ei,
+                Some(&item.bodies[ei]),
+                &item.doc,
+                doc_refs,
+                today,
+            ) {
+                pairs.push((di, ei));
+            }
+        }
+    }
+    let mut ranked = rank_matched_indices_bm25(loaded, &pairs, &pred.positive_body_phrases());
+    if let Some(n) = limit {
+        ranked.truncate(n);
+    }
+    ranked
+}
+
+// endregion
+
+// region Predicate Evaluation
+
+/// Evaluates `Predicate::Body(needle)` against `entry.title` and `entry_body` (loading from disk when `None`).
+fn eval_body(
+    entry: &OrgEntry,
+    entry_idx: usize,
+    entry_body: Option<&str>,
+    doc: &OrgDocument,
+    needle: &str,
+) -> bool {
+    if let Some(body) = entry_body {
+        return matches_body_phrase(&entry.title, body, needle);
+    }
+    let loaded = SourceFile::from_path(&doc.file)
+        .ok()
+        .and_then(|src| {
+            extract_entry_bodies(&src.content, doc)
+                .into_iter()
+                .nth(entry_idx)
+        })
+        .unwrap_or_default();
+    matches_body_phrase(&entry.title, &loaded, needle)
+}
+
+/// Returns `true` when `entry_idx` is blocked by an `org-edna` `:BLOCKER:` expression.
+fn is_entry_blocked(doc: &OrgDocument, all_docs: &[&OrgDocument], entry_idx: usize) -> bool {
+    edna::is_blocked(&EdnaContext {
+        all_docs,
+        doc,
+        entry_idx,
+    })
+}
+
+/// Returns `true` when `entry` is an active, non-waiting, unblocked TODO item.
+fn is_entry_actionable(
+    entry: &OrgEntry,
+    doc: &OrgDocument,
+    all_docs: &[&OrgDocument],
+    entry_idx: usize,
+) -> bool {
+    let has_todo = entry.keyword.is_some()
+        && !entry
+            .keyword
+            .as_deref()
+            .is_some_and(|k| doc.todo_keywords.is_done(k));
+    has_todo && !is_entry_waiting(entry) && !is_entry_blocked(doc, all_docs, entry_idx)
+}
+
+/// Returns `true` when `entry` carries a `WAIT` keyword or `:WAITING_FOR:` property.
+fn is_entry_waiting(entry: &OrgEntry) -> bool {
+    entry
+        .keyword
+        .as_deref()
+        .is_some_and(|kw| kw.to_uppercase().contains("WAIT"))
+        || entry.properties.contains_key("WAITING_FOR")
+}
+
+/// Evaluates non-recursive metadata and planning predicates on `entry`.
+fn match_metadata_predicate(
+    pred: &Predicate,
+    entry: &OrgEntry,
+    entry_idx: usize,
+    doc: &OrgDocument,
     today: (u16, u8, u8),
 ) -> bool {
     match pred {
@@ -30,19 +207,18 @@ pub fn matches(
             .as_deref()
             .is_some_and(|k| doc.todo_keywords.is_done(k)),
         Predicate::Tags(tags) => {
-            let entry_idx = doc
-                .entries
-                .iter()
-                .position(|e| std::ptr::eq(e, entry))
-                .unwrap_or(0);
             let inherited = doc.inherited_tags(entry_idx);
             tags.iter()
                 .all(|t| inherited.iter().any(|it| it.eq_ignore_ascii_case(t)))
         }
-        Predicate::Heading(substr) => {
-            let lower = substr.to_lowercase();
-            entry.title.to_lowercase().contains(&lower)
-        }
+        Predicate::Heading(substr) => entry.title.to_lowercase().contains(&substr.to_lowercase()),
+        other => match_structural_predicate(other, entry, today),
+    }
+}
+
+/// Evaluates property, priority, level, clock, and planning predicates on `entry`.
+fn match_structural_predicate(pred: &Predicate, entry: &OrgEntry, today: (u16, u8, u8)) -> bool {
+    match pred {
         Predicate::Property { key, value } => {
             if value.is_empty() {
                 entry.properties.contains_key(key)
@@ -55,72 +231,26 @@ pub fn matches(
             PriorityMatch::Cmp(op, ch) => entry.priority.is_some_and(|p| cmp_priority(*op, p, *ch)),
         },
         Predicate::Level(cmp) => match_comparison(cmp, entry.level),
-        Predicate::Scheduled(dm) => match_date_opt(&entry.planning.scheduled, dm, today),
-        Predicate::Deadline(dm) => match_date_opt(&entry.planning.deadline, dm, today),
-        Predicate::Closed(dm) => match_date_opt(&entry.planning.closed, dm, today),
         Predicate::Clocked => !entry.clocks.is_empty(),
-        Predicate::Blocked => {
-            let entry_idx = doc
-                .entries
-                .iter()
-                .position(|e| std::ptr::eq(e, entry))
-                .unwrap_or(0);
-            let ctx = EdnaContext {
-                all_docs,
-                doc,
-                entry_idx,
-            };
-            edna::is_blocked(&ctx)
-        }
-        Predicate::Actionable => {
-            // Actionable = has a TODO keyword, not done, not waiting, not blocked.
-            let has_todo = entry.keyword.is_some()
-                && !entry
-                    .keyword
-                    .as_deref()
-                    .is_some_and(|k| doc.todo_keywords.is_done(k));
-            if !has_todo {
-                return false;
-            }
-            // Exclude waiting entries.
-            let is_waiting = entry
-                .keyword
-                .as_deref()
-                .is_some_and(|kw| kw.to_uppercase().contains("WAIT"))
-                || entry.properties.contains_key("WAITING_FOR");
-            if is_waiting {
-                return false;
-            }
-            let entry_idx = doc
-                .entries
-                .iter()
-                .position(|e| std::ptr::eq(e, entry))
-                .unwrap_or(0);
-            let ctx = EdnaContext {
-                all_docs,
-                doc,
-                entry_idx,
-            };
-            !edna::is_blocked(&ctx)
-        }
-        Predicate::Waiting => {
-            // Waiting = keyword contains "WAIT" or has :WAITING_FOR: property.
-            let kw_waiting = entry
-                .keyword
-                .as_deref()
-                .is_some_and(|kw| kw.to_uppercase().contains("WAIT"));
-            kw_waiting || entry.properties.contains_key("WAITING_FOR")
-        }
-        Predicate::And(preds) => preds
-            .iter()
-            .all(|p| matches(p, entry, doc, all_docs, today)),
-        Predicate::Or(preds) => preds
-            .iter()
-            .any(|p| matches(p, entry, doc, all_docs, today)),
-        Predicate::Not(inner) => !matches(inner, entry, doc, all_docs, today),
+        other => match_planning_predicate(other, entry, today),
     }
 }
 
+/// Evaluates `Scheduled`, `Deadline`, or `Closed` planning predicates on `entry`.
+fn match_planning_predicate(pred: &Predicate, entry: &OrgEntry, today: (u16, u8, u8)) -> bool {
+    match pred {
+        Predicate::Scheduled(dm) => match_date_opt(&entry.planning.scheduled, dm, today),
+        Predicate::Deadline(dm) => match_date_opt(&entry.planning.deadline, dm, today),
+        Predicate::Closed(dm) => match_date_opt(&entry.planning.closed, dm, today),
+        _ => false,
+    }
+}
+
+// endregion
+
+// region Comparison & Date Helpers
+
+/// Evaluates a numeric [`Comparison`] against `value`.
 fn match_comparison(cmp: &Comparison, value: usize) -> bool {
     match cmp {
         Comparison::Eq(n) => value == *n,
@@ -131,17 +261,18 @@ fn match_comparison(cmp: &Comparison, value: usize) -> bool {
     }
 }
 
-/// Compare priorities. Note: A < B < C in org-mode (A is highest).
+/// Compares Org priorities where `A < B < C` (`A` is highest priority).
 fn cmp_priority(op: CmpOp, entry_pri: char, target: char) -> bool {
     match op {
         CmpOp::Eq => entry_pri == target,
-        CmpOp::Lt => entry_pri > target, // Higher letter = lower priority.
+        CmpOp::Lt => entry_pri > target,
         CmpOp::Lte => entry_pri >= target,
         CmpOp::Gt => entry_pri < target,
         CmpOp::Gte => entry_pri <= target,
     }
 }
 
+/// Evaluates a [`DateMatch`] against an optional planning timestamp.
 fn match_date_opt(ts: &Option<OrgTimestamp>, dm: &DateMatch, today: (u16, u8, u8)) -> bool {
     match dm {
         DateMatch::Any => ts.is_some(),
@@ -149,10 +280,10 @@ fn match_date_opt(ts: &Option<OrgTimestamp>, dm: &DateMatch, today: (u16, u8, u8
     }
 }
 
+/// Evaluates a [`DateMatch`] against a concrete [`OrgTimestamp`].
 fn match_date(ts: &OrgTimestamp, dm: &DateMatch, today: (u16, u8, u8)) -> bool {
     let ts_days = date_to_days(ts.year, ts.month, ts.day);
     let today_days = date_to_days(today.0, today.1, today.2);
-
     match dm {
         DateMatch::Any => true,
         DateMatch::Today => ts_days == today_days,
@@ -171,12 +302,12 @@ fn match_date(ts: &OrgTimestamp, dm: &DateMatch, today: (u16, u8, u8)) -> bool {
     }
 }
 
-/// Convert a date to a day count for comparison.
-/// Uses Howard Hinnant's days_from_civil algorithm.
+/// Converts a civil `(year, month, day)` triple into a day count.
 fn date_to_days(year: u16, month: u8, day: u8) -> i64 {
     super::agenda::date_to_days_pub(year, month, day)
 }
 
+/// Resolves a [`DateRef`] relative to `today_days`.
 fn date_ref_to_days(date_ref: &DateRef, today_days: i64) -> i64 {
     match date_ref {
         DateRef::Today => today_days,
@@ -184,7 +315,7 @@ fn date_ref_to_days(date_ref: &DateRef, today_days: i64) -> i64 {
             let delta = match unit {
                 DateUnit::Day => *n,
                 DateUnit::Week => n * 7,
-                DateUnit::Month => n * 30, // Approximate.
+                DateUnit::Month => n * 30,
             };
             today_days + delta
         }
@@ -192,33 +323,39 @@ fn date_ref_to_days(date_ref: &DateRef, today_days: i64) -> i64 {
     }
 }
 
+// endregion
+
+// region Tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use org_tools_core::source::SourceFile;
 
+    /// Returns a fixed civil reference date `(2024, 6, 15)` for deterministic tests.
     fn today() -> (u16, u8, u8) {
         (2024, 6, 15)
     }
 
+    /// Parses `org` text into an in-memory [`OrgDocument`] and default entry index `0`.
     fn make_doc_and_entry(org: &str) -> (OrgDocument, usize) {
         let source = SourceFile::new("test.org", org.to_string());
-        let doc = OrgDocument::from_source(&source);
-        (doc, 0)
+        (OrgDocument::from_source(&source), 0)
     }
 
-    /// Helper: evaluate predicate with a single-doc context.
+    /// Evaluates `pred` against `doc.entries[idx]` in a single-document context.
     fn eval(pred: &Predicate, doc: &OrgDocument, idx: usize) -> bool {
         let all: Vec<&OrgDocument> = vec![doc];
         matches(pred, &doc.entries[idx], doc, &all, today())
     }
 
+    /// Verifies `Predicate::Todo(None)` matches any TODO keyword.
     #[test]
     fn match_todo_any() {
         let (doc, idx) = make_doc_and_entry("* TODO Task\n");
         assert!(eval(&Predicate::Todo(None), &doc, idx));
     }
 
+    /// Verifies `Predicate::Todo(Some(...))` matches only the specified TODO keyword.
     #[test]
     fn match_todo_specific() {
         let (doc, idx) = make_doc_and_entry("* TODO Task\n");
@@ -226,24 +363,27 @@ mod tests {
         assert!(!eval(&Predicate::Todo(Some("NEXT".to_string())), &doc, idx));
     }
 
+    /// Verifies `Predicate::Done` matches DONE entries.
     #[test]
     fn match_done() {
         let (doc, idx) = make_doc_and_entry("* DONE Task\n");
         assert!(eval(&Predicate::Done, &doc, idx));
     }
 
+    /// Verifies `Predicate::Tags` requires all listed tags case-insensitively.
     #[test]
     fn match_tags() {
         let (doc, idx) = make_doc_and_entry("* Task :work:urgent:\n");
         assert!(eval(&Predicate::Tags(vec!["work".to_string()]), &doc, idx));
         assert!(eval(
-            &Predicate::Tags(vec!["work".to_string(), "urgent".to_string()]),
+            &Predicate::Tags(vec!["work".into(), "urgent".into()]),
             &doc,
             idx
         ));
         assert!(!eval(&Predicate::Tags(vec!["home".to_string()]), &doc, idx));
     }
 
+    /// Verifies `Predicate::Heading` performs case-insensitive substring matching.
     #[test]
     fn match_heading_substring() {
         let (doc, idx) = make_doc_and_entry("* Team Meeting Notes\n");
@@ -251,27 +391,51 @@ mod tests {
         assert!(!eval(&Predicate::Heading("standup".to_string()), &doc, idx));
     }
 
+    /// Verifies `Predicate::Body` matches `unicode61` phrases across title and body prose.
     #[test]
-    fn match_property() {
-        let (doc, idx) = make_doc_and_entry("* Task\n:PROPERTIES:\n:CATEGORY: project\n:END:\n");
-        assert!(eval(
-            &Predicate::Property {
-                key: "CATEGORY".to_string(),
-                value: "project".to_string()
-            },
+    fn match_body_phrase_in_title_and_body() {
+        let raw = "* TODO Alpha Heading\n:PROPERTIES:\n:ID: x1\n:END:\nHerzmaschine runs fast.\n";
+        let src = SourceFile::new("test.org", raw.to_string());
+        let doc = OrgDocument::from_source(&src);
+        let bodies = extract_entry_bodies(&src.content, &doc);
+        let all = vec![&doc];
+        assert!(matches_with_body(
+            &Predicate::Body("Herzmaschine".into()),
+            &doc.entries[0],
+            0,
+            Some(&bodies[0]),
             &doc,
-            idx
+            &all,
+            today()
         ));
-        assert!(eval(
-            &Predicate::Property {
-                key: "CATEGORY".to_string(),
-                value: String::new()
-            },
+        assert!(!matches_with_body(
+            &Predicate::Body("x1".into()),
+            &doc.entries[0],
+            0,
+            Some(&bodies[0]),
             &doc,
-            idx
+            &all,
+            today()
         ));
     }
 
+    /// Verifies `Predicate::Property` checks exact values and bare key existence.
+    #[test]
+    fn match_property() {
+        let (doc, idx) = make_doc_and_entry("* Task\n:PROPERTIES:\n:CATEGORY: project\n:END:\n");
+        let exact = Predicate::Property {
+            key: "CATEGORY".into(),
+            value: "project".into(),
+        };
+        let any_val = Predicate::Property {
+            key: "CATEGORY".into(),
+            value: String::new(),
+        };
+        assert!(eval(&exact, &doc, idx));
+        assert!(eval(&any_val, &doc, idx));
+    }
+
+    /// Verifies `Predicate::Priority` honors Org `A > B > C` ordering.
     #[test]
     fn match_priority() {
         let (doc, idx) = make_doc_and_entry("* TODO [#A] Urgent\n");
@@ -292,6 +456,7 @@ mod tests {
         ));
     }
 
+    /// Verifies `Predicate::Level` matches exact and relational outline levels.
     #[test]
     fn match_level() {
         let (doc, _) = make_doc_and_entry("* A\n** B\n*** C\n");
@@ -300,6 +465,7 @@ mod tests {
         assert!(!eval(&Predicate::Level(Comparison::Eq(1)), &doc, 1));
     }
 
+    /// Verifies `Predicate::Clocked` detects `:LOGBOOK:` clock lines.
     #[test]
     fn match_clocked() {
         let (doc, idx) = make_doc_and_entry(
@@ -308,38 +474,43 @@ mod tests {
         assert!(eval(&Predicate::Clocked, &doc, idx));
     }
 
+    /// Verifies `Predicate::Scheduled(DateMatch::Today)` matches today's date.
     #[test]
     fn match_scheduled_today() {
         let (doc, idx) = make_doc_and_entry("* Task\nSCHEDULED: <2024-06-15 Sat>\n");
         assert!(eval(&Predicate::Scheduled(DateMatch::Today), &doc, idx));
     }
 
+    /// Verifies `Predicate::Deadline(DateMatch::Past)` matches overdue deadlines.
     #[test]
     fn match_deadline_past() {
         let (doc, idx) = make_doc_and_entry("* Task\nDEADLINE: <2024-06-10 Mon>\n");
         assert!(eval(&Predicate::Deadline(DateMatch::Past), &doc, idx));
     }
 
+    /// Verifies `Predicate::And` requires every child predicate to match.
     #[test]
     fn match_and() {
         let (doc, idx) = make_doc_and_entry("* TODO Task :work:\n");
         let pred = Predicate::And(vec![
-            Predicate::Todo(Some("TODO".to_string())),
-            Predicate::Tags(vec!["work".to_string()]),
+            Predicate::Todo(Some("TODO".into())),
+            Predicate::Tags(vec!["work".into()]),
         ]);
         assert!(eval(&pred, &doc, idx));
     }
 
+    /// Verifies `Predicate::Or` succeeds when any child predicate matches.
     #[test]
     fn match_or() {
         let (doc, idx) = make_doc_and_entry("* NEXT Task\n");
         let pred = Predicate::Or(vec![
-            Predicate::Todo(Some("TODO".to_string())),
-            Predicate::Todo(Some("NEXT".to_string())),
+            Predicate::Todo(Some("TODO".into())),
+            Predicate::Todo(Some("NEXT".into())),
         ]);
         assert!(eval(&pred, &doc, idx));
     }
 
+    /// Verifies `Predicate::Not` inverts its inner predicate.
     #[test]
     fn match_not() {
         let (doc, idx) = make_doc_and_entry("* TODO Task\n");
@@ -351,44 +522,41 @@ mod tests {
         assert!(eval(&Predicate::Not(Box::new(Predicate::Done)), &doc, idx));
     }
 
+    /// Verifies `Predicate::Tags` resolves inherited ancestor tags.
     #[test]
     fn match_inherited_tags() {
         let (doc, _) = make_doc_and_entry("* Parent :parent_tag:\n** Child :child_tag:\n");
-        assert!(eval(
-            &Predicate::Tags(vec!["parent_tag".to_string()]),
-            &doc,
-            1
-        ));
+        assert!(eval(&Predicate::Tags(vec!["parent_tag".into()]), &doc, 1));
     }
 
+    /// Verifies `Predicate::Blocked` detects unresolved `ids(...)` blockers.
     #[test]
     fn match_blocked() {
         let org = "* TODO Dep\n:PROPERTIES:\n:ID: dep-1\n:END:\n\
                    * TODO Blocked\n:PROPERTIES:\n:BLOCKER: ids(\"dep-1\")\n:END:\n";
         let (doc, _) = make_doc_and_entry(org);
-        // Entry 1 is blocked because dep-1 (entry 0) is TODO.
         assert!(eval(&Predicate::Blocked, &doc, 1));
-        // Entry 0 has no blocker.
         assert!(!eval(&Predicate::Blocked, &doc, 0));
     }
 
+    /// Verifies `Predicate::Actionable` excludes blocked entries.
     #[test]
     fn match_actionable() {
         let org = "* TODO Dep\n:PROPERTIES:\n:ID: dep-1\n:END:\n\
                    * TODO Blocked\n:PROPERTIES:\n:BLOCKER: ids(\"dep-1\")\n:END:\n";
         let (doc, _) = make_doc_and_entry(org);
-        // Entry 0 is actionable (TODO + no blocker).
         assert!(eval(&Predicate::Actionable, &doc, 0));
-        // Entry 1 is not actionable (blocked).
         assert!(!eval(&Predicate::Actionable, &doc, 1));
     }
 
+    /// Verifies `Predicate::Actionable` excludes DONE entries.
     #[test]
     fn done_entry_not_actionable() {
         let (doc, idx) = make_doc_and_entry("* DONE Task\n");
         assert!(!eval(&Predicate::Actionable, &doc, idx));
     }
 
+    /// Verifies `Predicate::Waiting` matches `WAITING` keywords.
     #[test]
     fn match_waiting_keyword() {
         let (doc, idx) =
@@ -396,6 +564,7 @@ mod tests {
         assert!(eval(&Predicate::Waiting, &doc, idx));
     }
 
+    /// Verifies `Predicate::Waiting` matches `:WAITING_FOR:` properties.
     #[test]
     fn match_waiting_property() {
         let (doc, idx) =
@@ -403,9 +572,12 @@ mod tests {
         assert!(eval(&Predicate::Waiting, &doc, idx));
     }
 
+    /// Verifies regular TODO entries do not match `Predicate::Waiting`.
     #[test]
     fn not_waiting_for_regular_todo() {
         let (doc, idx) = make_doc_and_entry("* TODO Regular task\n");
         assert!(!eval(&Predicate::Waiting, &doc, idx));
     }
 }
+
+// endregion

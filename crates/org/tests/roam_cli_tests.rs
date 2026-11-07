@@ -230,12 +230,11 @@ fn parse_and_validate_roam_json(json_str: &str) -> Value {
     let schema: Value = serde_json::from_str(&schema_raw).expect("valid schema JSON");
     let value: Value = serde_json::from_str(json_str).expect("valid command JSON");
     validate_schema_node(&value, &schema, &schema).expect("must conform to org-roam-output schema");
-    assert!(value["telemetry"]["files_scanned"].as_u64().unwrap() >= 1);
-    assert_eq!(
-        value["telemetry"]["cache_misses"],
-        value["telemetry"]["files_scanned"]
-    );
-    assert_eq!(value["telemetry"]["cache_hits"].as_u64(), Some(0));
+    let files_scanned = value["telemetry"]["files_scanned"].as_u64().unwrap();
+    let cache_hits = value["telemetry"]["cache_hits"].as_u64().unwrap();
+    let cache_misses = value["telemetry"]["cache_misses"].as_u64().unwrap();
+    assert!(files_scanned >= 1);
+    assert_eq!(cache_hits + cache_misses, files_scanned);
     value
 }
 

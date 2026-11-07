@@ -3,7 +3,6 @@
 
 //! `org roam` subcommand handlers for `org-roam` v2 nodes, backlinks, links, and graphs.
 
-use std::collections::HashSet;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -11,9 +10,9 @@ use std::time::Instant;
 use clap::{Subcommand, ValueEnum};
 use serde::Serialize;
 
+use org_tools_core::cache::RoamWorkspace;
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
-use org_tools_core::files::collect_org_files;
-use org_tools_core::roam::{RoamBacklink, RoamIndex, RoamLink, RoamNode, RoamOutgoingLink};
+use org_tools_core::roam::{RoamBacklink, RoamLink, RoamNode, RoamOutgoingLink};
 
 use super::MutationTelemetry;
 use crate::{EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
@@ -203,27 +202,23 @@ fn resolve_scan_roots(paths: &[PathBuf], workspace: Option<&Path>) -> Result<Vec
     Ok(roots)
 }
 
-/// Builds a deduplicated [`RoamIndex`] across `paths` and `workspace`.
-fn load_roam_index(paths: &[PathBuf], workspace: Option<&Path>) -> Result<RoamIndex, String> {
+/// Opens a synchronized [`RoamWorkspace`] for `paths` and `workspace`.
+fn open_roam_backend(
+    paths: &[PathBuf],
+    workspace: Option<&Path>,
+    no_cache: bool,
+) -> Result<RoamWorkspace, String> {
     let roots = resolve_scan_roots(paths, workspace)?;
-    let raw_files = collect_org_files(&roots);
-    let mut seen = HashSet::with_capacity(raw_files.len());
-    let mut unique_files = Vec::with_capacity(raw_files.len());
-    for file in raw_files {
-        if seen.insert(normalize_workspace_path(&file)) {
-            unique_files.push(file);
-        }
-    }
-    RoamIndex::from_files(&unique_files)
+    RoamWorkspace::open(&roots, no_cache)
 }
 
-/// Builds [`MutationTelemetry`] for an index scan started at `started`.
-fn build_telemetry(started: Instant, files_scanned: usize) -> MutationTelemetry {
+/// Finalizes [`MutationTelemetry`] from `started` and `(scanned, hits, misses)` counters.
+fn finish_telemetry(started: Instant, counts: (usize, usize, usize)) -> MutationTelemetry {
     MutationTelemetry {
         duration_us: started.elapsed().as_micros() as u64,
-        files_scanned,
-        cache_hits: 0,
-        cache_misses: files_scanned,
+        files_scanned: counts.0,
+        cache_hits: counts.1,
+        cache_misses: counts.2,
     }
 }
 
@@ -248,28 +243,29 @@ fn handle_node(
     paths: &[PathBuf],
     workspace: Option<&Path>,
     format: RoamOutputFormat,
+    no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let index = match load_roam_index(paths, workspace) {
-        Ok(idx) => idx,
+    let res = open_roam_backend(paths, workspace, no_cache)
+        .and_then(|b| Ok((b.resolve(&query)?, b.counts())));
+    let (nodes, counts) = match res {
+        Ok(v) => v,
         Err(err) => {
             eprintln!("org: {err}");
             return EXIT_ERROR;
         }
     };
-    let nodes = index.resolve_nodes(&query, true);
     let code = if nodes.is_empty() {
         EXIT_ISSUES
     } else {
         EXIT_OK
     };
-
     match format {
         RoamOutputFormat::Json => emit_json(&NodeJsonEnvelope {
             kind: "node",
             query,
             nodes,
-            telemetry: build_telemetry(started, index.files_scanned),
+            telemetry: finish_telemetry(started, counts),
         }),
         RoamOutputFormat::Human => {
             let mut buf = String::new();
@@ -288,30 +284,33 @@ fn handle_backlinks(
     paths: &[PathBuf],
     workspace: Option<&Path>,
     format: RoamOutputFormat,
+    no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let index = match load_roam_index(paths, workspace) {
-        Ok(idx) => idx,
+    let res = open_roam_backend(paths, workspace, no_cache).and_then(|b| {
+        let ns = b.resolve(&target)?;
+        let bl = b.backlinks(&ns)?;
+        Ok((ns, bl, b.counts()))
+    });
+    let (nodes, backlinks, counts) = match res {
+        Ok(v) => v,
         Err(err) => {
             eprintln!("org: {err}");
             return EXIT_ERROR;
         }
     };
-    let nodes = index.resolve_nodes(&target, true);
-    let backlinks = index.backlinks_for(&nodes);
     let code = if nodes.is_empty() {
         EXIT_ISSUES
     } else {
         EXIT_OK
     };
-
     match format {
         RoamOutputFormat::Json => emit_json(&BacklinksJsonEnvelope {
             kind: "backlinks",
             target,
             nodes,
             backlinks,
-            telemetry: build_telemetry(started, index.files_scanned),
+            telemetry: finish_telemetry(started, counts),
         }),
         RoamOutputFormat::Human => {
             let mut buf = String::new();
@@ -334,30 +333,33 @@ fn handle_links(
     paths: &[PathBuf],
     workspace: Option<&Path>,
     format: RoamOutputFormat,
+    no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let index = match load_roam_index(paths, workspace) {
-        Ok(idx) => idx,
+    let res = open_roam_backend(paths, workspace, no_cache).and_then(|b| {
+        let ns = b.resolve(&source)?;
+        let out = b.outgoing(&ns)?;
+        Ok((ns, out, b.counts()))
+    });
+    let (nodes, links, counts) = match res {
+        Ok(v) => v,
         Err(err) => {
             eprintln!("org: {err}");
             return EXIT_ERROR;
         }
     };
-    let nodes = index.resolve_nodes(&source, true);
-    let links = index.outgoing_links_for(&nodes);
     let code = if nodes.is_empty() {
         EXIT_ISSUES
     } else {
         EXIT_OK
     };
-
     match format {
         RoamOutputFormat::Json => emit_json(&LinksJsonEnvelope {
             kind: "links",
             source,
             nodes,
             links,
-            telemetry: build_telemetry(started, index.files_scanned),
+            telemetry: finish_telemetry(started, counts),
         }),
         RoamOutputFormat::Human => {
             let mut buf = String::new();
@@ -375,22 +377,27 @@ fn handle_links(
 }
 
 /// Executes `org roam graph`.
-fn handle_graph(paths: &[PathBuf], workspace: Option<&Path>, format: RoamGraphFormat) -> i32 {
+fn handle_graph(
+    paths: &[PathBuf],
+    workspace: Option<&Path>,
+    format: RoamGraphFormat,
+    no_cache: bool,
+) -> i32 {
     let started = Instant::now();
-    let index = match load_roam_index(paths, workspace) {
-        Ok(idx) => idx,
-        Err(err) => {
-            eprintln!("org: {err}");
-            return EXIT_ERROR;
-        }
-    };
-
+    let (index, counts) =
+        match open_roam_backend(paths, workspace, no_cache).and_then(RoamWorkspace::into_graph) {
+            Ok(v) => v,
+            Err(err) => {
+                eprintln!("org: {err}");
+                return EXIT_ERROR;
+            }
+        };
     match format {
         RoamGraphFormat::Json => emit_json(&GraphJsonEnvelope {
             kind: "graph",
             nodes: index.nodes,
             edges: index.links,
-            telemetry: build_telemetry(started, index.files_scanned),
+            telemetry: finish_telemetry(started, counts),
         }),
         RoamGraphFormat::Mermaid => emit_text(&index.render_mermaid()),
         RoamGraphFormat::Dot => emit_text(&index.render_dot()),
@@ -399,31 +406,31 @@ fn handle_graph(paths: &[PathBuf], workspace: Option<&Path>, format: RoamGraphFo
 }
 
 /// Dispatches `org roam` subcommands and returns the CLI exit status code.
-pub(crate) fn run_roam(command: RoamCommand) -> i32 {
+pub(crate) fn run_roam(command: RoamCommand, no_cache: bool) -> i32 {
     match command {
         RoamCommand::Node {
             query,
             paths,
             workspace,
             format,
-        } => handle_node(query, &paths, workspace.as_deref(), format),
+        } => handle_node(query, &paths, workspace.as_deref(), format, no_cache),
         RoamCommand::Backlinks {
             target,
             paths,
             workspace,
             format,
-        } => handle_backlinks(target, &paths, workspace.as_deref(), format),
+        } => handle_backlinks(target, &paths, workspace.as_deref(), format, no_cache),
         RoamCommand::Links {
             source,
             paths,
             workspace,
             format,
-        } => handle_links(source, &paths, workspace.as_deref(), format),
+        } => handle_links(source, &paths, workspace.as_deref(), format, no_cache),
         RoamCommand::Graph {
             paths,
             workspace,
             format,
-        } => handle_graph(&paths, workspace.as_deref(), format),
+        } => handle_graph(&paths, workspace.as_deref(), format, no_cache),
     }
 }
 

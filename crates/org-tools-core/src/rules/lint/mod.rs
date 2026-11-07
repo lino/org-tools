@@ -1,6 +1,8 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Lint rules (`E`, `W`, and `I` series) inspecting Org-mode documents.
+
 pub mod affiliated_keyword_placement;
 pub mod block_type_validity;
 pub mod clock_entry_validity;
@@ -11,6 +13,7 @@ pub mod duplicate_custom_id;
 pub mod duplicate_footnote_definition;
 pub mod duplicate_name;
 pub mod duplicate_target;
+pub mod edna_cycle;
 pub mod file_application;
 pub mod heading_level_gap;
 pub mod incomplete_drawer;
@@ -47,3 +50,4 @@ pub mod trailing_bracket_after_link;
 pub mod unclosed_block;
 pub mod undeclared_tag;
 pub mod unknown_options_item;
+pub mod unresolved_edna_ids;

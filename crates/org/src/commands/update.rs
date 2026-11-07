@@ -3,14 +3,20 @@
 
 //! `org update` subcommand entry module, shared locator resolution, and dispatch.
 
-use std::path::PathBuf;
+#[path = "update_dep.rs"]
+mod update_dep;
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
 use org_tools_core::document::OrgDocument;
+use org_tools_core::files::collect_org_files;
 use org_tools_core::locator::{resolve_locator, OrgLocator, ResolvedEntry};
 use org_tools_core::source::SourceFile;
 
+use self::update_dep::{run_dep, DepCommand};
 use super::update_id::{run_add_id, AddIdArgs};
 use super::update_property::{
     run_delete_property, run_set_property, run_set_tags, DeletePropertyArgs, SetPropertyArgs,
@@ -40,6 +46,12 @@ pub(crate) enum UpdateCommand {
     DeleteProperty(DeletePropertyArgs),
     /// Set or clear heading tags aligned to column 77.
     SetTags(SetTagsArgs),
+    /// Wire or remove symmetric org-edna :BLOCKER: and :TRIGGER: dependencies.
+    Dep {
+        /// Dependency mutation subcommand (`add` or `remove`).
+        #[command(subcommand)]
+        command: DepCommand,
+    },
     /// Update statistic cookies ([/] and [%]) on headings.
     AddCookie {
         /// Files or directories to scan.
@@ -78,6 +90,44 @@ pub(crate) enum UpdateCommand {
     },
 }
 
+/// Resolves mixed CLI locator and file/directory arguments into sorted [`FileEntryTargets`].
+pub(crate) fn resolve_batch_entry_targets(
+    targets: &[String],
+    workspace: Option<&Path>,
+    action_desc: &str,
+) -> Result<FileEntryTargets, i32> {
+    let mut file_targets: HashMap<PathBuf, Option<Vec<usize>>> = HashMap::new();
+    let mut search_paths: Vec<PathBuf> = workspace.into_iter().map(Path::to_path_buf).collect();
+    search_paths.push(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    for target in targets {
+        if let Ok(locator) = OrgLocator::parse(target) {
+            let resolved = resolve_locator(&locator, &search_paths).map_err(|e| {
+                eprintln!("org: {e}");
+                EXIT_ERROR
+            })?;
+            if resolved.is_file_node() {
+                eprintln!("org: cannot {action_desc} on file-level node {target}");
+                return Err(EXIT_ERROR);
+            }
+            file_targets
+                .entry(resolved.file)
+                .or_insert_with(|| Some(Vec::new()))
+                .as_mut()
+                .expect("initialized Some")
+                .push(resolved.entry_index);
+        } else {
+            for file in collect_org_files(&[PathBuf::from(target)]) {
+                file_targets.insert(file, None);
+            }
+        }
+    }
+
+    let mut file_list: Vec<_> = file_targets.into_iter().collect();
+    file_list.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(file_list)
+}
+
 /// Resolves a single Org locator string into its parsed entry, source file, and document.
 pub(crate) fn resolve_single_target(
     locator_str: &str,
@@ -108,6 +158,7 @@ pub(crate) fn run_update(command: UpdateCommand) -> i32 {
         UpdateCommand::SetProperty(args) => run_set_property(args),
         UpdateCommand::DeleteProperty(args) => run_delete_property(args),
         UpdateCommand::SetTags(args) => run_set_tags(args),
+        UpdateCommand::Dep { command } => run_dep(command),
         UpdateCommand::AddCookie {
             paths,
             recursive,

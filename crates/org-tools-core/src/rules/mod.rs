@@ -11,6 +11,7 @@ pub mod timestamp;
 
 use crate::config::Config;
 use crate::diagnostic::{Diagnostic, Fix};
+use crate::document::OrgDocument;
 use crate::source::SourceFile;
 
 /// Shared context passed to [`FormatRule::format`].
@@ -32,18 +33,38 @@ impl<'a> FormatContext<'a> {
 
 /// Shared context passed to [`LintRule::check`].
 ///
-/// Provides read-only access to the source text and active configuration.
+/// Provides read-only access to the source text, active configuration, and
+/// optional pre-parsed workspace documents for cross-file validation.
 pub struct LintContext<'a> {
     /// The source file being linted.
     pub source: &'a SourceFile,
     /// Active configuration for this run.
     pub config: &'a Config,
+    /// Optional slice of parsed workspace documents for cross-file lints.
+    pub workspace_docs: Option<&'a [OrgDocument]>,
 }
 
 impl<'a> LintContext<'a> {
-    /// Creates a new lint context.
+    /// Creates a new single-file lint context without extra workspace documents.
     pub fn new(source: &'a SourceFile, config: &'a Config) -> Self {
-        Self { source, config }
+        Self {
+            source,
+            config,
+            workspace_docs: None,
+        }
+    }
+
+    /// Creates a new lint context backed by `workspace_docs` for cross-file checks.
+    pub fn with_workspace(
+        source: &'a SourceFile,
+        config: &'a Config,
+        workspace_docs: &'a [OrgDocument],
+    ) -> Self {
+        Self {
+            source,
+            config,
+            workspace_docs: Some(workspace_docs),
+        }
     }
 }
 

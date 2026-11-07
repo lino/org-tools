@@ -1,8 +1,11 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Orchestration pipeline executing [`FormatRule`]s and [`LintRule`]s over [`SourceFile`]s.
+
 use crate::config::Config;
-use crate::diagnostic::{Diagnostic, Severity};
+use crate::diagnostic::{Diagnostic, Fix, Severity};
+use crate::document::OrgDocument;
 use crate::formatter::apply_fixes;
 use crate::rules::format::blank_lines::BlankLines;
 use crate::rules::format::heading_spacing::HeadingSpacing;
@@ -23,6 +26,7 @@ use crate::rules::lint::duplicate_custom_id::DuplicateCustomId;
 use crate::rules::lint::duplicate_footnote_definition::DuplicateFootnoteDefinition;
 use crate::rules::lint::duplicate_name::DuplicateName;
 use crate::rules::lint::duplicate_target::DuplicateTarget;
+use crate::rules::lint::edna_cycle::EdnaCycle;
 use crate::rules::lint::file_application::FileApplication;
 use crate::rules::lint::heading_level_gap::HeadingLevelGap;
 use crate::rules::lint::incomplete_drawer::IncompleteDrawer;
@@ -59,6 +63,7 @@ use crate::rules::lint::trailing_bracket_after_link::TrailingBracketAfterLink;
 use crate::rules::lint::unclosed_block::UnclosedBlock;
 use crate::rules::lint::undeclared_tag::UndeclaredTag;
 use crate::rules::lint::unknown_options_item::UnknownOptionsItem;
+use crate::rules::lint::unresolved_edna_ids::UnresolvedEdnaIds;
 use crate::rules::{FormatContext, FormatRule, LintContext, LintRule};
 use crate::source::SourceFile;
 
@@ -77,90 +82,103 @@ pub struct Runner {
 }
 
 impl Default for Runner {
+    /// Constructs a [`Runner`] with default [`Config`] settings.
     fn default() -> Self {
         Self::new(Config::default())
     }
 }
 
+/// Builds the enabled `F`-series format rules according to `config`.
+fn build_format_rules(config: &Config) -> Vec<Box<dyn FormatRule>> {
+    let mut format_rules: Vec<Box<dyn FormatRule>> = Vec::new();
+    if config.format.trailing_whitespace {
+        format_rules.push(Box::new(TrailingWhitespace));
+    }
+    if config.format.blank_lines {
+        format_rules.push(Box::new(BlankLines));
+    }
+    if config.format.heading_blank_lines {
+        format_rules.push(Box::new(HeadingSpacing));
+    }
+    if config.format.table_format {
+        format_rules.push(Box::new(TableFormatter));
+    }
+    if config.format.property_drawer_align {
+        format_rules.push(Box::new(PropertyDrawerAlign));
+    }
+    format_rules.push(Box::new(KeywordSpacing));
+    format_rules.push(Box::new(TagAlignment));
+    format_rules.push(Box::new(ListFormat));
+    format_rules.push(Box::new(TimestampSpacing));
+    format_rules
+}
+
+/// Builds core structural and style lint rules (`E001`..`W028`).
+fn build_core_lint_rules() -> Vec<Box<dyn LintRule>> {
+    vec![
+        Box::new(UnclosedBlock),
+        Box::new(DuplicateCustomId),
+        Box::new(DuplicateName),
+        Box::new(DuplicateTarget),
+        Box::new(DuplicateFootnoteDefinition),
+        Box::new(IncompleteDrawer),
+        Box::new(EdnaCycle),
+        Box::new(HeadingLevelGap),
+        Box::new(MissingSrcLanguage),
+        Box::new(MisplacedPropertyDrawer),
+        Box::new(OrphanedFootnotes),
+        Box::new(InvalidKeywordSyntax),
+        Box::new(ObsoleteAffiliatedKeywords),
+        Box::new(DeprecatedExportBlocks),
+        Box::new(DeprecatedCategorySetup),
+        Box::new(TrailingBracketAfterLink),
+        Box::new(InvalidEffortProperty),
+        Box::new(InvalidIdProperty),
+        Box::new(SpuriousColons),
+        Box::new(MissingExportBackend),
+        Box::new(PlanningInactive),
+        Box::new(MisplacedPlanningInfo),
+        Box::new(FileApplication),
+        Box::new(ObsoleteIncludeMarkup),
+        Box::new(QuoteSection),
+        Box::new(SpecialPropertyInDrawer),
+        Box::new(MisplacedHeading),
+        Box::new(SuspiciousLanguage),
+        Box::new(OrphanedAffiliatedKeywords),
+        Box::new(NonExistentSetupfile),
+        Box::new(LinkToLocalFile),
+        Box::new(InvalidBabelCall),
+        Box::new(UnknownOptionsItem),
+        Box::new(PercentEncodingLink),
+        Box::new(InvalidImageAlignment),
+    ]
+}
+
+/// Appends extended syntax, table, and org-edna lint rules onto `rules`.
+fn append_extended_lint_rules(rules: &mut Vec<Box<dyn LintRule>>) {
+    rules.extend([
+        Box::new(TimestampValidity) as Box<dyn LintRule>,
+        Box::new(LinkSyntax),
+        Box::new(ListConsistency),
+        Box::new(PriorityValidity),
+        Box::new(DrawerNesting),
+        Box::new(ClockEntryValidity),
+        Box::new(KeywordValidity),
+        Box::new(BlockTypeValidity),
+        Box::new(AffiliatedKeywordPlacement),
+        Box::new(UndeclaredTag),
+        Box::new(InvalidTableFormula),
+        Box::new(InvalidEdnaSyntax),
+        Box::new(UnresolvedEdnaIds),
+    ]);
+}
+
 impl Runner {
     /// Creates a new runner with rules configured according to `config`.
     pub fn new(config: Config) -> Self {
-        // Build format rules list based on config.
-        let mut format_rules: Vec<Box<dyn FormatRule>> = Vec::new();
-        if config.format.trailing_whitespace {
-            format_rules.push(Box::new(TrailingWhitespace));
-        }
-        if config.format.blank_lines {
-            format_rules.push(Box::new(BlankLines));
-        }
-        if config.format.heading_blank_lines {
-            format_rules.push(Box::new(HeadingSpacing));
-        }
-        if config.format.table_format {
-            format_rules.push(Box::new(TableFormatter));
-        }
-        if config.format.property_drawer_align {
-            format_rules.push(Box::new(PropertyDrawerAlign));
-        }
-        // Always-on format rules (lightweight, non-controversial).
-        format_rules.push(Box::new(KeywordSpacing));
-        format_rules.push(Box::new(TagAlignment));
-        format_rules.push(Box::new(ListFormat));
-        format_rules.push(Box::new(TimestampSpacing));
-
-        // All lint rules are always registered; disabled ones are filtered at check time.
-        let lint_rules: Vec<Box<dyn LintRule>> = vec![
-            // Errors (structural issues).
-            Box::new(UnclosedBlock),
-            Box::new(DuplicateCustomId),
-            Box::new(DuplicateName),
-            Box::new(DuplicateTarget),
-            Box::new(DuplicateFootnoteDefinition),
-            Box::new(IncompleteDrawer),
-            // Warnings (correctness/style).
-            Box::new(HeadingLevelGap),
-            Box::new(MissingSrcLanguage),
-            Box::new(MisplacedPropertyDrawer),
-            Box::new(OrphanedFootnotes),
-            Box::new(InvalidKeywordSyntax),
-            Box::new(ObsoleteAffiliatedKeywords),
-            Box::new(DeprecatedExportBlocks),
-            Box::new(DeprecatedCategorySetup),
-            Box::new(TrailingBracketAfterLink),
-            Box::new(InvalidEffortProperty),
-            Box::new(InvalidIdProperty),
-            Box::new(SpuriousColons),
-            Box::new(MissingExportBackend),
-            Box::new(PlanningInactive),
-            Box::new(MisplacedPlanningInfo),
-            Box::new(FileApplication),
-            Box::new(ObsoleteIncludeMarkup),
-            Box::new(QuoteSection),
-            Box::new(SpecialPropertyInDrawer),
-            Box::new(MisplacedHeading),
-            Box::new(SuspiciousLanguage),
-            Box::new(OrphanedAffiliatedKeywords),
-            Box::new(NonExistentSetupfile),
-            Box::new(LinkToLocalFile),
-            Box::new(InvalidBabelCall),
-            Box::new(UnknownOptionsItem),
-            Box::new(PercentEncodingLink),
-            Box::new(InvalidImageAlignment),
-            // Phase 2 rules.
-            Box::new(TimestampValidity),
-            Box::new(LinkSyntax),
-            Box::new(ListConsistency),
-            Box::new(PriorityValidity),
-            Box::new(DrawerNesting),
-            Box::new(ClockEntryValidity),
-            Box::new(KeywordValidity),
-            Box::new(BlockTypeValidity),
-            Box::new(AffiliatedKeywordPlacement),
-            Box::new(UndeclaredTag),
-            Box::new(InvalidTableFormula),
-            Box::new(InvalidEdnaSyntax),
-        ];
-
+        let format_rules = build_format_rules(&config);
+        let mut lint_rules = build_core_lint_rules();
+        append_extended_lint_rules(&mut lint_rules);
         Self {
             config,
             format_rules,
@@ -168,15 +186,44 @@ impl Runner {
         }
     }
 
-    /// Run all lint rules and return diagnostics.
+    /// Runs all format and lint rules on a single `source` without workspace context.
     pub fn check(&self, source: &SourceFile) -> Vec<Diagnostic> {
-        let mut diagnostics = Vec::new();
+        self.check_internal(source, None)
+    }
 
-        // Run format rules in check mode — report what would change.
+    /// Runs all format and lint rules on `source` with cross-file `workspace_docs`.
+    pub fn check_with_workspace(
+        &self,
+        source: &SourceFile,
+        workspace_docs: &[OrgDocument],
+    ) -> Vec<Diagnostic> {
+        self.check_internal(source, Some(workspace_docs))
+    }
+
+    /// Runs format rules, applies fixes, and lints `source` without workspace context.
+    pub fn format(&self, source: &SourceFile) -> (String, Vec<Diagnostic>) {
+        self.format_internal(source, None)
+    }
+
+    /// Runs format rules, applies fixes, and lints `source` with cross-file `workspace_docs`.
+    pub fn format_with_workspace(
+        &self,
+        source: &SourceFile,
+        workspace_docs: &[OrgDocument],
+    ) -> (String, Vec<Diagnostic>) {
+        self.format_internal(source, Some(workspace_docs))
+    }
+
+    /// Collects format-check and lint diagnostics with optional `workspace_docs`.
+    fn check_internal(
+        &self,
+        source: &SourceFile,
+        workspace_docs: Option<&[OrgDocument]>,
+    ) -> Vec<Diagnostic> {
+        let mut diagnostics = Vec::new();
         let fmt_ctx = FormatContext::new(source, &self.config);
         for rule in &self.format_rules {
-            let fixes = rule.format(&fmt_ctx);
-            for fix in fixes {
+            for fix in rule.format(&fmt_ctx) {
                 let (line, column) = source.line_col(fix.span.start);
                 diagnostics.push(Diagnostic {
                     file: source.path.clone(),
@@ -191,31 +238,24 @@ impl Runner {
             }
         }
 
-        // Run lint rules (skip disabled ones).
-        let lint_ctx = LintContext::new(source, &self.config);
-        for rule in &self.lint_rules {
-            if !self.config.is_rule_disabled(rule.id(), rule.name()) {
-                diagnostics.extend(rule.check(&lint_ctx));
-            }
-        }
-
+        diagnostics.extend(self.run_lint_rules(source, workspace_docs));
         diagnostics.sort_by_key(|d| (d.line, d.column));
         diagnostics
     }
 
-    /// Run all format rules and apply fixes. Returns (formatted_content, lint_diagnostics).
-    pub fn format(&self, source: &SourceFile) -> (String, Vec<Diagnostic>) {
+    /// Applies non-overlapping format fixes and runs lint rules on the formatted result.
+    fn format_internal(
+        &self,
+        source: &SourceFile,
+        workspace_docs: Option<&[OrgDocument]>,
+    ) -> (String, Vec<Diagnostic>) {
         let fmt_ctx = FormatContext::new(source, &self.config);
-        let mut all_fixes = Vec::new();
-
+        let mut all_fixes: Vec<Fix> = Vec::new();
         for rule in &self.format_rules {
             all_fixes.extend(rule.format(&fmt_ctx));
         }
-
-        // Sort by start position, stable order.
         all_fixes.sort_by_key(|f| f.span.start);
 
-        // Remove overlapping fixes (keep the first one).
         let mut deduped = Vec::with_capacity(all_fixes.len());
         let mut last_end = 0;
         for fix in all_fixes {
@@ -226,19 +266,29 @@ impl Runner {
         }
 
         let formatted = apply_fixes(&source.content, &deduped);
-
-        // Run lint rules on the formatted content.
         let formatted_source = SourceFile::new(source.path.clone(), formatted.clone());
-        let lint_ctx = LintContext::new(&formatted_source, &self.config);
+        let mut diagnostics = self.run_lint_rules(&formatted_source, workspace_docs);
+        diagnostics.sort_by_key(|d| (d.line, d.column));
+        (formatted, diagnostics)
+    }
+
+    /// Executes enabled [`LintRule`]s against `source` and optional `workspace_docs`.
+    fn run_lint_rules(
+        &self,
+        source: &SourceFile,
+        workspace_docs: Option<&[OrgDocument]>,
+    ) -> Vec<Diagnostic> {
+        let lint_ctx = match workspace_docs {
+            Some(ws) => LintContext::with_workspace(source, &self.config, ws),
+            None => LintContext::new(source, &self.config),
+        };
         let mut diagnostics = Vec::new();
         for rule in &self.lint_rules {
             if !self.config.is_rule_disabled(rule.id(), rule.name()) {
                 diagnostics.extend(rule.check(&lint_ctx));
             }
         }
-
-        diagnostics.sort_by_key(|d| (d.line, d.column));
-        (formatted, diagnostics)
+        diagnostics
     }
 }
 
@@ -247,6 +297,7 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
+    /// Verifies every registered lint rule carries a unique ID.
     #[test]
     fn lint_rule_ids_are_unique() {
         let runner = Runner::default();
@@ -261,6 +312,7 @@ mod tests {
         }
     }
 
+    /// Verifies every registered lint rule carries a unique kebab-case name.
     #[test]
     fn lint_rule_names_are_unique() {
         let runner = Runner::default();
@@ -275,6 +327,7 @@ mod tests {
         }
     }
 
+    /// Verifies every registered format rule carries a unique ID.
     #[test]
     fn format_rule_ids_are_unique() {
         let runner = Runner::default();

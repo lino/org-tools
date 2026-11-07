@@ -1,10 +1,11 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org update set-state` arguments, stdin auto-detection, and `:TRIGGER:` cascade handler.
+//! Subcommand handler for `org update set-state`, stdin auto-detection, repeater
+//! auto-advance, and `:TRIGGER:` cascade execution.
 
 use std::collections::HashSet;
-use std::io::{BufRead, IsTerminal, Read as _};
+use std::io::{IsTerminal, Read as _};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -13,31 +14,16 @@ use clap::Args;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::edna::run_file_trigger_cascade;
 use org_tools_core::source::SourceFile;
-use org_tools_core::state::SetStateResult;
+use org_tools_core::state::{set_state_with_options, SetStateOptions, SetStateResult};
 
-use super::update::{resolve_batch_entry_targets, FileEntryTargets};
+use super::update::{
+    filter_entries_by_query, format_stdin_content_error, invalidate_warm_mabuse_caches,
+    looks_like_org_content, parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
+};
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
-use crate::{date, query, EXIT_ERROR, EXIT_OK};
+use crate::{query, EXIT_ERROR, EXIT_OK};
 
 // region Constants & Types
-
-/// Leading prefixes identifying Org-mode document lines rather than locator strings.
-const ORG_CONTENT_PREFIXES: &[&str] = &[
-    "* ",
-    "#+",
-    "- ",
-    "| ",
-    ": ",
-    "DEADLINE:",
-    "SCHEDULED:",
-    "CLOSED:",
-    ":PROPERTIES:",
-    ":END:",
-];
-
-/// Error message emitted when raw Org content is piped where locators were expected.
-const STDIN_ORG_CONTENT_HINT: &str =
-    "hint: pipe locators (e.g. from `org query search`), not org file content";
 
 /// CLI arguments for `org update set-state`.
 #[derive(Args)]
@@ -58,6 +44,9 @@ pub(crate) struct SetStateArgs {
     /// Don't add/remove CLOSED: timestamp on state transitions.
     #[arg(long)]
     pub(crate) no_closed: bool,
+    /// Disable repeater auto-advance and close repeating entries permanently.
+    #[arg(long)]
+    pub(crate) no_repeat: bool,
     /// Print what would be changed without writing files.
     #[arg(long)]
     pub(crate) dry_run: bool,
@@ -70,46 +59,7 @@ pub(crate) struct SetStateArgs {
 
 // region Stdin & Query Helpers
 
-/// Checks whether `line` looks like Org-mode content rather than a locator or file path.
-fn looks_like_org_content(line: &str) -> bool {
-    let trimmed = line.trim();
-    ORG_CONTENT_PREFIXES.iter().any(|p| trimmed.starts_with(p))
-}
-
-/// Formats the standard diagnostic when stdin contains Org lines instead of locators.
-fn format_stdin_content_error(bad: &str) -> String {
-    format!(
-        "org: stdin looks like org-mode content, not locator targets\nfirst offending line: {bad}\n{STDIN_ORG_CONTENT_HINT}"
-    )
-}
-
-/// Reads locator strings from stdin (one per line), rejecting raw Org-mode content.
-fn read_stdin_targets() -> Result<Vec<String>, String> {
-    let lines: Vec<String> = std::io::stdin()
-        .lock()
-        .lines()
-        .map_while(|l| l.ok())
-        .filter(|l| !l.trim().is_empty())
-        .collect();
-    if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
-        return Err(format_stdin_content_error(bad));
-    }
-    Ok(lines)
-}
-
-/// Filters entry indices in `doc` matching `pred`.
-fn filter_entries_by_query(doc: &OrgDocument, pred: &query::parser::Predicate) -> Vec<usize> {
-    let today = date::current_date();
-    let doc_refs = [doc];
-    doc.entries
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| query::predicate::matches(pred, entry, doc, &doc_refs, today))
-        .map(|(idx, _)| idx)
-        .collect()
-}
-
-/// Applies `set_state` to `source`/`doc`, intersecting `indices` with `query_pred` when set.
+/// Applies [`set_state_with_options`] to `source`/`doc`, intersecting `indices` with `query_pred`.
 fn apply_set_state(
     source: &SourceFile,
     doc: &OrgDocument,
@@ -117,6 +67,7 @@ fn apply_set_state(
     query_pred: Option<&query::parser::Predicate>,
     state: &str,
     no_closed: bool,
+    no_repeat: bool,
 ) -> Option<SetStateResult> {
     let effective = match query_pred {
         Some(pred) => {
@@ -132,31 +83,45 @@ fn apply_set_state(
         }
         None => indices.map(|s| s.to_vec()),
     };
-    org_tools_core::state::set_state(source, doc, effective.as_deref(), state, !no_closed)
+    let options = SetStateOptions {
+        add_closed: !no_closed,
+        advance_repeaters: !no_repeat,
+        today: None,
+    };
+    set_state_with_options(source, doc, effective.as_deref(), state, options)
 }
 
 /// Processes piped Org-mode file content for `org update set-state`.
 fn handle_piped_org_set_state(
     content: String,
-    state: &str,
     query_pred: Option<&query::parser::Predicate>,
-    no_closed: bool,
-    dry_run: bool,
+    args: &SetStateArgs,
 ) -> i32 {
     let source = SourceFile::new("<stdin>", content);
     let doc = OrgDocument::from_source(&source);
-    if !doc.todo_keywords.contains(state) {
-        eprintln!("org: '{state}' is not a recognized TODO keyword in <stdin>");
+    if !doc.todo_keywords.contains(&args.state) {
+        eprintln!(
+            "org: '{}' is not a recognized TODO keyword in <stdin>",
+            args.state
+        );
         return EXIT_ERROR;
     }
-    match apply_set_state(&source, &doc, None, query_pred, state, no_closed) {
+    match apply_set_state(
+        &source,
+        &doc,
+        None,
+        query_pred,
+        &args.state,
+        args.no_closed,
+        args.no_repeat,
+    ) {
         Some(r) => {
             let suffix = if r.changed == 1 { "y" } else { "ies" };
-            if dry_run {
+            if args.dry_run {
                 eprintln!("Would change {} entr{suffix} in <stdin>", r.changed);
                 print!("{}", source.content);
             } else {
-                eprintln!("Changed {} entr{suffix} to {state}", r.changed);
+                eprintln!("Changed {} entr{suffix} to {}", r.changed, args.state);
                 print!("{}", r.content);
             }
         }
@@ -187,13 +152,7 @@ fn read_piped_state_stdin(
         .find(|l| !l.trim().is_empty())
         .is_some_and(looks_like_org_content)
     {
-        return Ok(Some(handle_piped_org_set_state(
-            content,
-            &args.state,
-            query_pred,
-            args.no_closed,
-            args.dry_run,
-        )));
+        return Ok(Some(handle_piped_org_set_state(content, query_pred, args)));
     }
     let lines: Vec<String> = content
         .lines()
@@ -212,29 +171,31 @@ fn read_piped_state_stdin(
 
 // region Target Resolution & File Mutation
 
-/// Collects per-entry [`MutationDetail`] records for entries whose TODO state changed.
+/// Collects per-entry [`MutationDetail`] records (`repeated` vs `state-changed`) from `r`.
 fn collect_changed_state_details(
     file: &Path,
     before: &OrgDocument,
-    after_content: &str,
+    r: &SetStateResult,
 ) -> Vec<MutationDetail> {
-    let after_doc = OrgDocument::from_source(&SourceFile::new(file, after_content.to_string()));
+    let after_doc = OrgDocument::from_source(&SourceFile::new(file, r.content.clone()));
     let file_str = file.display().to_string();
-    after_doc
-        .entries
+    r.changed_indices
         .iter()
-        .enumerate()
-        .filter_map(|(idx, entry)| {
+        .filter_map(|&idx| {
             let prev = before.entries.get(idx)?;
-            (prev.keyword != entry.keyword).then(|| MutationDetail {
+            let entry = after_doc.entries.get(idx)?;
+            let action = if r.repeated_indices.contains(&idx) {
+                "repeated"
+            } else {
+                "state-changed"
+            };
+            let prev_kw = prev.keyword.as_deref().unwrap_or("<none>");
+            let next_kw = entry.keyword.as_deref().unwrap_or("<none>");
+            Some(MutationDetail {
                 file: file_str.clone(),
                 line: entry.heading_line,
-                action: "state-changed".to_string(),
-                detail: Some(format!(
-                    "{} -> {}",
-                    prev.keyword.as_deref().unwrap_or("<none>"),
-                    entry.keyword.as_deref().unwrap_or("<none>")
-                )),
+                action: action.to_string(),
+                detail: Some(format!("{prev_kw} -> {next_kw}")),
             })
         })
         .collect()
@@ -258,11 +219,14 @@ fn commit_single_file_state(
     file: &Path,
     doc: &OrgDocument,
     r: &SetStateResult,
+    workspace: Option<&Path>,
     dry_run: bool,
     modified_paths: &mut HashSet<PathBuf>,
     mutation: &mut MutationResult,
 ) -> bool {
+    let canon = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
     if !dry_run {
+        invalidate_warm_mabuse_caches(workspace, std::slice::from_ref(&canon));
         if let Err(e) = org_tools_core::files::write_file_atomic(file, &r.content) {
             let msg = format!("error writing {}: {e}", file.display());
             eprintln!("org: {msg}");
@@ -270,11 +234,11 @@ fn commit_single_file_state(
             return false;
         }
     }
-    modified_paths.insert(file.canonicalize().unwrap_or_else(|_| file.to_path_buf()));
+    modified_paths.insert(canon);
     mutation.entries_affected += r.changed;
     mutation
         .details
-        .extend(collect_changed_state_details(file, doc, &r.content));
+        .extend(collect_changed_state_details(file, doc, r));
     true
 }
 
@@ -287,21 +251,24 @@ fn commit_state_change(
     modified_paths: &mut HashSet<PathBuf>,
     mutation: &mut MutationResult,
 ) -> bool {
+    let ws = args.workspace.as_deref();
     let has_triggers = r
         .newly_done_indices
         .iter()
         .any(|&idx| doc.property(idx, "TRIGGER").is_some());
     if !has_triggers {
-        return commit_single_file_state(file, doc, &r, args.dry_run, modified_paths, mutation);
+        return commit_single_file_state(file, doc, &r, ws, args.dry_run, modified_paths, mutation);
     }
-    let ws = args.workspace.as_deref();
     match run_file_trigger_cascade(file, doc, &r, ws, !args.no_closed, args.dry_run) {
         Ok((paths, cascade)) => {
+            if !args.dry_run && !paths.is_empty() {
+                invalidate_warm_mabuse_caches(ws, &paths);
+            }
             modified_paths.extend(paths);
             mutation.entries_affected += r.changed + cascade.entries_affected;
             mutation
                 .details
-                .extend(collect_changed_state_details(file, doc, &r.content));
+                .extend(collect_changed_state_details(file, doc, &r));
             mutation
                 .details
                 .extend(cascade.mutations.into_iter().map(|m| MutationDetail {
@@ -357,6 +324,7 @@ fn process_set_state_file(
         query_pred,
         &args.state,
         args.no_closed,
+        args.no_repeat,
     ) else {
         return;
     };
@@ -376,13 +344,7 @@ fn process_set_state_file(
 fn prepare_set_state_plan(
     args: &mut SetStateArgs,
 ) -> Result<Option<(FileEntryTargets, Option<query::parser::Predicate>)>, i32> {
-    let query_pred = match args.query.as_deref() {
-        Some(raw) => Some(query::parser::parse_query(raw).map_err(|e| {
-            eprintln!("org: invalid query: {e}");
-            EXIT_ERROR
-        })?),
-        None => None,
-    };
+    let query_pred = parse_optional_query(args.query.as_deref())?;
     let mut targets = std::mem::take(&mut args.targets);
     if let Some(exit_code) = read_piped_state_stdin(&mut targets, query_pred.as_ref(), args)? {
         return if exit_code == EXIT_OK {
@@ -391,18 +353,12 @@ fn prepare_set_state_plan(
             Err(exit_code)
         };
     }
-    if args.stdin {
-        targets.extend(read_stdin_targets().map_err(|e| {
-            eprintln!("{e}");
-            EXIT_ERROR
-        })?);
-    }
-    if targets.is_empty() {
-        eprintln!("org: no targets specified");
-        return Err(EXIT_ERROR);
-    }
-    let file_list =
-        resolve_batch_entry_targets(&targets, args.workspace.as_deref(), "set TODO state")?;
+    let file_list = resolve_final_batch_targets(
+        &mut targets,
+        args.stdin,
+        args.workspace.as_deref(),
+        "set TODO state",
+    )?;
     Ok(Some((file_list, query_pred)))
 }
 

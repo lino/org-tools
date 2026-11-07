@@ -5,6 +5,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -41,11 +42,8 @@ const BLOCKED_ID: &str = "10000000-0000-4000-8000-000000000103";
 
 /// Returns the repository workspace root derived from `CARGO_MANIFEST_DIR`.
 fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crates/org must sit two levels below workspace root")
-        .to_path_buf()
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest.ancestors().nth(2).unwrap().to_path_buf()
 }
 
 /// Writes UTF-8 fixture text to `path`, creating parent directories as needed.
@@ -109,19 +107,22 @@ impl McpTestClient {
             cmd.env(k, v);
         }
         let mut child = cmd.spawn().expect("spawn org mcp process");
-        let stdin = child.stdin.take().expect("piped stdin");
+        let stdin = Some(child.stdin.take().expect("piped stdin"));
         let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
         Self {
             child,
-            stdin: Some(stdin),
+            stdin,
             stdout,
         }
     }
 
     /// Spawns `org mcp --workspace <dir>` with piped `stdio`.
     fn spawn_ws(dir: &TempDir) -> Self {
-        let ws = dir.path().to_str().unwrap();
-        Self::spawn_in(&["mcp", "--workspace", ws], None, &[])
+        Self::spawn_in(
+            &["mcp", "--workspace", dir.path().to_str().unwrap()],
+            None,
+            &[],
+        )
     }
 
     /// Writes raw text/bytes directly to child `stdin` and flushes.
@@ -147,11 +148,10 @@ impl McpTestClient {
     /// Sends a `Content-Length` framed JSON-RPC message (with optional leading headers) and reads reply.
     fn send_framed(&mut self, extra_headers: &str, msg: &Value) -> Value {
         let body = serde_json::to_string(msg).unwrap();
-        let frame = format!(
-            "{extra_headers}Content-Length: {}\r\n\r\n{body}",
-            body.len()
-        );
-        self.write_raw(&frame);
+        let len = body.len();
+        self.write_raw(&format!(
+            "{extra_headers}Content-Length: {len}\r\n\r\n{body}"
+        ));
         let mut header = String::new();
         self.stdout.read_line(&mut header).expect("read header");
         let len_str = header.trim().strip_prefix("Content-Length:").expect("hdr");
@@ -331,30 +331,25 @@ fn slice2_write_tools_mutate_cascade_and_refresh_warm_mabuse_cache() {
     let dir = TempDir::new().unwrap();
     seed_mcp_workspace(dir.path());
     let mut client = McpTestClient::spawn_ws(&dir);
-
     let loc = format!("id:{BLOCKER_ID}");
     let dry_args = json!({ "locator": loc, "state": "DONE", "dry_run": true });
     let dry = client.call_ok(1, "org_update_state", dry_args);
     assert_eq!(dry["files_modified"], 2);
     assert_telemetry(&dry["telemetry"], (3, 0, 3));
-
     let up_args = json!({ "locator": loc, "state": "DONE" });
     let up = client.call_ok(2, "org_update_state", up_args);
     assert_eq!(up["files_modified"], 2);
     assert_eq!(up["entries_affected"], 2);
     assert_eq!(up["cascaded"].as_array().unwrap().len(), 1);
     assert_telemetry(&up["telemetry"], (3, 1, 2));
-
     let blk = client.call_ok(3, "org_query_blocked", json!({}));
     assert_eq!(blk["count"], 0);
     assert_telemetry(&blk["telemetry"], (3, 3, 0));
-
     let fmt_res = client.call_ok(4, "org_fmt_file", json!({ "path": "plan/roadmap.org" }));
     assert_eq!(fmt_res["changed"], true);
     assert_telemetry(&fmt_res["telemetry"], (3, 2, 1));
     let roadmap_text = fs::read_to_string(dir.path().join("plan/roadmap.org")).unwrap();
     assert!(roadmap_text.contains("| alpha |     1 |"));
-
     let after_read = client.call_ok(5, "org_roam_node", json!({ "query": BLOCKED_ID }));
     assert_eq!(after_read["nodes"][0]["todo_keyword"], "NEXT");
     assert_telemetry(&after_read["telemetry"], (3, 3, 0));
@@ -391,6 +386,7 @@ fn slice3_no_cache_env_mcp_json_and_coarse_tick_invalidation() {
     fs::write(&hub, raw_hub.replacen("* NEXT [#A]", "* TODO [#A]", 1)).unwrap();
     let fh = OpenOptions::new().write(true).open(&hub).unwrap();
     fh.set_modified(frozen_mtime).unwrap();
+    drop(fh);
     cache.invalidate_paths(&[hub]).unwrap();
     let rt = cache.refresh().unwrap();
     let counts = (rt.files_scanned, rt.cache_hits, rt.cache_misses);
@@ -402,21 +398,23 @@ fn slice3_no_cache_env_mcp_json_and_coarse_tick_invalidation() {
 fn slice3_workspace_confinement_symlink_and_extension_guards() {
     let (ws, outside) = (TempDir::new().unwrap(), TempDir::new().unwrap());
     seed_mcp_workspace(ws.path());
-
     let outside_org = outside.path().join("outside.org");
-    let outside_orig = "* TODO Secret outside task\nConfidential body.\n";
-    write_file_str(&outside_org, outside_orig);
     let md_path = ws.path().join("README.md");
+    let outside_orig = "* TODO Secret outside task\nConfidential body.\n";
     let md_orig = "# Notes\n\n| Col | Val |\n| --- | --- |\n| a | 1 |\n";
+    write_file_str(&outside_org, outside_orig);
     write_file_str(&md_path, md_orig);
-    symlink(&outside_org, ws.path().join("escape.org")).expect("create escape symlink");
-    let trig_path = ws.path().join("escape_trig.org");
-    let trig_orig = "* TODO Trigger escape\n:PROPERTIES:\n:CUSTOM_ID: trig-esc\n:TRIGGER:  file(\"escape.org\") todo!(\"DONE\")\n:END:\n";
-    write_file_str(&trig_path, trig_orig);
+    #[cfg(unix)]
+    let (trig_path, trig_orig) = {
+        symlink(&outside_org, ws.path().join("escape.org")).expect("create escape symlink");
+        let p = ws.path().join("escape_trig.org");
+        let s = "* TODO Trigger escape\n:PROPERTIES:\n:CUSTOM_ID: trig-esc\n:TRIGGER:  file(\"escape.org\") todo!(\"DONE\")\n:END:\n";
+        write_file_str(&p, s);
+        (p, s)
+    };
 
     let (ws_str, out_dir) = (ws.path().to_str().unwrap(), Some(outside.path()));
     let mut client = McpTestClient::spawn_in(&["mcp", "--workspace", ws_str], out_dir, &[]);
-
     let rel_args = json!({ "locator": "specs/hub.org::#probe-task", "state": "TODO" });
     let rel_up = client.call_ok(1, "org_update_state", rel_args);
     assert_eq!(rel_up["entries_affected"], 1);
@@ -424,25 +422,29 @@ fn slice3_workspace_confinement_symlink_and_extension_guards() {
     assert_eq!(client.call_ok(2, "org_show", sh_args)["keyword"], "TODO");
 
     let out_loc = format!("{}::1", outside_org.display());
-    let bad = [
-        out_loc.as_str(),
-        "../outside.org::1",
-        "escape.org::1",
-        "escape_trig.org::#trig-esc",
-    ];
-    for (idx, loc) in bad.into_iter().enumerate() {
+    let bad_all = [out_loc.as_str(), "../outside.org::1"];
+    for (idx, loc) in bad_all.into_iter().enumerate() {
         let args = json!({ "locator": loc, "state": "DONE" });
         client.assert_err(3 + idx as i64, "org_update_state", args);
     }
-    client.assert_err(7, "org_show", json!({ "locator": out_loc }));
-    client.assert_err(8, "org_show", json!({ "locator": "escape.org::1" }));
-    client.assert_err(9, "org_fmt_file", json!({ "path": "escape.org" }));
+    client.assert_err(7, "org_show", json!({ "locator": &out_loc }));
     client.assert_err(10, "org_fmt_file", json!({ "path": "README.md" }));
+    #[cfg(unix)]
+    {
+        let bad_sym = ["escape.org::1", "escape_trig.org::#trig-esc"];
+        for (idx, loc) in bad_sym.into_iter().enumerate() {
+            let args = json!({ "locator": loc, "state": "DONE" });
+            client.assert_err(5 + idx as i64, "org_update_state", args);
+        }
+        client.assert_err(8, "org_show", json!({ "locator": "escape.org::1" }));
+        client.assert_err(9, "org_fmt_file", json!({ "path": "escape.org" }));
+    }
 
     client.close_cleanly();
     assert_eq!(fs::read_to_string(&outside_org).unwrap(), outside_orig);
-    assert_eq!(fs::read_to_string(&trig_path).unwrap(), trig_orig);
     assert_eq!(fs::read_to_string(&md_path).unwrap(), md_orig);
+    #[cfg(unix)]
+    assert_eq!(fs::read_to_string(&trig_path).unwrap(), trig_orig);
 }
 
 // endregion

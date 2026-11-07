@@ -63,6 +63,9 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+      - name: Run release cache SLO tests
+        run: cargo test --release --test cache_tests
+
       - name: Smoke test on edge case fixtures
         run: |
           # Exit 1 = diagnostics found (expected for edge case fixtures).
@@ -74,6 +77,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     steps:
@@ -88,3 +92,6 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+      - name: Run release cache SLO tests
+        run: cargo test --release --test cache_tests

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=860 reason="Single authorized Cargo integration test target bundling pure-Rust YAML subset parser and all four ORGFMT-WP-10 TDD slices without modifying Cargo.toml"
+// fritz: allow-file-length=920 reason="Single authorized Cargo integration test target bundling pure-Rust YAML subset parser and ORGFMT-WP-10/WP-11 CI and release workflow TDD slices without modifying Cargo.toml"
 
 //! Behavioural and structural tests for the GitHub Actions release pipeline, crates.io gate, `scripts/release.sh --dry-run`, and release documentation.
 
@@ -9,7 +9,10 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
+#[cfg(unix)]
+use std::process::Output;
+#[cfg(unix)]
 use tempfile::TempDir;
 
 // region Constants & Path Helpers
@@ -471,6 +474,14 @@ fn release_packages_job_builds_all_six_targets_via_goreleaser_and_verifies_dist(
         "release-packages must append summary and Prometheus metrics to GITHUB_STEP_SUMMARY"
     );
     let _ = find_step_by_uses(release_job, "actions/upload-artifact@v4");
+
+    let publish_script = extract_publish_crates_script(&doc);
+    assert!(
+        publish_script.contains(EXPECTED_SKIP_CRATES_NOTICE)
+            && publish_script.contains("cargo publish -p org-tools-core")
+            && publish_script.contains("cargo publish -p org-tools"),
+        "publish-crates job must gate crates.io publish behind CARGO_REGISTRY_TOKEN"
+    );
 }
 
 // endregion
@@ -580,6 +591,7 @@ fn publish_crates_job_gracefully_skips_when_token_absent_and_publishes_in_order(
 // region Slice 3: Release Script Dry-Run Behaviour
 
 /// Creates an isolated temporary git repository seeded with workspace manifests for `scripts/release.sh` testing.
+#[cfg(unix)]
 fn init_synthetic_release_repo(workspace_ver: &str, cli_dep_ver: &str) -> TempDir {
     let temp = TempDir::new().expect("create synthetic release repo");
     let root = temp.path();
@@ -636,6 +648,7 @@ fn install_goreleaser_check_shim(repo_dir: &Path) -> (PathBuf, PathBuf) {
 }
 
 /// Asserts that `repo_dir` manifests and git tags remain unchanged after `--dry-run` and `goreleaser check` ran.
+#[cfg(unix)]
 fn assert_repo_unmodified_after_dry_run(
     repo_dir: &Path,
     before_root: &str,
@@ -713,6 +726,7 @@ fn release_script_dry_run_validates_sync_and_goreleaser_without_mutating_repo() 
 }
 
 /// Verifies `scripts/release.sh` exits non-zero on invalid semver inputs or desynchronized manifests.
+#[cfg(unix)]
 #[test]
 fn release_script_rejects_invalid_semver_and_out_of_sync_manifests() {
     let script_path = workspace_root().join("scripts").join("release.sh");
@@ -842,6 +856,59 @@ fn installation_and_homebrew_tap_docs_cover_all_channels_and_pass_org_fmt_check(
         String::from_utf8_lossy(&fmt_out.stdout),
         String::from_utf8_lossy(&fmt_out.stderr)
     );
+}
+
+/// Asserts that `.gitattributes` carries the SPDX header and enforces `eol=lf` across text/script extensions.
+fn assert_gitattributes_enforces_lf(gitattributes: &str) {
+    assert!(
+        gitattributes.contains("Copyright (C) 2026 org-tools contributors")
+            && gitattributes.contains("SPDX-License-Identifier: GPL-3.0-or-later"),
+        ".gitattributes must include standard GPL-3.0-or-later SPDX header"
+    );
+    for expected_rule in [
+        "* text=auto eol=lf",
+        "*.rs text eol=lf",
+        "*.org text eol=lf",
+        "*.toml text eol=lf",
+        "*.yaml text eol=lf",
+        "*.yml text eol=lf",
+        "*.json text eol=lf",
+        "*.md text eol=lf",
+        "*.sh text eol=lf",
+    ] {
+        assert!(
+            gitattributes
+                .lines()
+                .any(|line| line.trim() == expected_rule),
+            ".gitattributes missing required LF rule `{expected_rule}`"
+        );
+    }
+}
+
+/// Verifies `.github/workflows/ci.yml` cross-platform release cache SLO gates and `.gitattributes` LF rules.
+#[test]
+fn ci_workflow_and_gitattributes_enforce_cross_platform_slos_and_lf_endings() {
+    let raw_ci = read_workspace_file(".github/workflows/ci.yml");
+    assert!(
+        raw_ci.contains("SPDX-License-Identifier: GPL-3.0-or-later"),
+        "ci.yml must include GPL-3.0-or-later SPDX header"
+    );
+    let ci_doc = parse_yaml_document(&raw_ci);
+    let cross = &ci_doc["jobs"]["cross-platform"];
+    assert_eq!(
+        cross["strategy"]["fail-fast"],
+        Value::Bool(false),
+        "jobs.cross-platform.strategy.fail-fast must be false"
+    );
+    for job_name in ["build", "cross-platform"] {
+        let scripts = collect_job_run_scripts(&ci_doc["jobs"][job_name]);
+        assert!(
+            scripts.contains("cargo test --release --test cache_tests"),
+            "ci.yml job `{job_name}` must run `cargo test --release --test cache_tests`"
+        );
+    }
+    let gitattributes = read_workspace_file(".gitattributes");
+    assert_gitattributes_enforces_lf(&gitattributes);
 }
 
 // endregion

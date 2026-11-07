@@ -5,12 +5,15 @@
 //! Behavioural and structural tests for GoReleaser v2 packaging, shell completions, and release verification.
 
 use serde_json::{Map, Value};
+#[cfg(unix)]
 use std::fmt::Write as _;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::{Command, Output};
+#[cfg(unix)]
 use tempfile::TempDir;
 
 // region Constants & Path Helpers
@@ -23,9 +26,11 @@ const EXPECTED_DESCRIPTION: &str =
 const EXPECTED_HOMEPAGE: &str = "https://github.com/lino/org-tools";
 
 /// Synthetic version string used when constructing release verification fixtures.
+#[cfg(unix)]
 const SYNTHETIC_VERSION: &str = "0.1.4";
 
 /// Synthetic trace identifier propagated into release verification JSONL events.
+#[cfg(unix)]
 const TEST_TRACE_ID: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
 /// Returns the workspace root directory derived from the `org` crate manifest path.
@@ -276,6 +281,7 @@ fn parse_yaml_scalar(raw: &str) -> Value {
 // region Synthetic Dist & SHA-256 Builders
 
 /// FIPS 180-4 round constants for pure-Rust SHA-256 digest calculation in tests.
+#[cfg(unix)]
 const SHA256_K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -288,6 +294,7 @@ const SHA256_K: [u32; 64] = [
 ];
 
 /// Computes the lowercase hexadecimal SHA-256 digest of `data` using pure standard-library Rust.
+#[cfg(unix)]
 fn sha256_hex(data: &[u8]) -> String {
     let mut state: [u32; 8] = [
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
@@ -313,6 +320,7 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 /// Expands a 64-byte SHA-256 message block into a 64-word message schedule.
+#[cfg(unix)]
 fn build_sha256_schedule(chunk: &[u8]) -> [u32; 64] {
     let mut schedule = [0u32; 64];
     for (idx, slot) in schedule.iter_mut().take(16).enumerate() {
@@ -335,6 +343,7 @@ fn build_sha256_schedule(chunk: &[u8]) -> [u32; 64] {
 }
 
 /// Applies the 64-round SHA-256 compression function to `state` using `schedule`.
+#[cfg(unix)]
 fn compress_sha256_schedule(state: &mut [u32; 8], schedule: &[u32; 64]) {
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
     for (round, &word) in schedule.iter().enumerate() {
@@ -362,6 +371,7 @@ fn compress_sha256_schedule(state: &mut [u32; 8], schedule: &[u32; 64]) {
 }
 
 /// Populates a complete synthetic GoReleaser `dist/` directory with valid checksums and cask metadata.
+#[cfg(unix)]
 fn populate_synthetic_dist(dist_dir: &Path) {
     fs::create_dir_all(dist_dir).expect("create dist dir");
     let artifacts = [
@@ -391,6 +401,7 @@ fn populate_synthetic_dist(dist_dir: &Path) {
 }
 
 /// Writes a valid synthetic `homebrew/Casks/org-tools.rb` cask file inside `dist_dir`.
+#[cfg(unix)]
 fn write_synthetic_cask(dist_dir: &Path) {
     let cask_dir = dist_dir.join("homebrew").join("Casks");
     fs::create_dir_all(&cask_dir).expect("create cask directory");
@@ -602,11 +613,10 @@ fn goreleaser_yaml_defines_nfpm_packages_and_homebrew_cask_without_brews() {
 // region Slice 3: Shell Completion Generation Script
 
 /// Verifies `scripts/build-completions.sh` emits valid non-empty Bash, Zsh, and Fish completion files.
+#[cfg(unix)]
 #[test]
 fn build_completions_script_generates_bash_zsh_and_fish_files() {
-    let script = workspace_root()
-        .join("scripts")
-        .join("build-completions.sh");
+    let script = workspace_root().join("scripts/build-completions.sh");
     assert!(script.is_file(), "missing script {}", script.display());
 
     let out_dir = TempDir::new().expect("create temporary completions directory");
@@ -643,15 +653,14 @@ fn build_completions_script_generates_bash_zsh_and_fish_files() {
 // region Slice 4: Release Package Verification & Observability
 
 /// Runs `scripts/verify-release-packages.sh` against `dist_dir` with optional telemetry file paths.
+#[cfg(unix)]
 fn run_verify_script(
     dist_dir: &Path,
     metrics_file: Option<&Path>,
     events_file: Option<&Path>,
     extra_path_dir: Option<&Path>,
 ) -> Output {
-    let script = workspace_root()
-        .join("scripts")
-        .join("verify-release-packages.sh");
+    let script = workspace_root().join("scripts/verify-release-packages.sh");
     assert!(script.is_file(), "missing script {}", script.display());
 
     let mut cmd = Command::new("bash");
@@ -673,22 +682,15 @@ fn run_verify_script(
 }
 
 /// Verifies `scripts/verify-release-packages.sh` passes on valid `dist/` and emits Prometheus + JSONL telemetry.
+#[cfg(unix)]
 #[test]
 fn verify_release_packages_accepts_valid_dist_and_emits_telemetry() {
     let temp = TempDir::new().expect("create synthetic release workspace");
     let dist_dir = temp.path().join("dist");
     populate_synthetic_dist(&dist_dir);
 
-    let metrics_file = temp
-        .path()
-        .join("nested_metrics")
-        .join("sub")
-        .join("release.prom");
-    let events_file = temp
-        .path()
-        .join("nested_events")
-        .join("sub")
-        .join("release-events.jsonl");
+    let metrics_file = temp.path().join("nested_metrics/sub/release.prom");
+    let events_file = temp.path().join("nested_events/sub/release-events.jsonl");
     let output = run_verify_script(&dist_dir, Some(&metrics_file), Some(&events_file), None);
 
     assert!(
@@ -723,6 +725,7 @@ fn verify_release_packages_accepts_valid_dist_and_emits_telemetry() {
 }
 
 /// Asserts that a tampered archive fails checksum validation without marking `checksums.txt` verified.
+#[cfg(unix)]
 fn assert_corrupted_checksum_not_marked_verified(output: &Output, metrics_path: &Path) {
     assert!(
         !output.status.success(),
@@ -752,6 +755,7 @@ fn assert_corrupted_checksum_not_marked_verified(output: &Output, metrics_path: 
 }
 
 /// Verifies `scripts/verify-release-packages.sh` exits non-zero when a `.deb` is missing or a checksum is bad.
+#[cfg(unix)]
 #[test]
 fn verify_release_packages_rejects_missing_deb_or_corrupted_checksum() {
     let missing_deb_temp = TempDir::new().expect("create missing-deb temp dir");
@@ -777,10 +781,7 @@ fn verify_release_packages_rejects_missing_deb_or_corrupted_checksum() {
     )
     .expect("tamper archive payload");
 
-    let bad_sum_metrics = bad_sum_temp
-        .path()
-        .join("nested_metrics")
-        .join("corrupted.prom");
+    let bad_sum_metrics = bad_sum_temp.path().join("nested_metrics/corrupted.prom");
     let bad_sum_out = run_verify_script(&bad_sum_dist, Some(&bad_sum_metrics), None, None);
     assert_corrupted_checksum_not_marked_verified(&bad_sum_out, &bad_sum_metrics);
 }

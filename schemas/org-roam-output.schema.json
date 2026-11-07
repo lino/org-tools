@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-roam-output.schema.json",
+  "title": "org roam JSON output",
+  "description": "Schema for the JSON output of 'org roam node|backlinks|links|graph --format json'.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["kind", "query", "nodes", "telemetry"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "node",
+          "description": "Discriminator for 'org roam node' responses."
+        },
+        "query": {
+          "type": "string",
+          "description": "Original query string supplied on the command line."
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_node" },
+          "description": "Matched non-excluded org-roam v2 nodes sorted by (file, line)."
+        },
+        "telemetry": { "$ref": "#/$defs/telemetry" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["kind", "target", "nodes", "backlinks", "telemetry"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "backlinks",
+          "description": "Discriminator for 'org roam backlinks' responses."
+        },
+        "target": {
+          "type": "string",
+          "description": "Original target query or locator supplied on the command line."
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_node" },
+          "description": "Resolved target node(s) sorted by (file, line)."
+        },
+        "backlinks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_backlink" },
+          "description": "Incoming [[id:...]] links pointing to the resolved target node(s)."
+        },
+        "telemetry": { "$ref": "#/$defs/telemetry" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["kind", "source", "nodes", "links", "telemetry"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "links",
+          "description": "Discriminator for 'org roam links' responses."
+        },
+        "source": {
+          "type": "string",
+          "description": "Original source query or locator supplied on the command line."
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_node" },
+          "description": "Resolved source node(s) sorted by (file, line)."
+        },
+        "links": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_outgoing_link" },
+          "description": "Outgoing [[id:...]] links attributed to the resolved source node(s)."
+        },
+        "telemetry": { "$ref": "#/$defs/telemetry" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["kind", "nodes", "edges", "telemetry"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "graph",
+          "description": "Discriminator for 'org roam graph' responses."
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_node" },
+          "description": "All non-excluded org-roam v2 nodes across the workspace."
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/roam_edge" },
+          "description": "All extracted [[id:...]] link edges across the workspace."
+        },
+        "telemetry": { "$ref": "#/$defs/telemetry" }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "telemetry": {
+      "type": "object",
+      "required": ["duration_us", "files_scanned", "cache_hits", "cache_misses"],
+      "properties": {
+        "duration_us": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock execution duration in microseconds."
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of org files scanned during workspace indexing."
+        },
+        "cache_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache hits."
+        },
+        "cache_misses": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of document cache misses."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Execution duration and file-scan observability telemetry."
+    },
+    "roam_node": {
+      "type": "object",
+      "required": [
+        "id",
+        "id_seed",
+        "title",
+        "file",
+        "line",
+        "level",
+        "todo_keyword",
+        "priority",
+        "tags",
+        "olp",
+        "aliases",
+        "refs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Canonical :ID: property value."
+        },
+        "id_seed": {
+          "type": ["string", "null"],
+          "description": "Optional :ID_SEED: provenance URN."
+        },
+        "title": {
+          "type": "string",
+          "description": "Heading title or level-0 #+TITLE: / file stem."
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to the org file defining the node."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number (1 for level-0 file nodes, heading line for headings)."
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Outline level (0 for file nodes, >= 1 for headings)."
+        },
+        "todo_keyword": {
+          "type": ["string", "null"],
+          "description": "TODO keyword attached to a heading node, or null."
+        },
+        "priority": {
+          "type": ["string", "null"],
+          "description": "Priority cookie character attached to a heading node, or null."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Effective node tags (filetags + inherited ancestor tags + local tags)."
+        },
+        "olp": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Parent outline path titles (excluding self)."
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Parsed :ROAM_ALIASES: tokens."
+        },
+        "refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Parsed :ROAM_REFS: tokens."
+        }
+      },
+      "additionalProperties": false
+    },
+    "roam_edge": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "source_file",
+        "target_id",
+        "description",
+        "line",
+        "context"
+      ],
+      "properties": {
+        "source_id": {
+          "type": ["string", "null"],
+          "description": "Enclosing non-excluded source node :ID:, or null."
+        },
+        "source_file": {
+          "type": "string",
+          "description": "Path to the org file containing the link."
+        },
+        "target_id": {
+          "type": "string",
+          "description": "Target :ID: extracted from [[id:<target>]] (without ::search)."
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Optional link description from [[id:<target>][<description>]]."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number of the link."
+        },
+        "context": {
+          "type": "string",
+          "description": "Trimmed source line containing the link."
+        }
+      },
+      "additionalProperties": false
+    },
+    "roam_backlink": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "source_title",
+        "source_file",
+        "target_id",
+        "line",
+        "description",
+        "context"
+      ],
+      "properties": {
+        "source_id": {
+          "type": ["string", "null"],
+          "description": "Enclosing non-excluded source node :ID:, or null."
+        },
+        "source_title": {
+          "type": ["string", "null"],
+          "description": "Title of the enclosing source node when source_id resolves, or null."
+        },
+        "source_file": {
+          "type": "string",
+          "description": "Path to the org file containing the incoming link."
+        },
+        "target_id": {
+          "type": "string",
+          "description": "Target node :ID: referenced by the incoming link."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number of the incoming link."
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Optional link description text."
+        },
+        "context": {
+          "type": "string",
+          "description": "Trimmed source line containing the incoming link."
+        }
+      },
+      "additionalProperties": false
+    },
+    "roam_outgoing_link": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "source_file",
+        "target_id",
+        "target_title",
+        "target_file",
+        "resolved",
+        "line",
+        "description",
+        "context"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "description": "Source node :ID: owning the outgoing link."
+        },
+        "source_file": {
+          "type": "string",
+          "description": "Path to the org file containing the outgoing link."
+        },
+        "target_id": {
+          "type": "string",
+          "description": "Target :ID: extracted from [[id:<target>]]."
+        },
+        "target_title": {
+          "type": ["string", "null"],
+          "description": "Title of the target node when resolved, or null."
+        },
+        "target_file": {
+          "type": ["string", "null"],
+          "description": "Path to the target node's file when resolved, or null."
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "Whether target_id resolves to an indexed org-roam node."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based line number of the outgoing link."
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "Optional link description text."
+        },
+        "context": {
+          "type": "string",
+          "description": "Trimmed source line containing the outgoing link."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

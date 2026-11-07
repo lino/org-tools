@@ -5,12 +5,14 @@
 
 pub mod affiliated_keyword_placement;
 pub mod block_type_validity;
+pub mod broken_id_link;
 pub mod clock_entry_validity;
 pub mod deprecated_category_setup;
 pub mod deprecated_export_blocks;
 pub mod drawer_nesting;
 pub mod duplicate_custom_id;
 pub mod duplicate_footnote_definition;
+pub mod duplicate_id;
 pub mod duplicate_name;
 pub mod duplicate_target;
 pub mod edna_cycle;
@@ -21,6 +23,7 @@ pub mod invalid_babel_call;
 pub mod invalid_edna_syntax;
 pub mod invalid_effort_property;
 pub mod invalid_id_property;
+pub mod invalid_id_seed;
 pub mod invalid_image_alignment;
 pub mod invalid_keyword_syntax;
 pub mod invalid_table_formula;

@@ -23,6 +23,7 @@ use commands::clock::{run_clock, ClockCommand};
 use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
 use commands::query::{run_query, QueryCommand};
+use commands::roam::{run_roam, RoamCommand};
 use commands::schema::{run_schema, SchemaArgs};
 use commands::show::{run_show, ShowArgs};
 use commands::update::{run_update, UpdateCommand};
@@ -92,6 +93,12 @@ enum OrgCommand {
         #[command(subcommand)]
         command: ExportCommand,
     },
+    /// Inspect org-roam v2 nodes, backlinks, outgoing links, and workspace graphs.
+    Roam {
+        /// Roam subcommand.
+        #[command(subcommand)]
+        command: RoamCommand,
+    },
     /// Extract a scoped entry subtree or file node by locator.
     Show(ShowArgs),
     /// Archive done entries to a separate file.
@@ -142,6 +149,7 @@ fn dispatch_command(command: OrgCommand) -> i32 {
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
+        OrgCommand::Roam { command } => run_roam(command),
         OrgCommand::Show(args) => run_show(args),
         OrgCommand::Archive(args) => run_archive(args),
         OrgCommand::Schema(args) => run_schema(&args.name),

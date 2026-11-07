@@ -18,12 +18,14 @@ use crate::rules::format::timestamp_spacing::TimestampSpacing;
 use crate::rules::format::trailing_whitespace::TrailingWhitespace;
 use crate::rules::lint::affiliated_keyword_placement::AffiliatedKeywordPlacement;
 use crate::rules::lint::block_type_validity::BlockTypeValidity;
+use crate::rules::lint::broken_id_link::BrokenIdLink;
 use crate::rules::lint::clock_entry_validity::ClockEntryValidity;
 use crate::rules::lint::deprecated_category_setup::DeprecatedCategorySetup;
 use crate::rules::lint::deprecated_export_blocks::DeprecatedExportBlocks;
 use crate::rules::lint::drawer_nesting::DrawerNesting;
 use crate::rules::lint::duplicate_custom_id::DuplicateCustomId;
 use crate::rules::lint::duplicate_footnote_definition::DuplicateFootnoteDefinition;
+use crate::rules::lint::duplicate_id::DuplicateId;
 use crate::rules::lint::duplicate_name::DuplicateName;
 use crate::rules::lint::duplicate_target::DuplicateTarget;
 use crate::rules::lint::edna_cycle::EdnaCycle;
@@ -34,6 +36,7 @@ use crate::rules::lint::invalid_babel_call::InvalidBabelCall;
 use crate::rules::lint::invalid_edna_syntax::InvalidEdnaSyntax;
 use crate::rules::lint::invalid_effort_property::InvalidEffortProperty;
 use crate::rules::lint::invalid_id_property::InvalidIdProperty;
+use crate::rules::lint::invalid_id_seed::InvalidIdSeed;
 use crate::rules::lint::invalid_image_alignment::InvalidImageAlignment;
 use crate::rules::lint::invalid_keyword_syntax::InvalidKeywordSyntax;
 use crate::rules::lint::invalid_table_formula::InvalidTableFormula;
@@ -170,6 +173,9 @@ fn append_extended_lint_rules(rules: &mut Vec<Box<dyn LintRule>>) {
         Box::new(InvalidTableFormula),
         Box::new(InvalidEdnaSyntax),
         Box::new(UnresolvedEdnaIds),
+        Box::new(DuplicateId),
+        Box::new(InvalidIdSeed),
+        Box::new(BrokenIdLink),
     ]);
 }
 

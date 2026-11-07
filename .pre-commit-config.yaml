@@ -1,5 +1,8 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 repos:
-  # Rust: formatting and linting
+  # Rust: formatting, all-targets linting, and Org documentation dogfooding
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -11,15 +14,15 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --all-targets -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
 
-      # org-tools: format org files in docs/ and README.org
+      # org-tools: lint and check formatting on docs/ and README.org
       - id: org-fmt
-        name: org fmt
-        entry: bash -c 'cargo run --quiet -- fmt format "$@" || true' --
+        name: org fmt check
+        entry: cargo run --quiet -- fmt check
         language: system
         files: ^(docs/.*\.org|README\.org)$
         types_or: [file]

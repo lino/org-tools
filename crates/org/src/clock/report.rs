@@ -80,7 +80,7 @@ fn build_entry_report(
         }
     }
 
-    rows.sort_by(|a, b| b.minutes.cmp(&a.minutes));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.minutes));
     rows
 }
 
@@ -125,7 +125,7 @@ fn build_tag_report(
             minutes,
         })
         .collect();
-    rows.sort_by(|a, b| b.minutes.cmp(&a.minutes));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.minutes));
     rows
 }
 

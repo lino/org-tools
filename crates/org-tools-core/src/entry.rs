@@ -356,7 +356,7 @@ mod tests {
         let result = add_entry(
             &source,
             &doc,
-            Some(0).filter(|_| false),
+            None,
             &NewEntryOpts {
                 title: "Meeting".to_string(),
                 level: 1,

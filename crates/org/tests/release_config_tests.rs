@@ -299,9 +299,11 @@ fn sha256_hex(data: &[u8]) -> String {
         padded.push(0);
     }
     padded.extend_from_slice(&((data.len() as u64) * 8).to_be_bytes());
-    for chunk in padded.chunks_exact(64) {
-        let schedule = build_sha256_schedule(chunk);
+    let mut offset = 0;
+    while offset + 64 <= padded.len() {
+        let schedule = build_sha256_schedule(&padded[offset..offset + 64]);
         compress_sha256_schedule(&mut state, &schedule);
+        offset += 64;
     }
     let mut digest = String::with_capacity(64);
     for word in state {
@@ -313,8 +315,9 @@ fn sha256_hex(data: &[u8]) -> String {
 /// Expands a 64-byte SHA-256 message block into a 64-word message schedule.
 fn build_sha256_schedule(chunk: &[u8]) -> [u32; 64] {
     let mut schedule = [0u32; 64];
-    for (idx, word_bytes) in chunk.chunks_exact(4).enumerate() {
-        schedule[idx] = u32::from_be_bytes(word_bytes.try_into().expect("4-byte word"));
+    for (idx, slot) in schedule.iter_mut().take(16).enumerate() {
+        let start = idx * 4;
+        *slot = u32::from_be_bytes(chunk[start..start + 4].try_into().expect("4-byte word"));
     }
     for idx in 16..64 {
         let s0 = schedule[idx - 15].rotate_right(7)

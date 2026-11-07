@@ -1,6 +1,6 @@
 #+TITLE: ADR-0000: Template
 #+DATE: YYYY-MM-DD
-#+STATUS: proposed | accepted | deprecated | superseded
+#+PROPERTY: STATUS proposed | accepted | deprecated | superseded
 
 * Context
 

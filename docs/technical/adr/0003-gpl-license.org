@@ -1,6 +1,6 @@
 #+TITLE: ADR-0003: GPL-3.0-or-later license
 #+DATE: 2026-03-21
-#+STATUS: accepted
+#+PROPERTY: STATUS accepted
 
 * Context
 

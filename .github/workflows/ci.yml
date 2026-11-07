@@ -1,3 +1,6 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 name: CI
 
 on:
@@ -27,7 +30,10 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check Org documentation
+        run: cargo run -- fmt check README.org docs/
 
   test:
     name: Tests

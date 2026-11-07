@@ -1601,7 +1601,9 @@ mod tests {
         assert_eq!(format_result(0.0), "0");
     }
 
+    /// Verifies formatting of non-integer decimal table formula results.
     #[test]
+    #[allow(clippy::approx_constant)]
     fn format_result_decimal() {
         assert_eq!(format_result(4.5), "4.5");
         assert_eq!(format_result(3.14), "3.14");

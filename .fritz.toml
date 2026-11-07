@@ -1,0 +1,51 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# F.R.I.T.Z. workspace configuration for `org-tools` (`orgfmt`).
+# Machine-specific paths MUST NOT be stored here; use `$BABELSBERG_HUB` or `.fritz.local.toml`.
+
+[workspace]
+mode = "hub"
+project = "orgfmt"
+backend = "metrorg"
+hub_env_var = "BABELSBERG_HUB"
+local_plan_dir = ".plan"
+metrorg_bin_env_var = "METRORG_BIN"
+default_metrorg_bin = "org"
+
+[rulesets]
+active = [
+    "local:baseline/core-craft@1.1.0",
+    "local:stack/rust-cli@1.0.0",
+]
+sources_file = "rulesets/sources.toml"
+lock_file = "rulesets/rulesets.lock.json"
+
+[models]
+default_level = "L2"
+allowed_families = ["gemini", "claude", "gpt", "gpt-oss", "local"]
+inference_providers = ["google-direct", "anthropic-direct", "openai-direct", "ollama", "vllm"]
+qa_diverse_family = true
+qa_diverse_lineage = true
+
+[models.family_defaults]
+L1 = "gemini"
+L2 = "gemini"
+L3 = "claude"
+L4 = "claude"
+L5 = "gemini"
+
+[hygiene]
+max_file_lines = 450
+max_function_lines = 50
+max_cyclomatic_complexity = 10
+regions_section_threshold = 3
+regions_registry_file = ".regions.md"
+
+[observability]
+namespace = "orgfmt"
+telemetry_dir = ".cache/telemetry"
+metrics_host = "127.0.0.1"
+metrics_port = 9108
+max_label_values = 20
+max_series_per_metric = 500

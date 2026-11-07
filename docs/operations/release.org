@@ -1,43 +1,73 @@
 #+TITLE: org-tools — Release Process
 
-* Pre-release Checklist
+* Pre-release Verification Checklist
 
-1. All tests pass: =cargo test=
-   - [ ] Verify: exit code 0, no failures
-2. Clippy clean: =cargo clippy -- -D warnings=
-   - [ ] Verify: no warnings
-3. Edge case fixtures pass: =cargo run -- check tests/fixtures/edge_cases/=
-   - [ ] Verify: no panics, expected diagnostics only
-4. Version bump in =Cargo.toml=
-   - [ ] Verify: version field updated
-5. Update changelog (generated from conventional commits)
-   - [ ] Verify: changelog reflects all changes since last release
-
-* Release Steps
-
-1. Create a release commit:
+1. Run the unified workspace verification gate (=mise run verify=):
    #+begin_src sh
-   git add Cargo.toml Cargo.lock
-   git commit -m "chore: release vX.Y.Z"
+   cargo fmt -- --check
+   cargo clippy --all-targets -- -D warnings
+   cargo test
+   cargo run -- fmt check README.org docs/
    #+end_src
-
-2. Tag the release:
+   - [ ] Verify: all four commands exit =0= with zero warnings and zero diagnostics
+2. Smoke-test edge-case fixtures:
    #+begin_src sh
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   cargo run -- fmt check tests/fixtures/edge_cases/
    #+end_src
-
-3. Push:
+   - [ ] Verify: exits =1= (expected fixture diagnostics) with zero panics
+3. Preview changelog notes from conventional commits via =git-cliff= (=cliff.toml=):
    #+begin_src sh
-   git push origin main --tags
+   git cliff --config cliff.toml --unreleased
    #+end_src
-
-4. Publish to crates.io:
+   - [ ] Verify: conventional commits since the previous =vX.Y.Z= tag are grouped cleanly
+4. Validate version synchronization and GoReleaser v2 config in dry-run mode:
    #+begin_src sh
-   cargo publish
+   bash scripts/release.sh --dry-run X.Y.Z
    #+end_src
-   - [ ] Verify: =cargo install org-tools= installs the new version
+   - [ ] Verify: =Cargo.toml= and =crates/org/Cargo.toml= sync check passes without modifying files
 
-* Post-release
+* Cutting a Release
 
-- [ ] Verify CI passed on the tag
-- [ ] Verify crates.io page shows correct version and description
+Use =scripts/release.sh= (or =mise run release X.Y.Z=) to synchronize workspace
+manifests, re-run verification checks, create the release commit, tag =vX.Y.Z=,
+and push to =origin=:
+
+#+begin_src sh
+bash scripts/release.sh X.Y.Z
+#+end_src
+
+Passing =--yes= skips the interactive confirmation prompt for automated runs.
+
+* Automated GoReleaser v2 Pipeline
+
+Pushing a =vX.Y.Z= tag (or triggering =workflow_dispatch= for a snapshot dry-run)
+runs =.github/workflows/release.yml=:
+
+1. *Validate job*: checks Rust formatting, Clippy lints, full test suite, Org
+   documentation formatting, edge-case smoke tests, and tag-to-=Cargo.toml=
+   version parity.
+2. *GoReleaser v2 multi-arch packaging* (=.goreleaser.yaml=):
+   - Builds =aarch64= and =x86_64= release binaries for macOS (Darwin), static
+     =musl= Linux (=cargo-zigbuild=), and Windows MSVC (=cargo-xwin=).
+   - Generates =bash=, =zsh=, and =fish= completions (=scripts/build-completions.sh=)
+     and bundles them into =.tar.gz= / =.zip= archives plus =checksums.txt=.
+   - Builds Linux =.deb= and =.rpm= system packages via GoReleaser nFPM.
+   - Renders and publishes the =org-tools= Cask to =lino/homebrew-tap= when
+     =HOMEBREW_TAP_GITHUB_TOKEN= is configured (see
+     [[file:homebrew-tap.org][Homebrew Tap Operations]] and
+     [[file:installation.org][Installation Guide]]).
+   - Verifies all release artifacts and emits Prometheus / JSONL telemetry via
+     =scripts/verify-release-packages.sh=.
+3. *Optional =crates.io= publish gate*:
+   - When =CARGO_REGISTRY_TOKEN= is configured on a =v*= tag push, publishes
+     =org-tools-core= followed by =org-tools=.
+   - When =CARGO_REGISTRY_TOKEN= is unset (or during snapshot =workflow_dispatch=
+     runs), the job logs a GitHub Actions notice and exits =0= cleanly without
+     blocking GitHub Releases or Homebrew tap updates.
+
+* Post-release Checklist
+
+- [ ] Verify GitHub Actions =Release= workflow succeeded and uploaded =release-telemetry=
+- [ ] Verify GitHub Release page lists multi-OS archives, =.deb= / =.rpm= packages, and =checksums.txt=
+- [ ] Verify =brew install --cask lino/tap/org-tools= installs =vX.Y.Z= when tap publishing is enabled
+- [ ] Verify =crates.io= shows =vX.Y.Z= if =CARGO_REGISTRY_TOKEN= is configured

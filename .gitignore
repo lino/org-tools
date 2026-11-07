@@ -1,3 +1,7 @@
 /target
 .idea/
 *.iml
+.regions.md
+.fritz.local.toml
+mise.local.toml
+.cache/

@@ -409,8 +409,10 @@ fn sha1_compress_block(state: &mut [u32; 5], block: &[u8]) {
 fn sha1_digest(data: &[u8]) -> [u8; 20] {
     let padded = sha1_pad_message(data);
     let mut state = SHA1_INIT_STATE;
-    for block in padded.chunks_exact(SHA1_BLOCK_BYTES) {
-        sha1_compress_block(&mut state, block);
+    let mut offset = 0;
+    while offset + SHA1_BLOCK_BYTES <= padded.len() {
+        sha1_compress_block(&mut state, &padded[offset..offset + SHA1_BLOCK_BYTES]);
+        offset += SHA1_BLOCK_BYTES;
     }
 
     let mut out = [0u8; 20];

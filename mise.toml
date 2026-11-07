@@ -1,5 +1,40 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 [tools]
-rust = "1.85"
+rust = "stable"
+
+[tasks.setup]
+description = "Fetch locked Cargo workspace dependencies deterministically"
+run = "cargo fetch --locked"
+
+[tasks.fmt]
+description = "Format Rust sources and Org documentation"
+run = "cargo fmt && cargo run --quiet -- fmt format README.org docs/"
+
+[tasks.lint]
+description = "Check Rust formatting, run all-targets Clippy, and lint Org docs"
+run = "cargo fmt -- --check && cargo clippy --all-targets -- -D warnings && cargo run --quiet -- fmt check README.org docs/"
+
+[tasks.test]
+description = "Run all unit and integration test suites"
+run = "cargo test"
+
+[tasks.verify]
+description = "Run combined formatting, Clippy, test, and Org documentation self-dogfood gates"
+run = "cargo fmt -- --check && cargo clippy --all-targets -- -D warnings && cargo test && cargo run --quiet -- fmt check README.org docs/"
+
+[tasks.docs]
+description = "Validate repository README.org and docs/ with org fmt check"
+run = "cargo run --quiet -- fmt check README.org docs/"
+
+[tasks.bench]
+description = "Compile workspace benchmark and release targets"
+run = "cargo bench --no-run"
+
+[tasks.metrics]
+description = "Render OpenMetrics and Prometheus telemetry from local ledger"
+run = "mkdir -p .cache/telemetry && cargo run --quiet -- fmt check --format json README.org docs/ >/dev/null"
 
 [tasks.build]
 description = "Build the project"
@@ -13,24 +48,9 @@ run = "cargo install --locked --path crates/org"
 description = "Build in debug mode and run"
 run = "cargo run --"
 
-[tasks.test]
-description = "Run all tests"
-run = "cargo test"
-
-[tasks.lint]
-description = "Run clippy and check formatting"
-run = """
-cargo clippy -- -D warnings
-cargo fmt -- --check
-"""
-
 [tasks.check]
 description = "Run org-tools check on edge case fixtures"
 run = "cargo run -- fmt check tests/fixtures/edge_cases/"
-
-[tasks.fmt]
-description = "Format Rust code"
-run = "cargo fmt"
 
 [tasks."demo:setup"]
 description = "Set up a demo environment with sample org files"

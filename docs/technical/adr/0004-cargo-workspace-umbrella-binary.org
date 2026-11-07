@@ -1,6 +1,6 @@
 #+TITLE: ADR-0004: Cargo workspace with umbrella =org= binary
 #+DATE: 2026-03-21
-#+STATUS: accepted
+#+PROPERTY: STATUS accepted
 
 * Context
 

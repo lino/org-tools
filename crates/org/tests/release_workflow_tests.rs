@@ -615,6 +615,7 @@ fn init_synthetic_release_repo(workspace_ver: &str, cli_dep_ver: &str) -> TempDi
         &["init", "-q"][..],
         &["config", "user.email", "test@example.com"][..],
         &["config", "user.name", "Test Operator"][..],
+        &["config", "commit.gpgsign", "false"][..],
         &["add", "."][..],
         &["commit", "-qm", "initial"][..],
     ] {

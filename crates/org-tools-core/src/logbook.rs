@@ -379,6 +379,7 @@ pub fn parse_env_now() -> Option<(u16, u8, u8, u32, u32)> {
 }
 
 /// Extracts local `(year, month, day, hour, minute)` from Unix epoch `secs` via `libc`.
+#[allow(deprecated)]
 fn local_timestamp_parts(secs: i64) -> Option<(u16, u8, u8, u32, u32)> {
     #[cfg(unix)]
     let resolved = unsafe {

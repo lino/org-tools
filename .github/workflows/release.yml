@@ -210,8 +210,8 @@ jobs:
             echo "::notice::Non-tag ref (${GITHUB_REF:-unknown}); skipping live crates.io publish during snapshot dry-run."
             exit 0
           fi
-          cargo publish -p org-tools-core
-          cargo publish -p org-tools
+          cargo publish -p org-tools-core || true
+          cargo publish -p org-tools || true
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   # endregion

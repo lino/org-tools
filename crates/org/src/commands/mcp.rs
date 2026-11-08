@@ -20,7 +20,7 @@ use std::time::Instant;
 use clap::Args;
 use serde_json::{json, Map, Value};
 
-use org_tools_core::cache::MabuseCache;
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::export_md::normalize_workspace_path;
 use org_tools_core::files::collect_org_files;
 
@@ -59,7 +59,7 @@ pub(crate) struct McpArgs {
 
 // region Session State
 
-/// Persistent `stdio` MCP session holding the warm [`MabuseCache`] SQLite connection.
+/// Persistent `stdio` MCP session holding the warm [`WorkspaceCache`] SQLite connection.
 pub(super) struct McpSession {
     /// Caller-facing workspace root directory path.
     display_workspace: PathBuf,
@@ -68,11 +68,11 @@ pub(super) struct McpSession {
     /// Whether `--no-cache` was supplied on the CLI.
     pub(super) no_cache: bool,
     /// Persistent open SQLite + FTS5 cache handle when `!no_cache`.
-    warm_cache: Option<MabuseCache>,
+    warm_cache: Option<WorkspaceCache>,
 }
 
 impl McpSession {
-    /// Initializes an [`McpSession`] lazily without creating `.cache/mabuse.db` until a tool runs.
+    /// Initializes an [`McpSession`] lazily without creating `.cache/org-cache.db` until a tool runs.
     fn new(display_workspace: PathBuf, no_cache: bool) -> Result<Self, String> {
         let default_workspace = normalize_workspace_path(&display_workspace);
         Ok(Self {
@@ -120,7 +120,7 @@ impl McpSession {
         Ok((candidate, norm, is_default))
     }
 
-    /// Opens or refreshes the persistent [`MabuseCache`] (or scans directly) and builds telemetry.
+    /// Opens or refreshes the persistent [`WorkspaceCache`] (or scans directly) and builds telemetry.
     pub(super) fn sync_telemetry(
         &mut self,
         norm_ws: &Path,
@@ -131,7 +131,7 @@ impl McpSession {
             let tel = match self.warm_cache {
                 Some(ref mut cache) => cache.refresh()?,
                 None => {
-                    let (cache, tel) = MabuseCache::open_and_sync(&self.default_workspace)?;
+                    let (cache, tel) = WorkspaceCache::open_and_sync(&self.default_workspace)?;
                     self.warm_cache = Some(cache);
                     tel
                 }
@@ -142,7 +142,7 @@ impl McpSession {
             ));
         }
         if !self.no_cache {
-            let (_, tel) = MabuseCache::open_and_sync(norm_ws)?;
+            let (_, tel) = WorkspaceCache::open_and_sync(norm_ws)?;
             return Ok(self.counts_telemetry(
                 started,
                 (tel.files_scanned, tel.cache_hits, tel.cache_misses),
@@ -152,7 +152,7 @@ impl McpSession {
         Ok(self.counts_telemetry(started, (scanned, 0, scanned)))
     }
 
-    /// Marks written `paths` stale in `MabuseCache` prior to `refresh()` for coarse-tick filesystems.
+    /// Marks written `paths` stale in `WorkspaceCache` prior to `refresh()` for coarse-tick filesystems.
     pub(super) fn invalidate_workspace_paths(
         &mut self,
         norm_ws: &Path,
@@ -168,8 +168,8 @@ impl McpSession {
                 return Ok(());
             }
         }
-        if MabuseCache::resolve_db_path(norm_ws).is_file() {
-            let (mut cache, _) = MabuseCache::open_and_sync(norm_ws)?;
+        if WorkspaceCache::resolve_db_path(norm_ws).is_file() {
+            let (mut cache, _) = WorkspaceCache::open_and_sync(norm_ws)?;
             cache.invalidate_paths(paths)?;
             if is_default {
                 self.warm_cache = Some(cache);
@@ -178,8 +178,8 @@ impl McpSession {
         Ok(())
     }
 
-    /// Returns a shared reference to the warm [`MabuseCache`] when serving the default workspace.
-    pub(super) fn warm_cache_for(&self, is_default: bool) -> Option<&MabuseCache> {
+    /// Returns a shared reference to the warm [`WorkspaceCache`] when serving the default workspace.
+    pub(super) fn warm_cache_for(&self, is_default: bool) -> Option<&WorkspaceCache> {
         self.warm_cache
             .as_ref()
             .filter(|_| !self.no_cache && is_default)

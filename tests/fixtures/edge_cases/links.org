@@ -41,8 +41,8 @@
 * Links in various contexts
 
 Links in a table:
-| Link | Description |
-|------+-------------|
+| Link                          | Description       |
+|-------------------------------+-------------------|
 | [[https://example.com][link]] | A link in a table |
 
 Links in a list:

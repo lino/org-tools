@@ -86,7 +86,7 @@ and JSON envelopes on stdin/stdout.
 org-tools is a pure command-line tool. Its only I/O is:
 
 - *Input*: =.org= files from the local filesystem, =.org-tools.toml= configuration,
-  environment overrides (e.g. =BABELSBERG_ID_NAMESPACE=, =ORG_TAG_COLUMN=), and stdin
+  environment overrides (e.g. =ORG_ID_NAMESPACE=, =ORG_TAG_COLUMN=), and stdin
 - *Output*: diagnostics, query results, =MutationResult= JSON envelopes, locators,
   and formatted or exported files to stdout/stderr
 
@@ -99,7 +99,7 @@ modular umbrella binary:
 
 - =org-tools-core=: all parsing, format/lint rules, =OrgDocument= heading and
   =org-roam= v2 file-node model, =OrgLocator= resolution, property/tag/ID/planning
-  mutations, =MabuseCache= SQLite WAL + FTS5 indexing, archiving, =org-edna=
+  mutations, =WorkspaceCache= SQLite WAL + FTS5 indexing, archiving, =org-edna=
   dependencies, and =#+TBLFM:= evaluation
 - =org=: unified CLI and =stdio= MCP server dispatching modular subcommands
   (=fmt=, =query=, =roam=, =show=, =update=, =clock=, =archive=, =export=,
@@ -122,7 +122,7 @@ Line-based text processing with span-based fixes:
    =ChecklistItem= vectors)
 2. Resolve =OrgLocator= targets or evaluate recursive-descent =Predicate= ASTs
 3. Apply lint-clean mutations (F005-aligned drawers, F007 column-77 tags,
-   Stempelamt RFC 9562 UUIDv5 + =:ID_SEED:= minting) and emit uniform
+   deterministic RFC 9562 UUIDv5 + =:ID_SEED:= minting) and emit uniform
    =MutationResult= JSON envelopes with execution =telemetry=
 
 * Building Block View
@@ -143,7 +143,7 @@ graph TD
         Runner
         Document["OrgDocument + ChecklistItem"]
         Locator["OrgLocator"]
-        Property["property + Stempelamt UUIDv5"]
+        Property["property + Deterministic UUIDv5"]
         Rules["Format + Lint Rules"]
         Source["SourceFile"]
     end
@@ -164,31 +164,31 @@ graph TD
 
 *** org-tools-core (shared library)
 
-| Module          | Responsibility                                                       |
-|-----------------+----------------------------------------------------------------------|
-| =source.rs=     | File reading, line start indexing, line/col lookups                  |
-| =document.rs=   | OrgDocument tree, level-0 =org-roam= v2 file =:ID:=, =KEY+= defaults |
-| =entry.rs=      | Heading insertion and plain-list =ChecklistItem= parsing             |
-| =locator.rs=    | OrgLocator parse/display/resolve across headings and file nodes      |
-| =property.rs=   | F005 drawer mutations, F007 tag alignment, Stempelamt UUIDv5 IDs     |
-| =planning.rs=   | Repeater projection/advancement, body timestamps, planning mutations |
-| =id.rs=         | UUIDv4, template, and external-command =:ID:= generation             |
-| =state.rs=      | TODO transitions, =:LOGBOOK:=, =:LAST_REPEAT:=, repeater advance     |
-| =columns.rs=    | =#+COLUMNS:= parser and bottom-up property/effort/clock rollups      |
-| =include.rs=    | Workspace-confined =#+INCLUDE:= resolver, slicer, and expander       |
-| =cache.rs=      | Incremental SQLite WAL + FTS5 workspace index (=.cache/mabuse.db=)   |
-| =roam.rs=       | =org-roam= v2 node, backlink, outgoing link, and graph resolution    |
-| =cookie.rs=     | Heading =[/]= and =[%]= statistic cookie recalculation               |
-| =archive.rs=    | Archivable DONE subtree extraction and =.org_archive= rendering      |
-| =edna.rs=       | =BLOCKEE= / =TRIGGER= dependency parsing for =org-edna=              |
-| =tblfm.rs=      | Pure-Rust =#+TBLFM:= spreadsheet formula parser and evaluator        |
-| =runner.rs=     | Rule registration and two-phase format/check pipeline                |
-| =diagnostic.rs= | Span, Fix, Diagnostic, Severity types                                |
-| =formatter.rs=  | Applies sorted non-overlapping fixes to source text                  |
-| =config.rs=     | TOML config loading with ancestor directory search                   |
-| =output.rs=     | Renders diagnostics as human-readable or JSON                        |
-| =files.rs=      | Recursive =.org= file collection (respects =.gitignore=)             |
-| =rules/=        | =FormatRule= / =LintRule= traits, 9 F-rules, 38 E/W/I-rules (=E003=) |
+| Module          | Responsibility                                                        |
+|-----------------+-----------------------------------------------------------------------|
+| =source.rs=     | File reading, line start indexing, line/col lookups                   |
+| =document.rs=   | OrgDocument tree, level-0 =org-roam= v2 file =:ID:=, =KEY+= defaults  |
+| =entry.rs=      | Heading insertion and plain-list =ChecklistItem= parsing              |
+| =locator.rs=    | OrgLocator parse/display/resolve across headings and file nodes       |
+| =property.rs=   | F005 drawer mutations, F007 tag alignment, deterministic UUIDv5 IDs   |
+| =planning.rs=   | Repeater projection/advancement, body timestamps, planning mutations  |
+| =id.rs=         | UUIDv4, template, and external-command =:ID:= generation              |
+| =state.rs=      | TODO transitions, =:LOGBOOK:=, =:LAST_REPEAT:=, repeater advance      |
+| =columns.rs=    | =#+COLUMNS:= parser and bottom-up property/effort/clock rollups       |
+| =include.rs=    | Workspace-confined =#+INCLUDE:= resolver, slicer, and expander        |
+| =cache.rs=      | Incremental SQLite WAL + FTS5 workspace index (=.cache/org-cache.db=) |
+| =roam.rs=       | =org-roam= v2 node, backlink, outgoing link, and graph resolution     |
+| =cookie.rs=     | Heading =[/]= and =[%]= statistic cookie recalculation                |
+| =archive.rs=    | Archivable DONE subtree extraction and =.org_archive= rendering       |
+| =edna.rs=       | =BLOCKEE= / =TRIGGER= dependency parsing for =org-edna=               |
+| =tblfm.rs=      | Pure-Rust =#+TBLFM:= spreadsheet formula parser and evaluator         |
+| =runner.rs=     | Rule registration and two-phase format/check pipeline                 |
+| =diagnostic.rs= | Span, Fix, Diagnostic, Severity types                                 |
+| =formatter.rs=  | Applies sorted non-overlapping fixes to source text                   |
+| =config.rs=     | TOML config loading with ancestor directory search                    |
+| =output.rs=     | Renders diagnostics as human-readable or JSON                         |
+| =files.rs=      | Recursive =.org= file collection (respects =.gitignore=)              |
+| =rules/=        | =FormatRule= / =LintRule= traits, 9 F-rules, 38 E/W/I-rules (=E003=)  |
 
 *** org binary (CLI)
 
@@ -203,7 +203,7 @@ graph TD
 | =commands/refile.rs=          | =org refile= cross-file subtree movement and level adjustment                                       |     |                                                       |
 | =commands/show.rs=            | =org show= bounded node slice extractor with =--expand-includes=                                    |     |                                                       |
 | =commands/update.rs=          | =org update= entry module, locator helper, and dispatch                                             |     |                                                       |
-| =commands/update_id.rs=       | =org update add-id= (UUIDv4, template, command, Stempelamt)                                         |     |                                                       |
+| =commands/update_id.rs=       | =org update add-id= (UUIDv4, template, command, deterministic UUIDv5)                               |     |                                                       |
 | =commands/update_property.rs= | =org update set-property=, =delete-property=, and =set-tags=                                        |     |                                                       |
 | =commands/update_state.rs=    | =org update set-state= (=:LOGBOOK:=, =:LAST_REPEAT:=, =--no-repeat=)                                |     |                                                       |
 | =commands/update_planning.rs= | =org update set-scheduled= and =set-deadline= planning mutators                                     |     |                                                       |

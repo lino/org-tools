@@ -22,7 +22,7 @@ All repository code is licensed under **`GPL-3.0-or-later`** in solidarity with 
 
 Cargo workspace with two crates:
 
-- `crates/org-tools-core/` — Shared library: `SourceFile`, `OrgDocument` (including level-0 `org-roam` v2 file `:ID:` drawers, `KEY+` continuations, and `ChecklistItem` parsing), `OrgLocator`, `FormatRule` / `LintRule` traits and rules, `Runner`, `property` (F005 drawer mutations, F007 column-77 tag alignment, and Stempelamt RFC 9562 UUIDv5 minting), `id`, `entry`, `state`, `cookie`, `archive`, `edna`, and `tblfm`.
+- `crates/org-tools-core/` — Shared library: `SourceFile`, `OrgDocument` (including level-0 `org-roam` v2 file `:ID:` drawers, `KEY+` continuations, and `ChecklistItem` parsing), `OrgLocator`, `FormatRule` / `LintRule` traits and rules, `Runner`, `property` (F005 drawer mutations, F007 column-77 tag alignment, and deterministic RFC 9562 UUIDv5 minting), `id`, `entry`, `state`, `cookie`, `archive`, `edna`, and `tblfm`.
 - `crates/org/` — Umbrella `org` binary:
   - `crates/org/src/main.rs` — Top-level `clap` CLI parser, exit-code constants, config loading, and subcommand dispatch.
   - `crates/org/src/commands/` — Modular subcommand handlers (`mod.rs`, `fmt.rs`, `query.rs`, `query_gtd.rs`, `update.rs`, `update_id.rs`, `update_property.rs`, `update_state.rs`, `update_table.rs`, `update_todo.rs`, `clock.rs`, `archive.rs`, `export.rs`, `schema.rs`).

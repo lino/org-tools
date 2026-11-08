@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Org document record extraction and transactional SQLite row writers for `MabuseCache`.
+//! Org document record extraction and transactional SQLite row writers for `WorkspaceCache`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -269,7 +269,7 @@ fn insert_nodes_in_tx(
     Ok(())
 }
 
-/// Inserts a single [`ParsedFilePayload`] across all five Mabuse tables inside `tx`.
+/// Inserts a single [`ParsedFilePayload`] across all five workspace cache tables inside `tx`.
 fn write_payload_in_tx(tx: &Transaction<'_>, p: &ParsedFilePayload) -> Result<(), String> {
     let rel = p.disk.rel_path.as_str();
     if p.existed {
@@ -427,7 +427,7 @@ pub(crate) fn commit_batch(
         }
         recompute_roam_dups_in_tx(&tx)?;
         tx.commit()
-            .map_err(|e| format!("failed to commit Mabuse cache transaction: {e}"))
+            .map_err(|e| format!("failed to commit workspace cache transaction: {e}"))
     })();
     if pure_insert {
         let _ = conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;");

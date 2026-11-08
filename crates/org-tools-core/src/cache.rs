@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Incremental SQLite WAL + FTS5 workspace index (`.cache/mabuse.db`).
+//! Incremental SQLite WAL + FTS5 workspace index (`.cache/org-cache.db`).
 //!
 //! Maintains a disposable five-table SQLite database (`files`, `nodes`, `links`,
 //! `edna_edges`, and `entries_fts`) keyed by `(rel_path, mtime_ns, byte_len, content_hash)`
@@ -50,10 +50,10 @@ use sync::{
 };
 use walk::discover_org_files;
 
-/// Default workspace-relative path for the Mabuse SQLite index.
-pub const DEFAULT_CACHE_REL_PATH: &str = ".cache/mabuse.db";
+/// Default workspace-relative path for the SQLite workspace index.
+pub const DEFAULT_CACHE_REL_PATH: &str = ".cache/org-cache.db";
 
-/// Environment variable overriding the Mabuse SQLite database file path.
+/// Environment variable overriding the SQLite workspace database file path.
 pub const CACHE_PATH_ENV_VAR: &str = "ORG_TOOLS_CACHE_PATH";
 
 /// Timing and cache-efficiency metrics recorded during a cache operation.
@@ -69,7 +69,7 @@ pub struct CacheTelemetry {
     pub cache_misses: usize,
 }
 
-/// Summary of the on-disk `.cache/mabuse.db` index returned by `org cache status`.
+/// Summary of the on-disk `.cache/org-cache.db` index returned by `org cache status`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CacheStatus {
     /// Resolved path to the SQLite database file.
@@ -105,24 +105,24 @@ pub struct FtsHit {
     pub score: f64,
 }
 
-/// Handle to an open Mabuse SQLite WAL + FTS5 cache for a workspace root.
-pub struct MabuseCache {
+/// Handle to an open SQLite WAL + FTS5 cache for a workspace root.
+pub struct WorkspaceCache {
     /// Open SQLite database connection.
     conn: Connection,
     /// Normalized workspace root directory.
     workspace_root: PathBuf,
-    /// Path to the `.cache/mabuse.db` file.
+    /// Path to the `.cache/org-cache.db` file.
     db_path: PathBuf,
     /// Relative paths re-parsed during the most recent `open_and_sync` call.
     missed_rels: Vec<String>,
 }
 
-/// Unified `org-roam` v2 query backend backed either by [`MabuseCache`] or a direct [`RoamIndex`].
+/// Unified `org-roam` v2 query backend backed either by [`WorkspaceCache`] or a direct [`RoamIndex`].
 pub enum RoamWorkspace {
     /// Incremental SQLite + FTS5 cache bound to a single workspace directory.
     Cached {
         /// Open synchronized SQLite cache handle.
-        cache: Box<MabuseCache>,
+        cache: Box<WorkspaceCache>,
         /// Display root path supplied by the caller.
         display_root: PathBuf,
         /// Scan counters `(files_scanned, cache_hits, cache_misses)`.
@@ -132,7 +132,7 @@ pub enum RoamWorkspace {
     Direct(RoamIndex),
 }
 
-impl MabuseCache {
+impl WorkspaceCache {
     /// Resolves the SQLite database path for `workspace_root`, honoring [`CACHE_PATH_ENV_VAR`].
     pub fn resolve_db_path(workspace_root: &Path) -> PathBuf {
         if let Some(val) = std::env::var_os(CACHE_PATH_ENV_VAR).filter(|v| !v.is_empty()) {
@@ -168,7 +168,7 @@ impl MabuseCache {
         })
     }
 
-    /// Inspects cache status at `workspace_root` without creating `.cache/mabuse.db` when absent.
+    /// Inspects cache status at `workspace_root` without creating `.cache/org-cache.db` when absent.
     pub fn status(workspace_root: &Path) -> Result<CacheStatus, String> {
         let started = Instant::now();
         let norm_root = normalize_workspace_path(workspace_root);
@@ -191,7 +191,7 @@ impl MabuseCache {
         Ok(build_cache_status(&db_path, Some(counts), tel))
     }
 
-    /// Rebuilds `.cache/mabuse.db` from scratch inside a single transaction.
+    /// Rebuilds `.cache/org-cache.db` from scratch inside a single transaction.
     pub fn rebuild(workspace_root: &Path) -> Result<(Self, CacheStatus), String> {
         let started = Instant::now();
         let norm_root = normalize_workspace_path(workspace_root);
@@ -209,7 +209,7 @@ impl MabuseCache {
         Ok((cache, status))
     }
 
-    /// Removes `.cache/mabuse.db` and any `-wal` / `-shm` sidecar files.
+    /// Removes `.cache/org-cache.db` and any `-wal` / `-shm` sidecar files.
     pub fn clear(workspace_root: &Path) -> Result<(PathBuf, bool), String> {
         let norm_root = normalize_workspace_path(workspace_root);
         let db_path = Self::resolve_db_path(&norm_root);
@@ -228,7 +228,7 @@ impl MabuseCache {
         Ok((db_path, removed))
     }
 
-    /// Opens `.cache/mabuse.db` and incrementally synchronizes modified, added, and deleted `.org` files.
+    /// Opens `.cache/org-cache.db` and incrementally synchronizes modified, added, and deleted `.org` files.
     pub fn open_and_sync(workspace_root: &Path) -> Result<(Self, CacheTelemetry), String> {
         let started = Instant::now();
         let norm_root = normalize_workspace_path(workspace_root);
@@ -361,11 +361,11 @@ impl MabuseCache {
 }
 
 impl RoamWorkspace {
-    /// Opens a synchronized [`MabuseCache`] on a single directory root, or builds a [`RoamIndex`].
+    /// Opens a synchronized [`WorkspaceCache`] on a single directory root, or builds a [`RoamIndex`].
     pub fn open(roots: &[PathBuf], no_cache: bool) -> Result<Self, String> {
         if !no_cache && roots.len() == 1 && roots[0].is_dir() {
             let display_root = roots[0].clone();
-            let (cache, t) = MabuseCache::open_and_sync(&display_root)?;
+            let (cache, t) = WorkspaceCache::open_and_sync(&display_root)?;
             let counts = adjust_roam_telemetry_counts(
                 &cache.conn,
                 t.files_scanned,

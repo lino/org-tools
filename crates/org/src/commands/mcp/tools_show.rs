@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use serde_json::{json, Map, Value};
 
-use org_tools_core::cache::MabuseCache;
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::document::{ChecklistSummary, OrgDocument};
 use org_tools_core::export_md::{
     export_slice_to_markdown, extract_org_slice, resolve_workspace_locator,
@@ -39,9 +39,9 @@ fn format_show_ts(ts: &OrgTimestamp) -> String {
     }
 }
 
-/// Resolves `locator` within `canon_ws`, using the warm `MabuseCache` fast-path for `id:` lookups.
+/// Resolves `locator` within `canon_ws`, using the warm `WorkspaceCache` fast-path for `id:` lookups.
 fn resolve_show_node(
-    cache: Option<&MabuseCache>,
+    cache: Option<&WorkspaceCache>,
     locator: &OrgLocator,
     display_ws: &Path,
     canon_ws: &Path,

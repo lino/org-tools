@@ -54,12 +54,12 @@ org fmt format [OPTIONS] <PATHS>...
 
 ** Common Options
 
-| Option            | Description                                                       |
-|-------------------+-------------------------------------------------------------------|
-| =--config <PATH>= | Path to config file (default: search for =.org-tools.toml= in     |
-|                   | current and parent dirs)                                          |
-| =--no-cache=      | Bypass the =.cache/mabuse.db= SQLite index and parse =.org= files |
-|                   | directly from disk                                                |
+| Option            | Description                                                          |
+|-------------------+----------------------------------------------------------------------|
+| =--config <PATH>= | Path to config file (default: search for =.org-tools.toml= in        |
+|                   | current and parent dirs)                                             |
+| =--no-cache=      | Bypass the =.cache/org-cache.db= SQLite index and parse =.org= files |
+|                   | directly from disk                                                   |
 
 * Directory Scanning
 
@@ -179,19 +179,19 @@ org fmt check --format json . | jq '.[] | select(.severity == "error")'
 
 *** Errors (structural issues)
 
-| ID   | Name                   | Description                                                      |
-|------+------------------------+------------------------------------------------------------------|
-| E001 | unclosed-block         | =#+BEGIN= without matching =#+END=                               |
-| E002 | duplicate-custom-id    | Duplicate =CUSTOM_ID= property                                   |
-| E003 | duplicate-name         | Duplicate =#+NAME:= value                                        |
-| E003 | include-validity       | Broken, escaping, or cyclic =#+INCLUDE:= directive               |
-| E004 | duplicate-target       | Duplicate =<<target>>=                                           |
-| E005 | duplicate-footnote-def | Duplicate footnote definition                                    |
-| E006 | incomplete-drawer      | =:DRAWER:= without =:END:=                                       |
-| E007 | drawer-nesting         | Incorrectly nested drawers                                       |
-| E008 | circular-edna-blocker  | Circular org-edna =:BLOCKER:= dependency cycle                   |
-| E009 | duplicate-id           | Duplicate =:ID:= across file drawers, headings, or workspace     |
-| E010 | invalid-id-seed        | Mismatched Stempelamt =:ID_SEED:= and deterministic UUIDv5 =:ID= |
+| ID   | Name                   | Description                                                     |
+|------+------------------------+-----------------------------------------------------------------|
+| E001 | unclosed-block         | =#+BEGIN= without matching =#+END=                              |
+| E002 | duplicate-custom-id    | Duplicate =CUSTOM_ID= property                                  |
+| E003 | duplicate-name         | Duplicate =#+NAME:= value                                       |
+| E003 | include-validity       | Broken, escaping, or cyclic =#+INCLUDE:= directive              |
+| E004 | duplicate-target       | Duplicate =<<target>>=                                          |
+| E005 | duplicate-footnote-def | Duplicate footnote definition                                   |
+| E006 | incomplete-drawer      | =:DRAWER:= without =:END:=                                      |
+| E007 | drawer-nesting         | Incorrectly nested drawers                                      |
+| E008 | circular-edna-blocker  | Circular org-edna =:BLOCKER:= dependency cycle                  |
+| E009 | duplicate-id           | Duplicate =:ID:= across file drawers, headings, or workspace    |
+| E010 | invalid-id-seed        | Mismatched =:ID_SEED:= and deterministic RFC 9562 UUIDv5 =:ID:= |
 
 *** Warnings (correctness / style)
 
@@ -348,7 +348,7 @@ org query search 'not done'                      # negation
 org query search '(todo:TODO or todo:NEXT) and tags:work'
 
 # Full-text BM25 body search (backed by SQLite FTS5 when warm cache is active)
-org query search 'body:"Herzmaschine"'
+org query search 'body:"SearchEngine"'
 org query search 'todo:NEXT body:"telemetry"'
 
 # Bare words search heading text
@@ -561,9 +561,9 @@ org update add-id [OPTIONS] <TARGETS>...
 | =--deterministic=    | Mint deterministic RFC 9562 UUIDv5 =:ID:= and =:ID_SEED:=   |
 | =--namespace <UUID>= | Root namespace UUID override for deterministic minting      |
 | =--urn-prefix <PRE>= | URN prefix override for deterministic seed derivation       |
-| =--seed <URN>=       | Explicit Stempelamt seed URN override                       |
-| =--scope <SLUG>=     | Scope slug for deterministic Stempelamt seed derivation     |
-| =--kind <KIND>=      | Artifact kind for deterministic Stempelamt seed derivation  |
+| =--seed <URN>=       | Explicit deterministic seed URN override                    |
+| =--scope <SLUG>=     | Scope slug for deterministic seed derivation                |
+| =--kind <KIND>=      | Artifact kind for deterministic seed derivation             |
 | =--author <HANDLE>=  | Optional author handle for deterministic seed derivation    |
 
 The =--id-format= template supports these placeholders: ={uuid}=, ={uuid_short}=,
@@ -661,7 +661,7 @@ org update set-state DONE --no-repeat 'id:550e8400-e29b-41d4-a716-446655440000'
 
 Set, update, shift, or clear =SCHEDULED= and =DEADLINE= planning timestamps on
 locators, files, directories, or piped stdin while preserving sibling planning
-keywords and warming/invalidating =.cache/mabuse.db=.
+keywords and warming/invalidating =.cache/org-cache.db=.
 
 #+begin_src sh
 org update set-scheduled [OPTIONS] [SPEC] [TARGETS]...
@@ -1097,7 +1097,7 @@ org refile [OPTIONS] <SOURCE> --to <TARGET>
 * Cache (=org cache=)
 
 Inspect, rebuild, or clear the incremental SQLite WAL + FTS5 workspace index
-(=.cache/mabuse.db=, overridable via =ORG_TOOLS_CACHE_PATH=). Read and query
+(=.cache/org-cache.db=, overridable via =ORG_TOOLS_CACHE_PATH=). Read and query
 commands refresh changed files automatically via =(mtime_ns, byte_len, sha256)=
 fingerprints unless =--no-cache= is passed.
 
@@ -1107,27 +1107,27 @@ org cache rebuild [OPTIONS] [PATH]
 org cache clear [OPTIONS] [PATH]
 #+end_src
 
-| Subcommand | Options                                          | Description                                          |
-|------------+--------------------------------------------------+------------------------------------------------------|
-| =status=   | =--workspace <DIR>=, =--format human\vert{}json= | Report indexed counts, byte size, and telemetry      |
-| =rebuild=  | =--workspace <DIR>=, =--format human\vert{}json= | Drop and rebuild =.cache/mabuse.db= in 1 transaction |
-| =clear=    | =--workspace <DIR>=, =--format human\vert{}json= | Remove =.cache/mabuse.db= and =-wal= / =-shm= files  |
+| Subcommand | Options                                          | Description                                             |
+|------------+--------------------------------------------------+---------------------------------------------------------|
+| =status=   | =--workspace <DIR>=, =--format human\vert{}json= | Report indexed counts, byte size, and telemetry         |
+| =rebuild=  | =--workspace <DIR>=, =--format human\vert{}json= | Drop and rebuild =.cache/org-cache.db= in 1 transaction |
+| =clear=    | =--workspace <DIR>=, =--format human\vert{}json= | Remove =.cache/org-cache.db= and =-wal= / =-shm= files  |
 
 * MCP Server (=org mcp=)
 
 Run the built-in zero-Emacs Model Context Protocol (MCP) JSON-RPC 2.0 server
-over =stdio=. A single persistent =MabuseCache= SQLite connection stays warm
+over =stdio=. A single persistent =WorkspaceCache= SQLite connection stays warm
 across tool calls and refreshes incrementally whenever write tools mutate files.
 
 #+begin_src sh
 org mcp [--workspace <DIR>] [--no-cache]
 #+end_src
 
-| Option              | Description                                                        |
-|---------------------+--------------------------------------------------------------------|
-| =--workspace <DIR>= | Default workspace root (fallback: =ORG_TOOLS_WORKSPACE=, ancestor  |
-|                     | =.git= / =kb.toml= / =.org-tools.toml= / =.fritz.toml=, or =cwd=)  |
-| =--no-cache=        | Bypass =.cache/mabuse.db= and parse =.org= files directly per call |
+| Option              | Description                                                           |
+|---------------------+-----------------------------------------------------------------------|
+| =--workspace <DIR>= | Default workspace root (fallback: =ORG_TOOLS_WORKSPACE=, ancestor     |
+|                     | =.git= / =kb.toml= / =.org-tools.toml= / =.fritz.toml=, or =cwd=)     |
+| =--no-cache=        | Bypass =.cache/org-cache.db= and parse =.org= files directly per call |
 
 ** =.mcp.json= Configuration
 

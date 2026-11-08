@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde_json::{json, Map, Value};
 
 use org_tools_core::cache::{
-    load_cached_fts_candidate_docs, load_docs_with_bodies, MabuseCache, RoamWorkspace,
+    load_cached_fts_candidate_docs, load_docs_with_bodies, RoamWorkspace, WorkspaceCache,
 };
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
@@ -27,7 +27,7 @@ use crate::{date, query};
 type RoamLookupResult =
     Result<(Vec<RoamNode>, Vec<RoamBacklink>, MutationTelemetry), (String, MutationTelemetry)>;
 
-/// Resolves roam nodes (and optional backlinks) directly from the warm `MabuseCache`.
+/// Resolves roam nodes (and optional backlinks) directly from the warm `WorkspaceCache`.
 fn query_roam_cached(
     session: &mut McpSession,
     display_ws: &Path,
@@ -53,7 +53,7 @@ fn query_roam_cached(
     Ok((ns, bl, tel))
 }
 
-/// Resolves roam nodes (and optional backlinks) via warm `MabuseCache` or `RoamWorkspace`.
+/// Resolves roam nodes (and optional backlinks) via warm `WorkspaceCache` or `RoamWorkspace`.
 fn query_roam_nodes_and_backlinks(
     session: &mut McpSession,
     display_ws: &Path,
@@ -90,7 +90,7 @@ fn query_roam_nodes_and_backlinks(
     Ok((ns, bl, session.counts_telemetry(started, counts)))
 }
 
-/// Executes `org_roam_node` against the warm `MabuseCache` or `RoamWorkspace` fallback.
+/// Executes `org_roam_node` against the warm `WorkspaceCache` or `RoamWorkspace` fallback.
 pub(super) fn exec_roam_node(
     session: &mut McpSession,
     args: &Map<String, Value>,
@@ -153,7 +153,7 @@ pub(super) fn exec_roam_backlinks(
 
 /// Attempts a warm FTS5 BM25 search via `cache` when `pred` has positive non-edna body phrases.
 fn try_warm_fts_entries(
-    cache: &MabuseCache,
+    cache: &WorkspaceCache,
     display_ws: &Path,
     pred: &query::parser::Predicate,
     limit: Option<usize>,

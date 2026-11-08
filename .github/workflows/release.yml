@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Multi-target GoReleaser v2 release pipeline, decoupled optional crates.io
-# publish gate, and Uhrenmaschine Prometheus/JSONL release verification.
+# publish gate, and Prometheus/JSONL release verification.
 
 name: Release
 

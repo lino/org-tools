@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 
 use clap::{Subcommand, ValueEnum};
 
-use org_tools_core::cache::{load_cached_fts_candidate_docs, load_docs_with_bodies, MabuseCache};
+use org_tools_core::cache::{
+    load_cached_fts_candidate_docs, load_docs_with_bodies, WorkspaceCache,
+};
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 
@@ -231,7 +233,7 @@ fn try_cached_fts_search(
     if req.is_empty() || req != pred.positive_body_phrases() || pred.uses_edna() {
         return None;
     }
-    let (cache, tel) = MabuseCache::open_and_sync(scan_dir).ok()?;
+    let (cache, tel) = WorkspaceCache::open_and_sync(scan_dir).ok()?;
     if tel.files_scanned == 0 {
         eprintln!("org: no .org files found");
         return Some(EXIT_ERROR);
@@ -262,7 +264,7 @@ fn run_search(
         if let Some(code) = try_cached_fts_search(&pred, &paths[0], format, limit) {
             return code;
         }
-        let _ = MabuseCache::open_and_sync(&paths[0]);
+        let _ = WorkspaceCache::open_and_sync(&paths[0]);
     }
     let files = collect_org_files(paths);
     if files.is_empty() {

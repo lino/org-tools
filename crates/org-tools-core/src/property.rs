@@ -1,8 +1,8 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=1500 reason="Cohesive property drawer, tag alignment, Stempelamt UUIDv5 engine, and unit tests"
+// fritz: allow-file-length=1500 reason="Cohesive property drawer, tag alignment, deterministic UUIDv5 engine, and unit tests"
 
-//! Property drawer mutations, heading tag alignment, and Stempelamt UUIDv5 minting.
+//! Property drawer mutations, heading tag alignment, and deterministic UUIDv5 minting.
 //!
 //! Provides pure-Rust helpers for mutating `:PROPERTIES:` drawers with `F005`
 //! alignment, updating heading tags aligned to column 77 (`F007`), minting
@@ -20,11 +20,11 @@ use crate::source::SourceFile;
 
 // region Constants & Types
 
-/// Default RFC 9562 URL namespace UUID used as the Stempelamt root namespace.
+/// Default RFC 9562 URL namespace UUID used as the deterministic ID root namespace.
 pub const DEFAULT_ROOT_NAMESPACE: &str = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
 
-/// Default URN prefix for canonical Stempelamt identity seeds.
-pub const DEFAULT_URN_PREFIX: &str = "urn:babelsberg";
+/// Default URN prefix for canonical deterministic identity seeds.
+pub const DEFAULT_URN_PREFIX: &str = "urn:org";
 
 /// Default scope token used when neither CLI nor file metadata provides one.
 pub const DEFAULT_SCOPE: &str = "default";
@@ -35,11 +35,11 @@ pub const DEFAULT_KIND: &str = "entry";
 /// Default target display column for Org-mode heading tag alignment (`F007`).
 pub const DEFAULT_TAG_COLUMN: usize = 77;
 
-/// Environment variable overriding the Stempelamt root namespace UUID.
-pub const ENV_ID_NAMESPACE: &str = "BABELSBERG_ID_NAMESPACE";
+/// Environment variable overriding the deterministic ID root namespace UUID.
+pub const ENV_ID_NAMESPACE: &str = "ORG_ID_NAMESPACE";
 
-/// Environment variable overriding the Stempelamt URN prefix.
-pub const ENV_ID_PREFIX: &str = "BABELSBERG_ID_PREFIX";
+/// Environment variable overriding the deterministic ID URN prefix.
+pub const ENV_ID_PREFIX: &str = "ORG_ID_PREFIX";
 
 /// Environment variable overriding the heading tag alignment column.
 pub const ENV_TAG_COLUMN: &str = "ORG_TAG_COLUMN";
@@ -95,21 +95,21 @@ const UUID_BYTE_LEN: usize = 16;
 /// Leading marker byte appended before zero-padding in SHA-1.
 const SHA1_ONE_BIT_MARKER: u8 = 0x80;
 
-/// Resolved configuration for deterministic Stempelamt UUIDv5 minting.
+/// Resolved configuration for deterministic UUIDv5 minting.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StempelamtConfig {
+pub struct DeterministicIdConfig {
     /// Root namespace UUID hashed as the 16-byte prefix in RFC 9562 UUIDv5.
     pub namespace: uuid::Uuid,
-    /// Canonical URN prefix (for example, `"urn:babelsberg"`).
+    /// Canonical URN prefix (for example, `"urn:org"`).
     pub urn_prefix: String,
 }
 
-/// Structured input fields for constructing a canonical Stempelamt seed URN.
+/// Structured input fields for constructing a canonical deterministic seed URN.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SeedSpec<'a> {
     /// Project or bounded-context scope token.
     pub scope: &'a str,
-    /// Artifact kind token (for example, `"wp"`, `"jira"`, `"finding"`).
+    /// Artifact kind token (for example, `"task"`, `"issue"`, `"note"`).
     pub kind: &'a str,
     /// Raw artifact key or slug source.
     pub key: &'a str,
@@ -117,7 +117,7 @@ pub struct SeedSpec<'a> {
     pub author: Option<&'a str>,
 }
 
-/// Deterministic identity minted by the Stempelamt engine.
+/// Deterministic identity minted by the UUIDv5 engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MintedIdentity {
     /// Lowercase hyphenated RFC 9562 UUIDv5 string.
@@ -129,8 +129,8 @@ pub struct MintedIdentity {
 /// Options controlling batch or single-entry deterministic ID minting.
 #[derive(Debug, Clone)]
 pub struct DeterministicIdOptions {
-    /// Resolved Stempelamt namespace and URN prefix configuration.
-    pub config: StempelamtConfig,
+    /// Resolved deterministic namespace and URN prefix configuration.
+    pub config: DeterministicIdConfig,
     /// Explicit seed URN overriding scope/kind/key derivation.
     pub explicit_seed: Option<String>,
     /// Optional explicit scope token override.
@@ -154,7 +154,7 @@ pub struct DeterministicIdEntry {
     pub seed: String,
 }
 
-/// Result of adding deterministic Stempelamt IDs to a document.
+/// Result of adding deterministic UUIDv5 IDs to a document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddDeterministicIdResult {
     /// Modified document text with aligned `:ID:` and `:ID_SEED:` properties.
@@ -199,23 +199,23 @@ pub enum TodoIdentityMode {
 /// Inputs for assembling initial `:PROPERTIES:` pairs on a new TODO entry.
 #[derive(Debug, Clone)]
 pub struct NewTodoPropertySpec<'a> {
-    /// Entry heading title used as fallback Stempelamt key.
+    /// Entry heading title used as fallback deterministic seed key.
     pub title: &'a str,
-    /// Destination file path used as fallback Stempelamt scope.
+    /// Destination file path used as fallback deterministic seed scope.
     pub file_path: &'a Path,
     /// Selected `:ID:` minting strategy.
     pub id_mode: TodoIdentityMode,
-    /// Optional Stempelamt root namespace UUID override.
+    /// Optional deterministic root namespace UUID override.
     pub namespace: Option<&'a str>,
-    /// Optional Stempelamt URN prefix override.
+    /// Optional deterministic URN prefix override.
     pub urn_prefix: Option<&'a str>,
-    /// Optional explicit Stempelamt `:ID_SEED:` URN override.
+    /// Optional explicit deterministic `:ID_SEED:` URN override.
     pub seed: Option<&'a str>,
-    /// Optional Stempelamt scope override.
+    /// Optional deterministic scope override.
     pub scope: Option<&'a str>,
-    /// Optional Stempelamt kind override.
+    /// Optional deterministic kind override.
     pub kind: Option<&'a str>,
-    /// Optional Stempelamt author handle override.
+    /// Optional deterministic author handle override.
     pub author: Option<&'a str>,
     /// Raw `KEY=VALUE` strings supplied via repeatable `--property` flags.
     pub raw_properties: &'a [String],
@@ -258,9 +258,9 @@ struct DrawerLocation {
 
 // endregion
 
-// region Stempelamt Minting
+// region Deterministic UUIDv5 Minting
 
-impl StempelamtConfig {
+impl DeterministicIdConfig {
     /// Resolves namespace and URN prefix from CLI overrides, environment, or defaults.
     pub fn resolve(
         namespace_override: Option<&str>,
@@ -272,7 +272,7 @@ impl StempelamtConfig {
             .unwrap_or(DEFAULT_ROOT_NAMESPACE)
             .trim();
         let namespace = uuid::Uuid::parse_str(raw_ns)
-            .map_err(|e| format!("invalid Stempelamt namespace UUID '{raw_ns}': {e}"))?;
+            .map_err(|e| format!("invalid deterministic namespace UUID '{raw_ns}': {e}"))?;
 
         let env_prefix = std::env::var(ENV_ID_PREFIX).ok();
         let raw_prefix = prefix_override
@@ -281,7 +281,7 @@ impl StempelamtConfig {
             .trim()
             .trim_end_matches(':');
         if raw_prefix.is_empty() {
-            return Err("Stempelamt URN prefix must not be empty".to_string());
+            return Err("deterministic URN prefix must not be empty".to_string());
         }
 
         Ok(Self {
@@ -291,7 +291,7 @@ impl StempelamtConfig {
     }
 }
 
-/// Checks whether a lowercase character is permitted directly inside a Stempelamt token.
+/// Checks whether a lowercase character is permitted directly inside a seed URN token.
 fn is_allowed_token_char(ch: char, allow_slash: bool) -> bool {
     ch.is_ascii_lowercase()
         || ch.is_ascii_digit()
@@ -299,7 +299,7 @@ fn is_allowed_token_char(ch: char, allow_slash: bool) -> bool {
         || (allow_slash && ch == '/')
 }
 
-/// Normalizes a raw Stempelamt token into its canonical lowercase slug form.
+/// Normalizes a raw seed token into its canonical lowercase slug form.
 pub fn normalize_token(raw: &str, allow_slash: bool) -> String {
     let preprocessed = raw.trim().to_lowercase().replace('\\', "/");
     let mut collapsed = String::with_capacity(preprocessed.len());
@@ -317,7 +317,7 @@ pub fn normalize_token(raw: &str, allow_slash: bool) -> String {
     collapsed.trim_matches(&['-', '/'][..]).to_string()
 }
 
-/// Builds a canonical Stempelamt seed URN from normalized components.
+/// Builds a canonical deterministic seed URN from normalized components.
 pub fn build_seed_urn(urn_prefix: &str, spec: &SeedSpec<'_>) -> Result<String, String> {
     let prefix = urn_prefix.trim().trim_end_matches(':');
     let norm_scope = normalize_token(spec.scope, false);
@@ -326,7 +326,8 @@ pub fn build_seed_urn(urn_prefix: &str, spec: &SeedSpec<'_>) -> Result<String, S
 
     if prefix.is_empty() || norm_scope.is_empty() || norm_kind.is_empty() || norm_key.is_empty() {
         return Err(
-            "Stempelamt seed components (prefix, scope, kind, key) must be non-empty".to_string(),
+            "deterministic seed components (prefix, scope, kind, key) must be non-empty"
+                .to_string(),
         );
     }
 
@@ -439,7 +440,7 @@ pub fn uuid_v5(namespace: &uuid::Uuid, name: &str) -> uuid::Uuid {
 
 /// Mints a deterministic UUIDv5 and canonical `:ID_SEED:` from a [`SeedSpec`].
 pub fn mint_identity(
-    config: &StempelamtConfig,
+    config: &DeterministicIdConfig,
     spec: &SeedSpec<'_>,
 ) -> Result<MintedIdentity, String> {
     let seed = build_seed_urn(&config.urn_prefix, spec)?;
@@ -450,7 +451,7 @@ pub fn mint_identity(
 pub fn mint_from_seed(namespace: &uuid::Uuid, seed_urn: &str) -> Result<MintedIdentity, String> {
     let trimmed = seed_urn.trim();
     if trimmed.is_empty() {
-        return Err("Stempelamt seed URN must not be empty".to_string());
+        return Err("deterministic seed URN must not be empty".to_string());
     }
     let id = uuid_v5(namespace, trimmed).to_string();
     Ok(MintedIdentity {
@@ -459,7 +460,7 @@ pub fn mint_from_seed(namespace: &uuid::Uuid, seed_urn: &str) -> Result<MintedId
     })
 }
 
-/// Derives the canonical Stempelamt identity for a specific [`OrgEntry`].
+/// Derives the canonical deterministic identity for a specific [`OrgEntry`].
 fn derive_entry_identity(
     doc: &OrgDocument,
     entry: &OrgEntry,
@@ -1015,7 +1016,7 @@ fn mint_new_todo_identity(
     spec: &NewTodoPropertySpec<'_>,
     user_props: &[(String, String)],
 ) -> Result<MintedIdentity, String> {
-    let cfg = StempelamtConfig::resolve(spec.namespace, spec.urn_prefix)?;
+    let cfg = DeterministicIdConfig::resolve(spec.namespace, spec.urn_prefix)?;
     if let Some(explicit) = spec.seed {
         return mint_from_seed(&cfg.namespace, explicit);
     }
@@ -1209,8 +1210,8 @@ mod tests {
 
     /// Verifies token normalization with and without slash preservation.
     #[test]
-    fn normalize_token_matches_stempelamt_rules() {
-        assert_eq!(normalize_token("  FRITZ-WP-01  ", false), "fritz-wp-01");
+    fn normalize_token_matches_deterministic_seed_rules() {
+        assert_eq!(normalize_token("  ORG-TASK-01  ", false), "org-task-01");
         assert_eq!(
             normalize_token("alice\\20261106--cache   race!!", true),
             "alice/20261106-cache-race"
@@ -1222,43 +1223,44 @@ mod tests {
         assert_eq!(normalize_token("/--Foo..Bar_@#--/", true), "foo..bar_@#");
     }
 
-    /// Verifies bit-for-bit parity across all four Stempelamt golden vectors.
+    /// Verifies bit-for-bit parity across all four deterministic UUIDv5 golden vectors.
     #[test]
-    fn stempelamt_golden_vectors_match_bit_for_bit() {
-        let cfg = StempelamtConfig::resolve(Some(DEFAULT_ROOT_NAMESPACE), Some(DEFAULT_URN_PREFIX))
-            .unwrap();
+    fn deterministic_uuid_v5_golden_vectors_match_bit_for_bit() {
+        let cfg =
+            DeterministicIdConfig::resolve(Some(DEFAULT_ROOT_NAMESPACE), Some(DEFAULT_URN_PREFIX))
+                .unwrap();
         let vectors = [
             (
-                "fritz",
-                "wp",
-                "FRITZ-WP-01",
+                "core",
+                "task",
+                "ORG-TASK-01",
                 None,
-                "urn:babelsberg:fritz:wp:fritz-wp-01",
-                "cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9",
+                "urn:org:core:task:org-task-01",
+                "eb32a5a1-a982-5f20-a264-1c0657b69171",
             ),
             (
                 "orgfmt",
-                "jira",
+                "issue",
                 "ORGFMT-101",
                 None,
-                "urn:babelsberg:orgfmt:jira:orgfmt-101",
-                "9472f8df-1ad0-53bb-baac-dce22a6b1821",
+                "urn:org:orgfmt:issue:orgfmt-101",
+                "e903bb85-3326-5094-8a57-f598003bf5c1",
             ),
             (
-                "fritz",
-                "finding",
+                "core",
+                "note",
                 "20261106-cache-race",
                 Some("alice"),
-                "urn:babelsberg:fritz:finding:alice/20261106-cache-race",
-                "2d68a2b3-33ca-574f-a339-e55515473106",
+                "urn:org:core:note:alice/20261106-cache-race",
+                "e49367db-0dc6-5641-a0bc-963456dd0d7f",
             ),
             (
-                "fritz",
-                "finding",
+                "core",
+                "note",
                 "20261106-cache-race",
                 Some("bob"),
-                "urn:babelsberg:fritz:finding:bob/20261106-cache-race",
-                "cb9854df-43a7-566f-8476-67333b5deec2",
+                "urn:org:core:note:bob/20261106-cache-race",
+                "b6efcd06-ea6b-5bfb-aecf-573171a84005",
             ),
         ];
 
@@ -1281,17 +1283,14 @@ mod tests {
         let seed = build_seed_urn(
             DEFAULT_URN_PREFIX,
             &SeedSpec {
-                scope: "fritz",
-                kind: "finding",
+                scope: "core",
+                kind: "note",
                 key: "alice/20261106-cache-race",
                 author: Some("alice"),
             },
         )
         .unwrap();
-        assert_eq!(
-            seed,
-            "urn:babelsberg:fritz:finding:alice/20261106-cache-race"
-        );
+        assert_eq!(seed, "urn:org:core:note:alice/20261106-cache-race");
     }
 
     /// Verifies `set_property` creates a drawer after planning and aligns keys (`F005`).
@@ -1365,24 +1364,24 @@ mod tests {
     /// Verifies `add_deterministic_ids` writes aligned `:ID:` and `:ID_SEED:` across entries.
     #[test]
     fn add_deterministic_ids_batches_entries_fmt_clean() {
-        let (source, doc) = make_doc("* FRITZ-WP-01\n* Second Entry\n");
+        let (source, doc) = make_doc("* ORG-TASK-01\n* Second Entry\n");
         let opts = DeterministicIdOptions {
-            config: StempelamtConfig::resolve(
+            config: DeterministicIdConfig::resolve(
                 Some(DEFAULT_ROOT_NAMESPACE),
                 Some(DEFAULT_URN_PREFIX),
             )
             .unwrap(),
             explicit_seed: None,
-            scope: Some("fritz".to_string()),
-            kind: Some("wp".to_string()),
+            scope: Some("core".to_string()),
+            kind: Some("task".to_string()),
             author: None,
         };
         let res = add_deterministic_ids(&source, &doc, None, &opts)
             .unwrap()
             .unwrap();
         assert_eq!(res.entries.len(), 2);
-        assert_eq!(res.entries[0].id, "cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9");
-        assert_eq!(res.entries[0].seed, "urn:babelsberg:fritz:wp:fritz-wp-01");
+        assert_eq!(res.entries[0].id, "eb32a5a1-a982-5f20-a264-1c0657b69171");
+        assert_eq!(res.entries[0].seed, "urn:org:core:task:org-task-01");
         assert_fmt_clean(&res.content);
     }
 
@@ -1395,11 +1394,11 @@ mod tests {
             &doc,
             None,
             &NewEntryOpts {
-                title: "Implement Stempelamt".to_string(),
+                title: "Implement deterministic IDs".to_string(),
                 level: 1,
                 keyword: Some("TODO".to_string()),
                 priority: Some('A'),
-                tags: vec!["fritz".to_string(), "rust".to_string()],
+                tags: vec!["core".to_string(), "rust".to_string()],
                 scheduled: Some("2026-11-07".to_string()),
                 deadline: None,
             },
@@ -1413,13 +1412,13 @@ mod tests {
                 properties: vec![
                     (
                         "ID".to_string(),
-                        "cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9".to_string(),
+                        "eb32a5a1-a982-5f20-a264-1c0657b69171".to_string(),
                     ),
                     (
                         "ID_SEED".to_string(),
-                        "urn:babelsberg:fritz:wp:fritz-wp-01".to_string(),
+                        "urn:org:core:task:org-task-01".to_string(),
                     ),
-                    ("CUSTOM_ID".to_string(), "FRITZ-WP-01".to_string()),
+                    ("CUSTOM_ID".to_string(), "ORG-TASK-01".to_string()),
                 ],
                 body: Some("Body paragraph for the new entry.".to_string()),
                 tag_column: DEFAULT_TAG_COLUMN,

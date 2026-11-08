@@ -1,14 +1,14 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Red-to-Green behavioural, parity, and `corpus-1k` benchmark tests for `MabuseCache` (`ORGFMT-WP-06`).
+//! Red-to-Green behavioural, parity, and `corpus-1k` benchmark tests for `WorkspaceCache` (`ORGFMT-WP-06`).
 
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
 use assert_cmd::Command;
-use org_tools_core::cache::{MabuseCache, CACHE_PATH_ENV_VAR, DEFAULT_CACHE_REL_PATH};
+use org_tools_core::cache::{WorkspaceCache, CACHE_PATH_ENV_VAR, DEFAULT_CACHE_REL_PATH};
 use org_tools_core::files::join_slash_rel;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -110,7 +110,7 @@ fn search_json(ws: &str, q: &str, no_cache: bool) -> Value {
 /// Seeds a 4-file multi-directory workspace with roam nodes, aliases, links, and edna edges.
 fn seed_four_file_workspace(root: &Path) {
     let files = [
-        ("specs/alpha.org", ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000001\n:ROAM_ALIASES: \"Alpha Spec\"\n:END:\n#+TITLE: Alpha Architecture\n\n* TODO Alpha Engine\n:PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000011\n:BLOCKER: ids(\"10000000-0000-4000-8000-000000000021\")\n:END:\nConnects [[id:10000000-0000-4000-8000-000000000002][Beta Doc]] to Herzmaschine.\n"),
+        ("specs/alpha.org", ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000001\n:ROAM_ALIASES: \"Alpha Spec\"\n:END:\n#+TITLE: Alpha Architecture\n\n* TODO Alpha Engine\n:PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000011\n:BLOCKER: ids(\"10000000-0000-4000-8000-000000000021\")\n:END:\nConnects [[id:10000000-0000-4000-8000-000000000002][Beta Doc]] to SearchEngine.\n"),
         ("specs/beta.org", ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000002\n:END:\n#+TITLE: Beta Subsystem\n\n* TODO Beta Prereq\n:PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000021\n:TRIGGER: ids(\"10000000-0000-4000-8000-000000000011\") todo!(\"NEXT\")\n:END:\nBack-references [[id:10000000-0000-4000-8000-000000000001][Alpha]].\n"),
         ("notes/gamma.org", ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000003\n:END:\n#+TITLE: Gamma Notes\n\n* DONE Gamma Milestone\nBody mentions multi word token.\n"),
         ("notes/delta.org", "* TODO Delta Task :ops:\nStandalone entry linking [[id:10000000-0000-4000-8000-000000000002]].\n"),
@@ -124,14 +124,14 @@ fn seed_four_file_workspace(root: &Path) {
 
 // region Corpus-1k Deterministic Generator
 
-/// Formats the body prose for heading `(file_idx, heading_idx)` with seeded `"Herzmaschine"` frequencies.
+/// Formats the body prose for heading `(file_idx, heading_idx)` with seeded `"SearchEngine"` frequencies.
 fn corpus_heading_body(file_idx: usize, heading_idx: usize, links: &[String]) -> String {
     let ll = links.join(" and ");
     let prefix = match (file_idx, heading_idx) {
-        (42, 1) => "Herzmaschine Herzmaschine Herzmaschine Herzmaschine Herzmaschine drives telemetry.",
-        (314, 2) => "The Herzmaschine pipeline validates Herzmaschine metrics via Herzmaschine gates across modules.",
-        (512, 0) => "Calibrates Herzmaschine latency budgets across synthetic workspace runs and reports.",
-        (777, 2) => "Background operational notes covering archival export workflows, scheduling rules, and one Herzmaschine mention in prose.",
+        (42, 1) => "SearchEngine SearchEngine SearchEngine SearchEngine SearchEngine drives telemetry.",
+        (314, 2) => "The SearchEngine pipeline validates SearchEngine metrics via SearchEngine gates across modules.",
+        (512, 0) => "Calibrates SearchEngine latency budgets across synthetic workspace runs and reports.",
+        (777, 2) => "Background operational notes covering archival export workflows, scheduling rules, and one SearchEngine mention in prose.",
         _ => return format!("Synthetic prose body for entry {file_idx}:{heading_idx}. {ll}\n"),
     };
     format!("{prefix} {ll}\n")
@@ -162,7 +162,7 @@ fn render_corpus_1k_file(file_idx: usize) -> String {
     for h in 0..3 {
         let hid = format!("10000000-0000-4000-8000-{file_idx:04}{h:08}");
         let kw = ["TODO", "DONE"][usize::from(file_idx % 2 == 1 && h == 0)];
-        let kind = ["Heading", "Herzmaschine Node"][usize::from((file_idx, h) == (512, 0))];
+        let kind = ["Heading", "SearchEngine Node"][usize::from((file_idx, h) == (512, 0))];
         let hdr = format!("* {kw} {kind} {file_idx:04}-{h}\n");
         buf.push_str(&format!("{hdr}:PROPERTIES:\n:ID: {hid}\n"));
         append_corpus_edna(&mut buf, file_idx, h);
@@ -189,7 +189,7 @@ fn generate_corpus_1k(root: &Path) {
         let rel = format!("dir_{:02}/note_{idx:04}.org", idx / 100);
         write_org(&join_slash_rel(root, &rel), &render_corpus_1k_file(idx));
     }
-    let _ = MabuseCache::rebuild(root).and_then(|_| MabuseCache::clear(root));
+    let _ = WorkspaceCache::rebuild(root).and_then(|_| WorkspaceCache::clear(root));
 }
 
 // endregion
@@ -218,7 +218,7 @@ fn slice1_cold_rebuild_populates_all_five_tables_and_cache_commands() {
     assert_eq!(st["links_count"], 3);
     assert_eq!(st["edna_edges_count"], 2);
     assert_eq!(st["fts_entries_count"], 4);
-    let (cache, _) = MabuseCache::open_and_sync(dir.path()).unwrap();
+    let (cache, _) = WorkspaceCache::open_and_sync(dir.path()).unwrap();
     let tables = cache.table_names().unwrap();
     for t in ["files", "nodes", "links", "edna_edges", "entries_fts"] {
         assert!(tables.iter().any(|x| x == t), "missing table {t}");
@@ -227,7 +227,7 @@ fn slice1_cold_rebuild_populates_all_five_tables_and_cache_commands() {
     run_ok(&["cache", "clear", ws, "--format", "json"]);
     assert!(!db_path.exists());
     let cdir = TempDir::new().unwrap();
-    let cdb = cdir.path().join("override-mabuse.db");
+    let cdb = cdir.path().join("override-org-cache.db");
     let mut cmd = org();
     cmd.env(CACHE_PATH_ENV_VAR, &cdb);
     cmd.args(["cache", "rebuild", ws, "--format", "json"]);
@@ -281,7 +281,7 @@ fn slice2_no_cache_and_gitignore_respect_workspace_boundaries() {
     let scan = st["files_scanned"].as_u64();
     assert_eq!((scan, hit_miss(&st)), (Some(exp_roam), (0, exp_roam)));
     assert_eq!(wg_c, roam_call(ws, &["graph"], true).0);
-    let q = "body:\"Herzmaschine\"";
+    let q = "body:\"SearchEngine\"";
     assert_eq!(search_json(ws, q, false), search_json(ws, q, true));
 }
 
@@ -299,7 +299,7 @@ fn assert_full_parity(ws: &str) {
             run_ok(&["--no-cache", "roam", "graph", ws, "--format", fmt])
         );
     }
-    for q in ["todo:TODO", "body:\"Herzmaschine\""] {
+    for q in ["todo:TODO", "body:\"SearchEngine\""] {
         assert_eq!(search_json(ws, q, false), search_json(ws, q, true));
         let l1 = run_ok(&["query", "search", q, ws, "--format", "locator"]);
         let l2 = run_ok(&["--no-cache", "query", "search", q, ws, "--format=locator"]);
@@ -323,7 +323,7 @@ fn slice2_incremental_modify_add_delete_reindexes_single_file_with_full_parity()
         let f = fs::OpenOptions::new().write(true).open(p).unwrap();
         f.set_modified(m).unwrap();
     };
-    let gamma = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000003\n:END:\n#+TITLE: Gamma Revised\n* TODO Gamma Updated\nLinks [[id:10000000-0000-4000-8000-000000000002][Beta]] and Herzmaschine Herzmaschine.\n";
+    let gamma = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000003\n:END:\n#+TITLE: Gamma Revised\n* TODO Gamma Updated\nLinks [[id:10000000-0000-4000-8000-000000000002][Beta]] and SearchEngine SearchEngine.\n";
     rewrite_bump(&join_slash_rel(dir.path(), "notes/gamma.org"), gamma);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (3, 1));
     assert_full_parity(ws);
@@ -333,7 +333,7 @@ fn slice2_incremental_modify_add_delete_reindexes_single_file_with_full_parity()
     rewrite_bump(&delta_p, &existing);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (4, 0));
 
-    let eps = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000005\n:END:\n#+TITLE: Epsilon\n* TODO Epsilon Herzmaschine\n";
+    let eps = ":PROPERTIES:\n:ID: 10000000-0000-4000-8000-000000000005\n:END:\n#+TITLE: Epsilon\n* TODO Epsilon SearchEngine\n";
     let eps_p = join_slash_rel(dir.path(), "notes/epsilon.org");
     write_org(&eps_p, eps);
     assert_eq!(hit_miss(&roam_call(ws, &["graph"], false).1), (4, 1));
@@ -389,9 +389,9 @@ fn slice3_resolve_perf_budgets_enforces_release_slos_and_debug_ceilings() {
 fn assert_corpus_1k_warm_latencies(root: &Path, hub_q: &str) -> (u128, u128) {
     let (_, warm_budget_us) = active_perf_budgets();
     let (warmup, runs, p95) = BENCH_WARMUP_MEASURED_P95;
-    let terms = vec!["Herzmaschine".to_string()];
+    let terms = vec!["SearchEngine".to_string()];
     let exp = "dir_00/note_0042.org,dir_03/note_0314.org,dir_05/note_0512.org,dir_07/note_0777.org";
-    let (cache, ft) = MabuseCache::open_and_sync(root).unwrap();
+    let (cache, ft) = WorkspaceCache::open_and_sync(root).unwrap();
     assert_eq!((ft.cache_hits, ft.cache_misses), (CORPUS_1K_FILES, 0));
     let (mut fts_s, mut roam_s) = (Vec::with_capacity(runs), Vec::with_capacity(runs));
     for iter in 0..(warmup + runs) {
@@ -427,7 +427,7 @@ fn slice3_corpus_1k_cold_rebuild_warm_fts_bm25_and_roam_within_budget() {
     let ws = dir.path().to_str().unwrap();
     let hub_q = format!("id:{HUB_FILE_UUID}");
     let cold_start = Instant::now();
-    let (_, st) = MabuseCache::rebuild(dir.path()).expect("cold rebuild must succeed");
+    let (_, st) = WorkspaceCache::rebuild(dir.path()).expect("cold rebuild must succeed");
     let cold_us = cold_start.elapsed().as_micros();
     assert!(cold_us <= cold_budget_us, "{cold_us} > {cold_budget_us}");
     let (fi, nc, lc) = (st.files_indexed, st.nodes_count, st.links_count);
@@ -439,8 +439,8 @@ fn slice3_corpus_1k_cold_rebuild_warm_fts_bm25_and_roam_within_budget() {
 
     let (bl_c, _) = roam_call(ws, &["backlinks", &hub_q], false);
     assert_eq!(bl_c, roam_call(ws, &["backlinks", &hub_q], true).0);
-    let cli_cached = search_json(ws, "body:\"Herzmaschine\"", false);
-    assert_eq!(cli_cached, search_json(ws, "body:\"Herzmaschine\"", true));
+    let cli_cached = search_json(ws, "body:\"SearchEngine\"", false);
+    assert_eq!(cli_cached, search_json(ws, "body:\"SearchEngine\"", true));
     let entries = cli_cached.as_array().unwrap();
     assert_eq!(entries.len(), 4);
     assert_eq!(entries[0]["blocked"].as_bool(), Some(true));

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Validates deterministic Stempelamt `:ID_SEED:` -> RFC 9562 UUIDv5 `:ID:` integrity (`E010`).
+//! Validates deterministic `:ID_SEED:` -> RFC 9562 UUIDv5 `:ID:` integrity (`E010`).
 //!
 //! Spec:
 //! - Org Mode Manual: <https://orgmode.org/manual/Property-Syntax.html>
@@ -9,7 +9,7 @@
 //! - RFC 9562 Section 5.5 (UUIDv5): <https://www.rfc-editor.org/rfc/rfc9562.html#section-5.5>
 
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::property::{uuid_v5, StempelamtConfig, DEFAULT_ROOT_NAMESPACE};
+use crate::property::{uuid_v5, DeterministicIdConfig, DEFAULT_ROOT_NAMESPACE};
 use crate::rules::format::regions::{is_protected, protected_regions};
 use crate::rules::heading::parse_heading;
 use crate::rules::{LintContext, LintRule};
@@ -75,9 +75,9 @@ impl LintRule for InvalidIdSeed {
     }
 }
 
-/// Resolves the Stempelamt root namespace UUID from environment or [`DEFAULT_ROOT_NAMESPACE`].
+/// Resolves the deterministic root namespace UUID from environment or [`DEFAULT_ROOT_NAMESPACE`].
 fn resolve_namespace() -> uuid::Uuid {
-    StempelamtConfig::resolve(None, None)
+    DeterministicIdConfig::resolve(None, None)
         .map(|cfg| cfg.namespace)
         .unwrap_or_else(|_| {
             uuid::Uuid::parse_str(DEFAULT_ROOT_NAMESPACE).expect("valid default namespace UUID")
@@ -191,19 +191,19 @@ mod tests {
         InvalidIdSeed.check(&ctx)
     }
 
-    /// Verifies Stempelamt golden vectors and unseeded legacy UUIDs pass with zero errors.
+    /// Verifies deterministic UUIDv5 golden vectors and unseeded legacy UUIDs pass with zero errors.
     #[test]
     fn valid_golden_vectors_and_unseeded_drawers_pass() {
         let content = concat!(
             ":PROPERTIES:\n",
-            ":ID:      cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9\n",
-            ":ID_SEED: urn:babelsberg:fritz:wp:fritz-wp-01\n",
+            ":ID:      eb32a5a1-a982-5f20-a264-1c0657b69171\n",
+            ":ID_SEED: urn:org:core:task:org-task-01\n",
             ":END:\n",
             "#+TITLE: Golden\n",
             "* Unseeded Legacy\n:PROPERTIES:\n:ID: 40000000-0000-4000-8000-000000000004\n:END:\n",
-            "* Seeded Jira\n:PROPERTIES:\n",
-            ":ID:      9472f8df-1ad0-53bb-baac-dce22a6b1821\n",
-            ":ID_SEED: urn:babelsberg:orgfmt:jira:orgfmt-101\n",
+            "* Seeded Issue\n:PROPERTIES:\n",
+            ":ID:      e903bb85-3326-5094-8a57-f598003bf5c1\n",
+            ":ID_SEED: urn:org:orgfmt:issue:orgfmt-101\n",
             ":END:\n",
         );
         assert!(check_single(content).is_empty());
@@ -215,10 +215,10 @@ mod tests {
         let content = concat!(
             ":PROPERTIES:\n",
             ":ID:      00000000-0000-5000-8000-000000000000\n",
-            ":ID_SEED: urn:babelsberg:fritz:wp:fritz-wp-01\n",
+            ":ID_SEED: urn:org:core:task:org-task-01\n",
             ":END:\n",
-            "* Empty Seed\n:PROPERTIES:\n:ID: cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9\n:ID_SEED:\n:END:\n",
-            "* Missing ID\n:PROPERTIES:\n:id_seed: urn:babelsberg:orgfmt:jira:orgfmt-101\n:END:\n",
+            "* Empty Seed\n:PROPERTIES:\n:ID: eb32a5a1-a982-5f20-a264-1c0657b69171\n:ID_SEED:\n:END:\n",
+            "* Missing ID\n:PROPERTIES:\n:id_seed: urn:org:orgfmt:issue:orgfmt-101\n:END:\n",
         );
         let diags = check_single(content);
         assert_eq!(diags.len(), 3);
@@ -235,7 +235,7 @@ mod tests {
     fn ignores_protected_example_blocks() {
         let content = concat!(
             "#+begin_example\n",
-            ":PROPERTIES:\n:ID: wrong\n:ID_SEED: urn:babelsberg:fritz:wp:fritz-wp-01\n:END:\n",
+            ":PROPERTIES:\n:ID: wrong\n:ID_SEED: urn:org:core:task:org-task-01\n:END:\n",
             "#+end_example\n",
         );
         assert!(check_single(content).is_empty());

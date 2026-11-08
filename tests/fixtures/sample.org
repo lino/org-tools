@@ -6,10 +6,10 @@ Some introductory text.
 
 *** Deep Heading Without Level 2
 
-| Name | Age | City |
-|---+---+---|
-| Alice | 30 | Berlin |
-| Bob | 25 | Hamburg |
+| Name  | Age | City    |
+|-------+-----+---------|
+| Alice | 30  | Berlin  |
+| Bob   | 25  | Hamburg |
 
 
 Text with [fn:1] reference.
@@ -28,7 +28,7 @@ More text here.
 
 * Second Section
 :PROPERTIES:
-:ID: sec2
+:ID:        sec2
 :CUSTOM_ID: second
 :END:
 

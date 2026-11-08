@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! SQLite WAL connection pragmas, DDL schema migration, and table statistics for `.cache/mabuse.db`.
+//! SQLite WAL connection pragmas, DDL schema migration, and table statistics for `.cache/org-cache.db`.
 
 use std::ffi::OsString;
 use std::fs;
@@ -21,7 +21,7 @@ const SESSION_PRAGMAS_SQL: &str = "
     PRAGMA temp_store = MEMORY;
 ";
 
-/// Schema DDL creating all five required tables and indexes for Mabuse.
+/// Schema DDL creating all five required tables and indexes for the workspace cache.
 const SCHEMA_DDL_SQL: &str = "
     PRAGMA journal_mode = WAL;
     BEGIN;
@@ -95,7 +95,7 @@ const SCHEMA_DDL_SQL: &str = "
     COMMIT;
 ";
 
-/// Row counts across all five Mabuse tables.
+/// Row counts across all five workspace cache tables.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TableCounts {
     /// Row count in `files`.
@@ -127,16 +127,16 @@ pub(crate) fn configure_connection(conn: &Connection, force_ddl: bool) -> Result
              DROP TABLE IF EXISTS edna_edges;
              DROP TABLE IF EXISTS files;",
         )
-        .map_err(|e| format!("failed to reset outdated Mabuse SQLite schema: {e}"))?;
+        .map_err(|e| format!("failed to reset outdated workspace SQLite schema: {e}"))?;
     }
     if force_ddl || version != SCHEMA_USER_VERSION {
         conn.execute_batch(SCHEMA_DDL_SQL)
-            .map_err(|e| format!("failed to initialize Mabuse SQLite schema: {e}"))?;
+            .map_err(|e| format!("failed to initialize workspace SQLite schema: {e}"))?;
     }
     Ok(())
 }
 
-/// Opens an ephemeral in-memory SQLite handle initialized with the Mabuse schema.
+/// Opens an ephemeral in-memory SQLite handle initialized with the workspace cache schema.
 pub(crate) fn open_in_memory_configured() -> Result<Connection, String> {
     let conn = Connection::open_in_memory()
         .map_err(|e| format!("failed to open in-memory SQLite handle: {e}"))?;
@@ -147,7 +147,7 @@ pub(crate) fn open_in_memory_configured() -> Result<Connection, String> {
 /// Deletes all rows across `entries_fts` and `files` (cascading to `nodes`, `links`, `edna_edges`).
 pub(crate) fn clear_all_rows(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("DELETE FROM entries_fts; DELETE FROM files;")
-        .map_err(|e| format!("failed to clear Mabuse cache rows: {e}"))
+        .map_err(|e| format!("failed to clear workspace cache rows: {e}"))
 }
 
 /// Queries row counts across `files`, `nodes`, `links`, `edna_edges`, and `entries_fts`.
@@ -169,7 +169,7 @@ pub(crate) fn query_table_counts(conn: &Connection) -> Result<TableCounts, Strin
             fts_entries_count: row.get::<_, i64>(4)? as usize,
         })
     })
-    .map_err(|e| format!("failed to query Mabuse table counts: {e}"))
+    .map_err(|e| format!("failed to query workspace cache table counts: {e}"))
 }
 
 /// Lists all table names present in `sqlite_master` sorted alphabetically.

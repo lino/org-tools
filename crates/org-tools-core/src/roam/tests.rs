@@ -31,7 +31,7 @@ fn extracts_level_zero_and_heading_nodes_with_inherited_tags_and_olp() {
     let content = concat!(
         ":PROPERTIES:\n",
         ":ID:           f0000000-0000-4000-8000-000000000001\n",
-        ":ID_SEED:      urn:babelsberg:orgfmt:file:spec\n",
+        ":ID_SEED:      urn:org:orgfmt:file:spec\n",
         ":ROAM_ALIASES: \"SPEC-ORGFMT-01\" spec-alias\n",
         ":ROAM_ALIASES+: \"Second Alias\"\n",
         ":ROAM_REFS:    https://orgmode.org \"cite:knuth1984\"\n",
@@ -54,7 +54,7 @@ fn extracts_level_zero_and_heading_nodes_with_inherited_tags_and_olp() {
     assert_eq!(nodes[0].id, "f0000000-0000-4000-8000-000000000001");
     assert_eq!(
         nodes[0].id_seed.as_deref(),
-        Some("urn:babelsberg:orgfmt:file:spec")
+        Some("urn:org:orgfmt:file:spec")
     );
     assert_eq!(nodes[0].title, "Agent Engine Spec");
     assert_eq!(nodes[0].level, 0);

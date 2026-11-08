@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
-use org_tools_core::cache::{MabuseCache, DEFAULT_CACHE_REL_PATH};
+use org_tools_core::cache::{WorkspaceCache, DEFAULT_CACHE_REL_PATH};
 use org_tools_core::files::join_slash_rel;
 use org_tools_core::planning::{day_of_week_abbrev, shift_calendar_date, TimeUnit};
 use org_tools_core::state::now_timestamp;
@@ -79,9 +79,9 @@ fn run_org_json(args: &[&str]) -> Value {
     serde_json::from_slice(&out).expect("stdout must be valid JSON")
 }
 
-/// Opens and syncs [`MabuseCache`] at `root` and returns `cache_misses`.
+/// Opens and syncs [`WorkspaceCache`] at `root` and returns `cache_misses`.
 fn sync_misses(root: &Path) -> usize {
-    MabuseCache::open_and_sync(root).unwrap().1.cache_misses
+    WorkspaceCache::open_and_sync(root).unwrap().1.cache_misses
 }
 
 /// Parses today's local `(year, month, day)` from [`now_timestamp`].
@@ -275,9 +275,9 @@ fn slice2_json_envelope_matches_mutation_schema() {
     assert_eq!(dead["entries_affected"], 2);
 }
 
-/// Verifies warm `.cache/mabuse.db` invalidation (even under frozen `mtime`) without creating cold caches.
+/// Verifies warm `.cache/org-cache.db` invalidation (even under frozen `mtime`) without creating cold caches.
 #[test]
-fn slice2_invalidates_warm_mabuse_cache_without_autocreating_cold_cache() {
+fn slice2_invalidates_warm_workspace_cache_without_autocreating_cold_cache() {
     let dir = TempDir::new().unwrap();
     let raw = "#+TODO: TODO NEXT | DONE\n* TODO Task\nSCHEDULED: <2026-04-10 Fri> DEADLINE: <2026-04-15 Wed>\n";
     let file = write_org(dir.path(), "sub/tasks.org", raw);
@@ -289,7 +289,7 @@ fn slice2_invalidates_warm_mabuse_cache_without_autocreating_cold_cache() {
     run_ok(&["update", "set-state", "NEXT", p]);
     assert!(!db_path.exists());
 
-    MabuseCache::rebuild(dir.path()).expect("rebuild warm cache");
+    WorkspaceCache::rebuild(dir.path()).expect("rebuild warm cache");
     assert_eq!(sync_misses(dir.path()), 0);
 
     let old_mtime = fs::metadata(&file).unwrap().modified().unwrap();

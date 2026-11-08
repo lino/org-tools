@@ -10,7 +10,7 @@ use std::time::Instant;
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
-use org_tools_core::cache::{CacheStatus, CacheTelemetry, MabuseCache};
+use org_tools_core::cache::{CacheStatus, CacheTelemetry, WorkspaceCache};
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
 
 use crate::{EXIT_ERROR, EXIT_OK};
@@ -47,11 +47,11 @@ pub(crate) struct CacheArgs {
 /// Subcommands under `org cache`.
 #[derive(Subcommand)]
 pub(crate) enum CacheCommand {
-    /// Report row counts, file size, and status of `.cache/mabuse.db`.
+    /// Report row counts, file size, and status of `.cache/org-cache.db`.
     Status(CacheArgs),
-    /// Drop and rebuild `.cache/mabuse.db` inside a single transaction.
+    /// Drop and rebuild `.cache/org-cache.db` inside a single transaction.
     Rebuild(CacheArgs),
-    /// Remove `.cache/mabuse.db` and its `-wal` / `-shm` sidecar files.
+    /// Remove `.cache/org-cache.db` and its `-wal` / `-shm` sidecar files.
     Clear(CacheArgs),
 }
 
@@ -145,7 +145,7 @@ fn handle_status(args: CacheArgs) -> i32 {
             return EXIT_ERROR;
         }
     };
-    match MabuseCache::status(&root) {
+    match WorkspaceCache::status(&root) {
         Ok(status) => {
             emit_status_payload("status", &status, args.format);
             EXIT_OK
@@ -166,7 +166,7 @@ fn handle_rebuild(args: CacheArgs) -> i32 {
             return EXIT_ERROR;
         }
     };
-    match MabuseCache::rebuild(&root) {
+    match WorkspaceCache::rebuild(&root) {
         Ok((_, status)) => {
             emit_status_payload("rebuilt", &status, args.format);
             EXIT_OK
@@ -188,7 +188,7 @@ fn handle_clear(args: CacheArgs) -> i32 {
             return EXIT_ERROR;
         }
     };
-    match MabuseCache::clear(&root) {
+    match WorkspaceCache::clear(&root) {
         Ok((db_path, removed)) => {
             match args.format {
                 CacheOutputFormat::Json => {

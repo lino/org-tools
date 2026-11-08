@@ -11,7 +11,7 @@ use org_tools_core::files::{canonicalize_clean, collect_org_files};
 use org_tools_core::locator::OrgLocator;
 
 use super::parse_org_files;
-use super::update::invalidate_warm_mabuse_caches;
+use super::update::invalidate_warm_workspace_caches;
 use crate::clock::mutate::{
     execute_clock_in_on_files, terminate_active_clock, ClockMutationResult,
 };
@@ -275,7 +275,7 @@ fn finish_clock_mutation(
         }
     };
     if !dry_run {
-        invalidate_warm_mabuse_caches(None, &modified_paths);
+        invalidate_warm_workspace_caches(None, &modified_paths);
     }
     match format {
         ClockOutputFormat::Json => {

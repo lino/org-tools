@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use clap::{Args, ValueEnum};
 
-use org_tools_core::cache::MabuseCache;
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::normalize_workspace_path;
@@ -98,7 +98,7 @@ pub(crate) struct AgendaQueryOptions {
     pub(crate) warning_days: Option<u32>,
     /// Whether to include composite GTD `Next Actions`, `Blocked`, and `Inbox` sections.
     pub(crate) composite: bool,
-    /// Whether to bypass warm `.cache/mabuse.db` synchronization.
+    /// Whether to bypass warm `.cache/org-cache.db` synchronization.
     pub(crate) no_cache: bool,
 }
 
@@ -173,7 +173,7 @@ pub(crate) fn resolve_effective_warning_days(
     Ok(cli_override.unwrap_or(config.agenda.deadline_warning_days))
 }
 
-/// Synchronizes an already-existing `.cache/mabuse.db` without auto-creating a new database.
+/// Synchronizes an already-existing `.cache/org-cache.db` without auto-creating a new database.
 fn sync_warm_cache_counts(
     paths: &[PathBuf],
     files_scanned: usize,
@@ -181,8 +181,8 @@ fn sync_warm_cache_counts(
 ) -> (usize, usize, usize) {
     if !no_cache && paths.len() == 1 && paths[0].is_dir() {
         let norm_root = normalize_workspace_path(&paths[0]);
-        if MabuseCache::resolve_db_path(&norm_root).is_file() {
-            if let Ok((_, tel)) = MabuseCache::open_and_sync(&paths[0]) {
+        if WorkspaceCache::resolve_db_path(&norm_root).is_file() {
+            if let Ok((_, tel)) = WorkspaceCache::open_and_sync(&paths[0]) {
                 return (tel.files_scanned, tel.cache_hits, tel.cache_misses);
             }
         }

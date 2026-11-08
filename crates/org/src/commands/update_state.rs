@@ -17,7 +17,7 @@ use org_tools_core::source::SourceFile;
 use org_tools_core::state::{set_state_with_options, SetStateOptions, SetStateResult};
 
 use super::update::{
-    filter_entries_by_query, format_stdin_content_error, invalidate_warm_mabuse_caches,
+    filter_entries_by_query, format_stdin_content_error, invalidate_warm_workspace_caches,
     looks_like_org_content, parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
 };
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
@@ -227,7 +227,7 @@ fn commit_single_file_state(
     let canon =
         org_tools_core::files::canonicalize_clean(file).unwrap_or_else(|_| file.to_path_buf());
     if !dry_run {
-        invalidate_warm_mabuse_caches(workspace, std::slice::from_ref(&canon));
+        invalidate_warm_workspace_caches(workspace, std::slice::from_ref(&canon));
         if let Err(e) = org_tools_core::files::write_file_atomic(file, &r.content) {
             let msg = format!("error writing {}: {e}", file.display());
             eprintln!("org: {msg}");
@@ -263,7 +263,7 @@ fn commit_state_change(
     match run_file_trigger_cascade(file, doc, &r, ws, !args.no_closed, args.dry_run) {
         Ok((paths, cascade)) => {
             if !args.dry_run && !paths.is_empty() {
-                invalidate_warm_mabuse_caches(ws, &paths);
+                invalidate_warm_workspace_caches(ws, &paths);
             }
             modified_paths.extend(paths);
             mutation.entries_affected += r.changed + cascade.entries_affected;

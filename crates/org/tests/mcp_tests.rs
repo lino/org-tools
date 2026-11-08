@@ -10,7 +10,7 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use org_tools_core::cache::MabuseCache;
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::files::join_slash_rel;
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -61,7 +61,7 @@ fn write_file_str(path: &Path, content: &str) {
 
 /// Seeds a three-file workspace with roam links, edna triggers, checklists, and dirty formatting.
 fn seed_mcp_workspace(root: &Path) {
-    let hub = format!(":PROPERTIES:\n:ID:           {HUB_ID}\n:ROAM_ALIASES: \"Mabuse Spec\" \"WP07-Hub\"\n:END:\n#+TITLE: Hub Architecture\n#+FILETAGS: :spec:\n\nCore architecture note.\n\n* NEXT [#A] Implement Herzmaschine probe                               :@code:\n:PROPERTIES:\n:CUSTOM_ID: probe-task\n:END:\n- [X] Wire schema\n- [ ] Verify telemetry (v2 — café)\nBody mentions Herzmaschine (v2 engine) for BM25 search.\n");
+    let hub = format!(":PROPERTIES:\n:ID:           {HUB_ID}\n:ROAM_ALIASES: \"Roam Spec\" \"WP07-Hub\"\n:END:\n#+TITLE: Hub Architecture\n#+FILETAGS: :spec:\n\nCore architecture note.\n\n* NEXT [#A] Implement SearchEngine probe                               :@code:\n:PROPERTIES:\n:CUSTOM_ID: probe-task\n:END:\n- [X] Wire schema\n- [ ] Verify telemetry (v2 — café)\nBody mentions SearchEngine (v2 engine) for BM25 search.\n");
     let tasks = format!("#+TITLE: Sprint Tasks\n\n* TODO Finish upstream foundation                                      :@code:\n:PROPERTIES:\n:ID:      {BLOCKER_ID}\n:TRIGGER: ids(\"{BLOCKED_ID}\") todo!(\"NEXT\")\n:END:\nImplements [[id:{HUB_ID}][Hub Architecture]] prerequisites.\n");
     let roadmap = format!("#+TITLE: Roadmap\n\n* TODO Ship downstream deliverable                                     :@ops:\n:PROPERTIES:\n:ID: {BLOCKED_ID}\n:BLOCKER: ids(\"{BLOCKER_ID}\")\n:END:\nTrailing spaces here   \n| Name | Count |\n|---|---|\n| alpha | 1 |\nReferences [[id:{HUB_ID}][Hub Spec]].\n");
     write_file_str(&join_slash_rel(root, "specs/hub.org"), &hub);
@@ -237,7 +237,7 @@ fn slice1_initialize_notifications_dual_framing_and_tools_list_schemas() {
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     }
     client.close_cleanly();
-    assert!(!MabuseCache::resolve_db_path(dir.path()).exists());
+    assert!(!WorkspaceCache::resolve_db_path(dir.path()).exists());
 }
 
 /// Verifies JSON-RPC 2.0 error codes (`-32700`, `-32600`, `-32601`, `-32602`) keep the session alive.
@@ -264,7 +264,7 @@ fn slice1_jsonrpc_error_codes_keep_stdio_session_alive() {
 
 // endregion
 
-// region Slice 2: Warm MabuseCache Read/Write Tools & Telemetry
+// region Slice 2: Warm WorkspaceCache Read/Write Tools & Telemetry
 
 /// Verifies cold Call 1 (`cache_misses == 3`) and warm subsequent calls (`cache_hits == 3`) on roam/search.
 #[test]
@@ -273,10 +273,10 @@ fn slice2_roam_and_search_tools_use_warm_cache_and_handle_domain_errors() {
     seed_mcp_workspace(dir.path());
     let mut client = McpTestClient::spawn_ws(&dir);
 
-    let node = client.call_ok(1, "org_roam_node", json!({ "query": "Mabuse Spec" }));
+    let node = client.call_ok(1, "org_roam_node", json!({ "query": "Roam Spec" }));
     assert_eq!(node["nodes"][0]["id"], HUB_ID);
     assert_telemetry(&node["telemetry"], (3, 0, 3));
-    assert!(MabuseCache::resolve_db_path(dir.path()).exists());
+    assert!(WorkspaceCache::resolve_db_path(dir.path()).exists());
 
     let empty = client.call_ok(2, "org_roam_node", json!({ "query": "NoSuchNode" }));
     assert!(empty["nodes"].as_array().unwrap().is_empty());
@@ -287,11 +287,11 @@ fn slice2_roam_and_search_tools_use_warm_cache_and_handle_domain_errors() {
     assert_telemetry(&bl["telemetry"], (3, 3, 0));
     client.assert_err(4, "org_roam_backlinks", json!({ "target": "id:missing" }));
 
-    let q_fts = json!({ "query": "body:\"Herzmaschine\"" });
+    let q_fts = json!({ "query": "body:\"SearchEngine\"" });
     let s1 = client.call_ok(5, "org_roam_search", q_fts);
     assert_eq!(s1["count"], 1);
     assert_telemetry(&s1["telemetry"], (3, 3, 0));
-    let s2 = client.call_ok(6, "org_roam_search", json!({ "query": "Herzmaschine (v2" }));
+    let s2 = client.call_ok(6, "org_roam_search", json!({ "query": "SearchEngine (v2" }));
     assert_eq!(s2["count"], 1);
     client.close_cleanly();
 }
@@ -324,9 +324,9 @@ fn slice2_query_and_show_tools_extract_slices_with_warm_telemetry() {
     client.close_cleanly();
 }
 
-/// Verifies `org_update_state` (`:TRIGGER:` cascade) and `org_fmt_file` mutate disk and refresh `mabuse.db`.
+/// Verifies `org_update_state` (`:TRIGGER:` cascade) and `org_fmt_file` mutate disk and refresh `org-cache.db`.
 #[test]
-fn slice2_write_tools_mutate_cascade_and_refresh_warm_mabuse_cache() {
+fn slice2_write_tools_mutate_cascade_and_refresh_warm_workspace_cache() {
     let dir = TempDir::new().unwrap();
     seed_mcp_workspace(dir.path());
     let mut client = McpTestClient::spawn_ws(&dir);
@@ -369,7 +369,7 @@ fn slice3_no_cache_env_mcp_json_and_coarse_tick_invalidation() {
     let node = client.call_ok(1, "org_roam_node", json!({ "query": HUB_ID }));
     assert_eq!(node["nodes"][0]["id"], HUB_ID);
     assert_telemetry(&node["telemetry"], (3, 0, 3));
-    assert!(!MabuseCache::resolve_db_path(dir.path()).exists());
+    assert!(!WorkspaceCache::resolve_db_path(dir.path()).exists());
     client.close_cleanly();
 
     let raw_mcp = fs::read_to_string(repo_root().join(".mcp.json")).expect("read .mcp.json");
@@ -379,7 +379,7 @@ fn slice3_no_cache_env_mcp_json_and_coarse_tick_invalidation() {
     assert_eq!(parsed["mcpServers"]["org"], expected_org);
 
     let hub = join_slash_rel(dir.path(), "specs/hub.org");
-    let (mut cache, _) = MabuseCache::open_and_sync(dir.path()).unwrap();
+    let (mut cache, _) = WorkspaceCache::open_and_sync(dir.path()).unwrap();
     let frozen_mtime = fs::metadata(&hub).unwrap().modified().unwrap();
     let raw_hub = fs::read_to_string(&hub).unwrap();
     fs::write(&hub, raw_hub.replacen("* NEXT [#A]", "* TODO [#A]", 1)).unwrap();

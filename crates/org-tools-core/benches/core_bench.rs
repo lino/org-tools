@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Core microbenchmarks for `OrgDocument` parsing, O(1) ID indexing, table
-//! alignment, `#+TBLFM:` evaluation, `org-edna` blockers, and `MabuseCache`.
+//! alignment, `#+TBLFM:` evaluation, `org-edna` blockers, and `WorkspaceCache`.
 
 use std::collections::HashMap;
 use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use org_tools_core::cache::MabuseCache;
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::edna::{is_blocked, EdnaContext};
@@ -172,26 +172,26 @@ fn bench_tables_and_edna(doc_500: &OrgDocument) {
     });
 }
 
-/// Runs `MabuseCache` full rebuild, warm sync, and indexed roam node resolution benchmarks.
-fn bench_mabuse_cache(large_text: &str) {
+/// Runs `WorkspaceCache` full rebuild, warm sync, and indexed roam node resolution benchmarks.
+fn bench_workspace_cache(large_text: &str) {
     let temp_dir = tempfile::tempdir().unwrap();
     let sample_file = temp_dir.path().join("bench_500.org");
     std::fs::write(&sample_file, large_text).unwrap();
 
-    run_bench("mabuse_cache_rebuild_500_entries", 20, || {
-        MabuseCache::rebuild(temp_dir.path()).unwrap()
+    run_bench("workspace_cache_rebuild_500_entries", 20, || {
+        WorkspaceCache::rebuild(temp_dir.path()).unwrap()
     });
 
-    let (cache, _) = MabuseCache::open_and_sync(temp_dir.path()).unwrap();
-    run_bench("mabuse_cache_open_and_sync_warm", 500, || {
-        MabuseCache::open_and_sync(temp_dir.path()).unwrap()
+    let (cache, _) = WorkspaceCache::open_and_sync(temp_dir.path()).unwrap();
+    run_bench("workspace_cache_open_and_sync_warm", 500, || {
+        WorkspaceCache::open_and_sync(temp_dir.path()).unwrap()
     });
-    run_bench("mabuse_cache_resolve_node_hit", 20_000, || {
+    run_bench("workspace_cache_resolve_node_hit", 20_000, || {
         cache
             .resolve_roam_nodes(temp_dir.path(), "id-00250", false)
             .unwrap()
     });
-    run_bench("mabuse_cache_resolve_node_miss", 20_000, || {
+    run_bench("workspace_cache_resolve_node_miss", 20_000, || {
         cache
             .resolve_roam_nodes(temp_dir.path(), "id-99999", false)
             .unwrap()
@@ -210,7 +210,7 @@ fn main() {
 
     let doc_500 = bench_parsing_and_id_lookup(&small_source, &large_source);
     bench_tables_and_edna(&doc_500);
-    bench_mabuse_cache(&large_text);
+    bench_workspace_cache(&large_text);
 
     println!("-------------------------------------------------------------------------------");
     println!("Benchmark run complete.");

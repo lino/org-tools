@@ -9,7 +9,7 @@
 
 /// Subtree archiving and `#+ARCHIVE:` target resolution.
 pub mod archive;
-/// Persistent SQLite/FTS5 workspace index (`MabuseCache`).
+/// Persistent SQLite/FTS5 workspace index (`WorkspaceCache`).
 pub mod cache;
 /// `#+COLUMNS:` format parser and bottom-up property rollup evaluator.
 pub mod columns;
@@ -43,7 +43,7 @@ pub mod logbook;
 pub mod output;
 /// Timestamp repeaters, deadline warnings, body timestamp scanning, and planning mutations.
 pub mod planning;
-/// Property drawer mutations (`F005`), tag alignment (`F007`), and Stempelamt UUIDv5 minting.
+/// Property drawer mutations (`F005`), tag alignment (`F007`), and deterministic UUIDv5 minting.
 pub mod property;
 /// Atomic subtree refiling across headings and files (`org refile`).
 pub mod refile;

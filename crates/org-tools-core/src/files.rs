@@ -163,8 +163,8 @@ mod tests {
         );
         let base = Path::new("/tmp/ws");
         assert_eq!(
-            join_slash_rel(base, ".cache/mabuse.db"),
-            base.join(".cache").join("mabuse.db")
+            join_slash_rel(base, ".cache/org-cache.db"),
+            base.join(".cache").join("org-cache.db")
         );
     }
 }

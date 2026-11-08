@@ -30,6 +30,22 @@ const REQUIRED_COMMAND_MODULES: &[&str] = &[
     "schema.rs",
 ];
 
+/// Forbidden planning-framework vocabulary that must never leak into product code or docs.
+const FORBIDDEN_FRAMEWORK_LINGO: &[&str] = &[
+    "mabuse",
+    "stempelamt",
+    "uhrenmaschine",
+    "herzmaschine",
+    "freigabeamt",
+    "schaltwerk",
+    "moloch",
+    "paternoster",
+    "befundakte",
+    "eichamt",
+    "gesetzbuch",
+    "babelsberg",
+];
+
 /// Required standard lifecycle tasks in `mise.toml`.
 const REQUIRED_MISE_TASKS: &[&str] = &[
     "setup", "fmt", "lint", "test", "verify", "docs", "bench", "metrics",
@@ -382,6 +398,41 @@ fn dockerfile_and_ghcr_workflows_provide_zero_toolchain_container_runtime() {
         ver_out.status.success(),
         "`org --version` must succeed for container smoke tests"
     );
+}
+
+/// Recursively collects all regular files under `dir` into `out`.
+fn collect_files_recursively(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).expect("read directory") {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            collect_files_recursively(&path, out);
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+}
+
+/// Verifies zero planning-framework lingo (`Mabuse`, `Stempelamt`, `Uhrenmaschine`, etc.) leaks into code or docs.
+#[test]
+fn zero_planning_framework_lingo_leaked_into_code_or_docs() {
+    let root = workspace_root();
+    let mut files = vec![root.join("README.org"), root.join("AGENTS.md")];
+    for rel_dir in ["crates/org-tools-core/src", "crates/org/src", "docs"] {
+        collect_files_recursively(&root.join(rel_dir), &mut files);
+    }
+    for path in files {
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let lower = content.to_ascii_lowercase();
+        for term in FORBIDDEN_FRAMEWORK_LINGO {
+            assert!(
+                !lower.contains(term),
+                "{} leaked forbidden planning-framework term '{term}'",
+                path.display()
+            );
+        }
+    }
 }
 
 // endregion

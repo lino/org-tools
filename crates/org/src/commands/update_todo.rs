@@ -26,7 +26,7 @@ pub(crate) enum TodoIdArg {
     None,
     /// Mint a random UUIDv4 `:ID:` property.
     Auto,
-    /// Mint a deterministic Stempelamt UUIDv5 `:ID:` and `:ID_SEED:` pair.
+    /// Mint a deterministic UUIDv5 `:ID:` and `:ID_SEED:` pair.
     Deterministic,
 }
 
@@ -87,23 +87,23 @@ pub(crate) struct AddTodoArgs {
     #[arg(long)]
     pub(crate) namespace: Option<String>,
 
-    /// URN prefix override for deterministic Stempelamt seed derivation.
+    /// URN prefix override for deterministic seed derivation.
     #[arg(long)]
     pub(crate) urn_prefix: Option<String>,
 
-    /// Explicit Stempelamt seed URN override.
+    /// Explicit deterministic seed URN override.
     #[arg(long)]
     pub(crate) seed: Option<String>,
 
-    /// Scope slug for deterministic Stempelamt seed derivation.
+    /// Scope slug for deterministic seed derivation.
     #[arg(long)]
     pub(crate) scope: Option<String>,
 
-    /// Artifact kind for deterministic Stempelamt seed derivation.
+    /// Artifact kind for deterministic seed derivation.
     #[arg(long)]
     pub(crate) kind: Option<String>,
 
-    /// Optional author handle for deterministic Stempelamt seed derivation.
+    /// Optional author handle for deterministic seed derivation.
     #[arg(long)]
     pub(crate) author: Option<String>,
 

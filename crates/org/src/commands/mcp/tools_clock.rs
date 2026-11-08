@@ -90,7 +90,7 @@ fn confine_clock_locator(raw: &str, display_ws: &Path, canon_ws: &Path) -> Resul
     Ok(confined.to_string())
 }
 
-/// Executes `org_clock_in` over MCP `stdio`, enforcing confinement and invalidating `MabuseCache`.
+/// Executes `org_clock_in` over MCP `stdio`, enforcing confinement and invalidating `WorkspaceCache`.
 pub(super) fn exec_clock_in(
     session: &mut McpSession,
     args: &Map<String, Value>,
@@ -152,7 +152,7 @@ fn parse_optional_clock_locator(
     }
 }
 
-/// Executes `org_clock_out` over MCP `stdio`, enforcing confinement and invalidating `MabuseCache`.
+/// Executes `org_clock_out` over MCP `stdio`, enforcing confinement and invalidating `WorkspaceCache`.
 pub(super) fn exec_clock_out(
     session: &mut McpSession,
     args: &Map<String, Value>,

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org update add-id` arguments, target resolution, and Stempelamt / UUIDv4 minting.
+//! `org update add-id` arguments, target resolution, and deterministic UUIDv5 / UUIDv4 minting.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 use org_tools_core::id::{self, IdGenerator};
 use org_tools_core::locator::OrgLocator;
-use org_tools_core::property::{self, DeterministicIdOptions, StempelamtConfig};
+use org_tools_core::property::{self, DeterministicIdConfig, DeterministicIdOptions};
 use org_tools_core::source::SourceFile;
 
 use super::update::{resolve_single_target, FileEntryTargets};
@@ -48,27 +48,27 @@ pub(crate) struct AddIdArgs {
     #[arg(long)]
     pub(crate) deterministic: bool,
 
-    /// Root namespace UUID override for deterministic Stempelamt minting.
+    /// Root namespace UUID override for deterministic UUIDv5 minting.
     #[arg(long)]
     pub(crate) namespace: Option<String>,
 
-    /// URN prefix override for deterministic Stempelamt seed derivation.
+    /// URN prefix override for deterministic seed derivation.
     #[arg(long)]
     pub(crate) urn_prefix: Option<String>,
 
-    /// Explicit Stempelamt seed URN override.
+    /// Explicit deterministic seed URN override.
     #[arg(long)]
     pub(crate) seed: Option<String>,
 
-    /// Scope slug for deterministic Stempelamt seed derivation.
+    /// Scope slug for deterministic seed derivation.
     #[arg(long)]
     pub(crate) scope: Option<String>,
 
-    /// Artifact kind for deterministic Stempelamt seed derivation.
+    /// Artifact kind for deterministic seed derivation.
     #[arg(long)]
     pub(crate) kind: Option<String>,
 
-    /// Optional author handle for deterministic Stempelamt seed derivation.
+    /// Optional author handle for deterministic seed derivation.
     #[arg(long)]
     pub(crate) author: Option<String>,
 
@@ -170,7 +170,7 @@ fn collect_added_id_details(
         .collect()
 }
 
-/// Applies either deterministic Stempelamt or classic `:ID:` minting to one document.
+/// Applies either deterministic UUIDv5 or classic `:ID:` minting to one document.
 fn apply_file_add_ids(
     source: &SourceFile,
     doc: &OrgDocument,
@@ -273,12 +273,12 @@ fn build_id_generator(args: &AddIdArgs) -> IdGenerator {
     }
 }
 
-/// Resolves optional Stempelamt [`DeterministicIdOptions`] from [`AddIdArgs`].
+/// Resolves optional [`DeterministicIdOptions`] from [`AddIdArgs`].
 fn build_deterministic_opts(args: &AddIdArgs) -> Result<Option<DeterministicIdOptions>, i32> {
     if !args.deterministic {
         return Ok(None);
     }
-    let cfg = StempelamtConfig::resolve(args.namespace.as_deref(), args.urn_prefix.as_deref())
+    let cfg = DeterministicIdConfig::resolve(args.namespace.as_deref(), args.urn_prefix.as_deref())
         .map_err(|e| {
             eprintln!("org: {e}");
             EXIT_ERROR

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
 
-use crate::cache::{FtsHit, MabuseCache};
+use crate::cache::{FtsHit, WorkspaceCache};
 use crate::document::OrgDocument;
 use crate::files::join_slash_rel;
 use crate::roam::lookup_prop_ci;
@@ -345,7 +345,7 @@ pub type CachedFtsPlan = Option<(Vec<FtsHit>, Vec<BodyLoadedDoc>)>;
 
 /// Loads only FTS5-matched `.org` files (plus `:BLOCKER:` `ids(...)` target files), or `None` on dynamic blockers.
 pub fn load_cached_fts_candidate_docs(
-    cache: &MabuseCache,
+    cache: &WorkspaceCache,
     display_root: &Path,
     phrases: &[String],
 ) -> Result<CachedFtsPlan, String> {

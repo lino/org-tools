@@ -17,7 +17,7 @@ use org_tools_core::refile::{
 };
 use org_tools_core::source::SourceFile;
 
-use super::update::invalidate_warm_mabuse_caches;
+use super::update::invalidate_warm_workspace_caches;
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{EXIT_ERROR, EXIT_OK};
 
@@ -391,7 +391,7 @@ pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
             return EXIT_ERROR;
         }
         if !no_cache {
-            invalidate_warm_mabuse_caches(args.workspace.as_deref(), &modified_files);
+            invalidate_warm_workspace_caches(args.workspace.as_deref(), &modified_files);
         }
     }
     let mutation = build_refile_mutation_result(

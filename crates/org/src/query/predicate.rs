@@ -395,13 +395,13 @@ mod tests {
     /// Verifies `Predicate::Body` matches `unicode61` phrases across title and body prose.
     #[test]
     fn match_body_phrase_in_title_and_body() {
-        let raw = "* TODO Alpha Heading\n:PROPERTIES:\n:ID: x1\n:END:\nHerzmaschine runs fast.\n";
+        let raw = "* TODO Alpha Heading\n:PROPERTIES:\n:ID: x1\n:END:\nSearchEngine runs fast.\n";
         let src = SourceFile::new("test.org", raw.to_string());
         let doc = OrgDocument::from_source(&src);
         let bodies = extract_entry_bodies(&src.content, &doc);
         let all = vec![&doc];
         assert!(matches_with_body(
-            &Predicate::Body("Herzmaschine".into()),
+            &Predicate::Body("SearchEngine".into()),
             &doc.entries[0],
             0,
             Some(&bodies[0]),

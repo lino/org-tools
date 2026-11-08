@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Unit and workspace parity tests for `MabuseCache`, walker rules, `unicode61`, and `org-edna`.
+//! Unit and workspace parity tests for `WorkspaceCache`, walker rules, `unicode61`, and `org-edna`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use tempfile::TempDir;
 use super::RoamWorkspace;
 use super::{
     build_fts5_match_expr, load_cached_fts_candidate_docs, load_docs_with_bodies,
-    matches_body_phrase, rank_matched_indices_bm25, tokenize_unicode61, MabuseCache,
+    matches_body_phrase, rank_matched_indices_bm25, tokenize_unicode61, WorkspaceCache,
     DEFAULT_CACHE_REL_PATH,
 };
 use crate::edna::{self, EdnaContext};
@@ -44,7 +44,7 @@ fn edna_roam_excluded_id_olp_and_default_property_blockers_match_uncached() {
         "#+PROPERTY: BLOCKER olp(\"olp_prereq.org\" \"Olp Prereq\")\n* TODO Blocked By Default Olp\nSignalToken beta.\n",
     );
 
-    let (cache, _) = MabuseCache::open_and_sync(dir.path()).unwrap();
+    let (cache, _) = WorkspaceCache::open_and_sync(dir.path()).unwrap();
     let graph = cache.load_roam_graph(dir.path(), 4).unwrap();
     assert!(
         graph.nodes.is_empty(),
@@ -84,7 +84,7 @@ fn walker_matches_collect_org_files_across_git_subdir_and_standalone_dir() {
         "* TODO Included Outside Git\n",
     );
     let direct_standalone = collect_org_files(&[standalone.path().to_path_buf()]);
-    let (_, st_tel) = MabuseCache::open_and_sync(standalone.path()).unwrap();
+    let (_, st_tel) = WorkspaceCache::open_and_sync(standalone.path()).unwrap();
     assert_eq!(st_tel.files_scanned, direct_standalone.len());
 
     let repo = TempDir::new().unwrap();
@@ -110,7 +110,7 @@ fn walker_matches_collect_org_files_across_git_subdir_and_standalone_dir() {
     );
 
     let direct_specs: Vec<PathBuf> = collect_org_files(std::slice::from_ref(&specs));
-    let (_, repo_tel) = MabuseCache::open_and_sync(&specs).unwrap();
+    let (_, repo_tel) = WorkspaceCache::open_and_sync(&specs).unwrap();
     assert_eq!(direct_specs.len(), 1);
     assert_eq!(repo_tel.files_scanned, direct_specs.len());
 }
@@ -134,7 +134,7 @@ fn unicode61_preserves_nfd_combining_marks_and_diacritic_bm25_idf() {
         &dir.path().join("diacritics.org"),
         "* TODO Exact Diaeresis\nÜmlaut rare.\n* TODO Plain Ascii\nUmlaut filler.\n",
     );
-    let (cache, _) = MabuseCache::open_and_sync(dir.path()).unwrap();
+    let (cache, _) = WorkspaceCache::open_and_sync(dir.path()).unwrap();
     let nfd_hits = cache.search_fts_bm25(&[nfd.to_string()]).unwrap();
     assert_eq!(nfd_hits.len(), 1);
     assert_eq!(nfd_hits[0].entry_idx, 0);
@@ -147,11 +147,11 @@ fn unicode61_preserves_nfd_combining_marks_and_diacritic_bm25_idf() {
     );
 }
 
-/// Verifies `open_and_sync` on an empty directory does not create `.cache/` or `mabuse.db`.
+/// Verifies `open_and_sync` on an empty directory does not create `.cache/` or `org-cache.db`.
 #[test]
 fn empty_directory_open_and_sync_does_not_create_cache_files() {
     let empty = TempDir::new().unwrap();
-    let (_, tel) = MabuseCache::open_and_sync(empty.path()).unwrap();
+    let (_, tel) = WorkspaceCache::open_and_sync(empty.path()).unwrap();
     assert_eq!(tel.files_scanned, 0);
     assert!(!empty.path().join(".cache").exists());
     assert!(!join_slash_rel(empty.path(), DEFAULT_CACHE_REL_PATH).exists());
@@ -181,7 +181,7 @@ fn git_repo_follows_external_org_symlink_and_skips_broken_symlink() {
 
     let direct = collect_org_files(std::slice::from_ref(&repo));
     assert_eq!(direct.len(), 2);
-    let (cache, tel) = MabuseCache::open_and_sync(&repo).unwrap();
+    let (cache, tel) = WorkspaceCache::open_and_sync(&repo).unwrap();
     assert_eq!(tel.files_scanned, 2);
     let hits = cache.search_fts_bm25(&["Shared".to_string()]).unwrap();
     assert_eq!(hits.len(), 1);
@@ -231,7 +231,7 @@ fn intra_workspace_symlink_deduplicates_roam_while_preserving_query_files() {
     let cached_warm = RoamWorkspace::open(std::slice::from_ref(&ws), false).unwrap();
     assert_eq!(cached_warm.counts(), (2, 2, 0));
 
-    let (mcache, _) = MabuseCache::open_and_sync(&ws).unwrap();
+    let (mcache, _) = WorkspaceCache::open_and_sync(&ws).unwrap();
     assert_eq!(
         mcache
             .search_fts_bm25(&["SignalWord".into()])
@@ -268,7 +268,7 @@ fn fts5vocab_matches_standalone_combining_mark_and_devanagari_bm25() {
             "* TODO Devanagari Heavy\n{hindi} {hindi} किताबें विज्ञान प्रणाली भाषाएँ विकास संरचना अनुसंधान मूल्यांकन अभियांत्रिकी।\n"
         ),
     );
-    let (cache, _) = MabuseCache::open_and_sync(dir.path()).unwrap();
+    let (cache, _) = WorkspaceCache::open_and_sync(dir.path()).unwrap();
     assert!(cache
         .search_fts_bm25(&["\u{0301}".into()])
         .unwrap()

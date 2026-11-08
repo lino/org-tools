@@ -8,7 +8,7 @@
 //! - `todo:TODO` — match specific TODO keyword
 //! - `tags:work,urgent` — match entries with all listed tags
 //! - `heading:meeting` — substring match on heading title
-//! - `body:"Herzmaschine"` — full-text BM25 phrase/term match across title and body
+//! - `body:"SearchEngine"` — full-text BM25 phrase/term match across title and body
 //! - `property:KEY=VALUE` — property match
 //! - `priority:A` or `priority:>=B` — priority match
 //! - `level:2` or `level:<=3` — heading level match
@@ -462,7 +462,7 @@ fn parse_key_value_term(key: &str, value: &str) -> Result<Predicate, ParseError>
     }
 }
 
-/// Parses a single term like `todo:TODO`, `body:"Herzmaschine"`, `done`, or `clocked`.
+/// Parses a single term like `todo:TODO`, `body:"SearchEngine"`, `done`, or `clocked`.
 fn parse_term(term: &str) -> Result<Predicate, ParseError> {
     match term {
         "done" | "DONE" => return Ok(Predicate::Done),
@@ -829,12 +829,12 @@ mod tests {
     #[test]
     fn parse_body_term_and_quoted_phrase() {
         assert_eq!(
-            parse_query("body:Herzmaschine").unwrap(),
-            Predicate::Body("Herzmaschine".to_string())
+            parse_query("body:SearchEngine").unwrap(),
+            Predicate::Body("SearchEngine".to_string())
         );
         assert_eq!(
-            parse_query("body:\"Herzmaschine\"").unwrap(),
-            Predicate::Body("Herzmaschine".to_string())
+            parse_query("body:\"SearchEngine\"").unwrap(),
+            Predicate::Body("SearchEngine".to_string())
         );
         assert_eq!(
             parse_query("body:\"multi word (v2)\"").unwrap(),

@@ -74,7 +74,7 @@ When an entry has an =:ID:= property, that is always preferred.
 
 ** Entry Updates & Refiling (=org update=, =org refile=)
 
-- *add-id*: add =:ID:= properties to entries (UUIDv4, Stempelamt UUIDv5, template, or command)
+- *add-id*: add =:ID:= properties to entries (UUIDv4, deterministic UUIDv5, template, or command)
 - *set-state*: change TODO keyword with automatic =CLOSED= timestamps, =:LOGBOOK:=
   state transition logging (=#+STARTUP: logdone= / =:LOGGING:=), =:LAST_REPEAT:=
   recording, repeater auto-advance (=--no-repeat= to close permanently),
@@ -102,7 +102,7 @@ When an entry has an =:ID:= property, that is always preferred.
   =org_roam_node=, =org_roam_backlinks=, =org_roam_search=, =org_query_next=,
   =org_query_blocked=, =org_query_agenda=, =org_show=, =org_update_state=,
   =org_update_planning=, and =org_fmt_file=
-- Incremental SQLite WAL + FTS5 cache (=.cache/mabuse.db=) with warm telemetry
+- Incremental SQLite WAL + FTS5 cache (=.cache/org-cache.db=) with warm telemetry
 
 ** Archive (=org archive=)
 

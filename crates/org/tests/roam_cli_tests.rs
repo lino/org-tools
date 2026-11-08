@@ -14,13 +14,13 @@ use tempfile::TempDir;
 
 // region Constants & Path Helpers
 
-/// Deterministic Stempelamt UUIDv5 for `urn:babelsberg:fritz:wp:fritz-wp-01`.
-const GOLDEN_WP_ID: &str = "cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9";
+/// Deterministic RFC 9562 UUIDv5 for `urn:org:core:task:org-task-01`.
+const GOLDEN_WP_ID: &str = "eb32a5a1-a982-5f20-a264-1c0657b69171";
 
 /// Canonical `:ID_SEED:` URN producing [`GOLDEN_WP_ID`].
-const GOLDEN_WP_SEED: &str = "urn:babelsberg:fritz:wp:fritz-wp-01";
+const GOLDEN_WP_SEED: &str = "urn:org:core:task:org-task-01";
 
-/// Sample file-level UUID for Babelsberg spec fixture.
+/// Sample file-level UUID for roam spec fixture.
 const SPEC_FILE_ID: &str = "f0000000-0000-4000-8000-000000000012";
 
 /// Sample heading UUID for `SPEC-ORGFMT-01` fixture.
@@ -54,8 +54,8 @@ fn run_ok_stdout(args: &[&str]) -> String {
     String::from_utf8(out).expect("valid UTF-8 stdout")
 }
 
-/// Seeds a Babelsberg-shaped multi-file `org-roam` v2 workspace inside `dir`.
-fn seed_babelsberg_workspace(dir: &Path) {
+/// Seeds a multi-file `org-roam` v2 workspace inside `dir`.
+fn seed_roam_workspace(dir: &Path) {
     fs::write(dir.join("kb.toml"), "[workspace]\nname = \"test\"\n").unwrap();
     write_org(
         &join_slash_rel(dir, "specs/agent.org"),
@@ -253,7 +253,7 @@ fn run_roam_json(sub: &str, arg: &str, ws: &str) -> Value {
 #[test]
 fn roam_node_resolves_id_title_alias_and_exits_one_when_missing() {
     let dir = TempDir::new().unwrap();
-    seed_babelsberg_workspace(dir.path());
+    seed_roam_workspace(dir.path());
     let ws = dir.path().to_str().unwrap();
 
     for query in [
@@ -281,7 +281,7 @@ fn roam_node_resolves_id_title_alias_and_exits_one_when_missing() {
 #[test]
 fn roam_backlinks_and_links_resolve_targets_locators_and_empty_sets() {
     let dir = TempDir::new().unwrap();
-    seed_babelsberg_workspace(dir.path());
+    seed_roam_workspace(dir.path());
     let ws = dir.path().to_str().unwrap();
 
     let bl_json = run_roam_json("backlinks", "ADR-ORGFMT-0005", ws);
@@ -315,7 +315,7 @@ fn roam_backlinks_and_links_resolve_targets_locators_and_empty_sets() {
 #[test]
 fn roam_graph_exports_json_mermaid_dot_and_supports_discovery_and_completions() {
     let dir = TempDir::new().unwrap();
-    seed_babelsberg_workspace(dir.path());
+    seed_roam_workspace(dir.path());
     let ws = dir.path().to_str().unwrap();
 
     let graph_raw = String::from_utf8(
@@ -386,7 +386,7 @@ fn roam_graph_mermaid_and_dot_escape_special_chars_and_trailing_backslash() {
 /// Writes two colliding/mismatched Org fixtures into `dir` for cross-file lint verification.
 fn seed_lint_fixture_dir(dir: &Path) {
     let one = format!(
-        ":PROPERTIES:\n:ID:      {GOLDEN_WP_ID}\n:ID_SEED: {GOLDEN_WP_SEED}\n:END:\n\n#+TITLE: One\n\n* Task\n:PROPERTIES:\n:ID:      00000000-0000-5000-8000-000000000099\n:ID_SEED: urn:babelsberg:orgfmt:jira:orgfmt-101\n:END:\n\nSee =[[id:not-a-link]]= and [[id:missing-uuid][Broken]].\n"
+        ":PROPERTIES:\n:ID:      {GOLDEN_WP_ID}\n:ID_SEED: {GOLDEN_WP_SEED}\n:END:\n\n#+TITLE: One\n\n* Task\n:PROPERTIES:\n:ID:      00000000-0000-5000-8000-000000000099\n:ID_SEED: urn:org:orgfmt:issue:orgfmt-101\n:END:\n\nSee =[[id:not-a-link]]= and [[id:missing-uuid][Broken]].\n"
     );
     write_org(&dir.join("one.org"), &one);
     write_org(

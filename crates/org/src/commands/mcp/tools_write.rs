@@ -28,7 +28,7 @@ use super::schema::{finish_tool_call, optional_bool, require_non_empty_str};
 use super::McpSession;
 use crate::commands::MutationDetail;
 
-/// Resolves confined `locator` within `display_ws` / `canon_ws`, checking warm `MabuseCache` first.
+/// Resolves confined `locator` within `display_ws` / `canon_ws`, checking warm `WorkspaceCache` first.
 fn resolve_state_target(
     session: &McpSession,
     is_default: bool,
@@ -300,7 +300,7 @@ fn execute_state_mutation_pass(
     )
 }
 
-/// Executes `org_update_state`, invalidating and refreshing `MabuseCache` after disk mutations.
+/// Executes `org_update_state`, invalidating and refreshing `WorkspaceCache` after disk mutations.
 pub(super) fn exec_update_state(
     session: &mut McpSession,
     args: &Map<String, Value>,
@@ -392,7 +392,7 @@ fn parse_fmt_call_args(
     ))
 }
 
-/// Executes `org_fmt_file` on a confined `.org` file and refreshes `MabuseCache` when changed.
+/// Executes `org_fmt_file` on a confined `.org` file and refreshes `WorkspaceCache` when changed.
 pub(super) fn exec_fmt_file(
     session: &mut McpSession,
     args: &Map<String, Value>,

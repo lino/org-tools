@@ -8,7 +8,7 @@
 * Introduction
 :PROPERTIES:
 :CUSTOM_ID: intro
-:ID: intro-id
+:ID:        intro-id
 :END:
 
 This document exercises as many org-mode features as possible.
@@ -18,7 +18,7 @@ SCHEDULED: <2024-01-20 Sat>
 DEADLINE: <2024-02-01 Thu>
 :PROPERTIES:
 :CUSTOM_ID: high-priority
-:EFFORT: 2:00
+:EFFORT:    2:00
 :END:
 
 ** Sub-task 1
@@ -67,9 +67,9 @@ Also see [[https://orgmode.org][Org Mode website]].
 #+NAME: monthly-data
 | Month | Revenue | Expenses |
 |-------+---------+----------|
-| Jan   |   10000 |     7500 |
-| Feb   |   12000 |     8000 |
-| Mar   |   11500 |     7800 |
+| Jan   | 10000   | 7500     |
+| Feb   | 12000   | 8000     |
+| Mar   | 11500   | 7800     |
 
 #+BEGIN_SRC python :var data=monthly-data :results output
 for row in data:
@@ -98,8 +98,8 @@ Text with trailing whitespace
 More text with trailing tabs
 
 Table directly after text:
-|a|b|c|
-|d|e|f|
+| a | b | c |
+| d | e | f |
 
 ** No blank line before this heading
 *** Level gap here

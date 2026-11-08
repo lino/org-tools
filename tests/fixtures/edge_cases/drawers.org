@@ -2,7 +2,7 @@
 
 * Properly placed property drawer
 :PROPERTIES:
-:ID: proper-1
+:ID:        proper-1
 :CUSTOM_ID: proper
 :END:
 Body text.
@@ -39,11 +39,11 @@ Some text before the drawer.
 
 * Multiple properties to align
 :PROPERTIES:
-:ID: multi
+:ID:        multi
 :CUSTOM_ID: my-section
-:CATEGORY: testing
-:ARCHIVE: archive.org::
-:LOGGING: nil
+:CATEGORY:  testing
+:ARCHIVE:   archive.org::
+:LOGGING:   nil
 :END:
 
 * Single property (no alignment needed)

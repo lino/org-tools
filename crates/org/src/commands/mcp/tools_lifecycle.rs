@@ -108,7 +108,7 @@ fn confine_locator_str(raw: &str, display_ws: &Path, canon_ws: &Path) -> Result<
     Ok(trimmed.to_string())
 }
 
-/// Resolves a confined locator within `display_ws`, checking warm `MabuseCache` first for `id:`.
+/// Resolves a confined locator within `display_ws`, checking warm `WorkspaceCache` first for `id:`.
 fn resolve_confined_refile_locator(
     session: &McpSession,
     ctx: &RefileCallCtx,
@@ -200,7 +200,7 @@ fn execute_confined_refile(
     Ok((outcome, dest_file, modified_files))
 }
 
-/// Executes `org_refile`, enforcing workspace confinement and refreshing warm `MabuseCache`.
+/// Executes `org_refile`, enforcing workspace confinement and refreshing warm `WorkspaceCache`.
 pub(super) fn exec_refile(
     session: &mut McpSession,
     args: &Map<String, Value>,

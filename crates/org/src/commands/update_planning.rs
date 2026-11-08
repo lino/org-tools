@@ -15,7 +15,7 @@ use org_tools_core::planning::{set_planning_timestamp, PlanningKind};
 use org_tools_core::source::SourceFile;
 
 use super::{
-    filter_entries_by_query, format_stdin_content_error, invalidate_warm_mabuse_caches,
+    filter_entries_by_query, format_stdin_content_error, invalidate_warm_workspace_caches,
     looks_like_org_content, parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
 };
 use crate::commands::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
@@ -246,7 +246,7 @@ pub(crate) fn apply_planning_targets(
     if let Some(ws) = cache_ws {
         if !dry_run && !pending_writes.is_empty() {
             let pre_paths: Vec<PathBuf> = pending_writes.iter().map(|(p, _)| p.clone()).collect();
-            invalidate_warm_mabuse_caches(ws, &pre_paths);
+            invalidate_warm_workspace_caches(ws, &pre_paths);
         }
     }
     let modified_paths = commit_planning_writes(&mut mutation, pending_writes, dry_run);

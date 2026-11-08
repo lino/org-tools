@@ -122,7 +122,7 @@ Before cutting a production =vX.Y.Z= tag, validate both local manifest state and
    gh run download <run-id> --name release-telemetry --dir ./release-telemetry
    #+end_src
 
-* Observability (=Uhrenmaschine=): Metrics & JSONL Telemetry
+* Observability: Prometheus Metrics & JSONL Telemetry
 
 =scripts/verify-release-packages.sh= instruments every release and snapshot run with Prometheus exposition metrics and W3C-correlated JSONL events. Both are rendered directly in =$GITHUB_STEP_SUMMARY= and archived in the =release-telemetry= workflow artifact.
 

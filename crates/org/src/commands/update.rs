@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Subcommand entry module for `org update`, shared locator resolution, stdin helpers,
-//! warm `MabuseCache` invalidation, and dispatch.
+//! warm `WorkspaceCache` invalidation, and dispatch.
 
 #[path = "update_dep.rs"]
 mod update_dep;
@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 
-use org_tools_core::cache::MabuseCache;
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::{discover_workspace_root, normalize_workspace_path};
 use org_tools_core::files::collect_org_files;
@@ -180,7 +180,7 @@ pub(crate) fn filter_entries_by_query(
         .collect()
 }
 
-/// Finds the nearest non-temp ancestor of `file` containing `.cache/mabuse.db`.
+/// Finds the nearest non-temp ancestor of `file` containing `.cache/org-cache.db`.
 fn find_ancestor_with_cache(file: &Path) -> Option<PathBuf> {
     let temp_root = std::env::temp_dir();
     let temp_norm = normalize_workspace_path(&temp_root);
@@ -189,15 +189,15 @@ fn find_ancestor_with_cache(file: &Path) -> Option<PathBuf> {
         if ancestor.as_os_str().is_empty() || ancestor == temp_root || ancestor == temp_norm {
             break;
         }
-        if MabuseCache::resolve_db_path(ancestor).is_file() {
+        if WorkspaceCache::resolve_db_path(ancestor).is_file() {
             return Some(ancestor.to_path_buf());
         }
     }
     None
 }
 
-/// Invalidates `modified_paths` in any existing `.cache/mabuse.db` without auto-creating cold caches.
-pub(crate) fn invalidate_warm_mabuse_caches(
+/// Invalidates `modified_paths` in any existing `.cache/org-cache.db` without auto-creating cold caches.
+pub(crate) fn invalidate_warm_workspace_caches(
     explicit_ws: Option<&Path>,
     modified_paths: &[PathBuf],
 ) {
@@ -215,8 +215,8 @@ pub(crate) fn invalidate_warm_mabuse_caches(
         }
     }
     for ws_root in candidate_roots {
-        if MabuseCache::resolve_db_path(&ws_root).is_file() {
-            if let Ok((mut cache, _)) = MabuseCache::open_and_sync(&ws_root) {
+        if WorkspaceCache::resolve_db_path(&ws_root).is_file() {
+            if let Ok((mut cache, _)) = WorkspaceCache::open_and_sync(&ws_root) {
                 let _ = cache.invalidate_paths(modified_paths);
             }
         }

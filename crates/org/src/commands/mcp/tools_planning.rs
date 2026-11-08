@@ -197,7 +197,7 @@ fn evaluate_agenda_payload(
     }))
 }
 
-/// Executes `org_query_agenda` over `stdio` with warm `MabuseCache` telemetry.
+/// Executes `org_query_agenda` over `stdio` with warm `WorkspaceCache` telemetry.
 pub(super) fn exec_query_agenda(
     session: &mut McpSession,
     args: &Map<String, Value>,
@@ -324,7 +324,7 @@ fn parse_planning_call_ctx(
     })
 }
 
-/// Attempts a fast-path `id:<uuid>` heading lookup through the warm `MabuseCache`.
+/// Attempts a fast-path `id:<uuid>` heading lookup through the warm `WorkspaceCache`.
 fn try_resolve_cached_id(
     session: &McpSession,
     ctx: &PlanningCallCtx,
@@ -407,7 +407,7 @@ fn run_planning_mutation_pass(
     Ok((res, modified))
 }
 
-/// Executes `org_update_planning`, invalidating and refreshing warm `MabuseCache` entries.
+/// Executes `org_update_planning`, invalidating and refreshing warm `WorkspaceCache` entries.
 pub(super) fn exec_update_planning(
     session: &mut McpSession,
     args: &Map<String, Value>,

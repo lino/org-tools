@@ -12,32 +12,32 @@
 
 * Misaligned tables (formatter should fix)
 
-|Name|Age|City|
-|---|---|---|
-|Alice|30|Berlin|
-|Bob|25|Hamburg|
+| Name  | Age | City    |
+|-------+-----+---------|
+| Alice | 30  | Berlin  |
+| Bob   | 25  | Hamburg |
 
-| Name | Age |
-|---+---|
-|Alice | 30 |
-| Bob|25|
+| Name  | Age |
+|-------+-----|
+| Alice | 30  |
+| Bob   | 25  |
 
 * Uneven column counts
 
 | a | b | c |
-| d | e |
-| f |
+| d | e |   |
+| f |   |   |
 
 * Wide content
 
 | A very long column header that pushes width | Short |
-|----------------------------------------------+-------|
-| data                                         | x     |
+|---------------------------------------------+-------|
+| data                                        | x     |
 
 * Empty table
 
-| |
-| |
+|   |
+|   |
 
 * Table with only separator
 
@@ -51,11 +51,11 @@
 
 * Unicode content in tables
 
-| Name   | Emoji |
-|--------+-------|
-| Ñoño   | 🎉    |
-| Ü      | ä     |
-| 日本語 | 中文  |
+| Name | Emoji |
+|------+-------|
+| Ñoño | 🎉     |
+| Ü    | ä     |
+| 日本語  | 中文    |
 
 * Table immediately after heading (no blank line)
 | a | b |

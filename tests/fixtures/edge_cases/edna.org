@@ -12,7 +12,7 @@ This task must be completed before the second one.
 
 ** TODO Second task (blocked)
 :PROPERTIES:
-:ID: edna-task-2
+:ID:      edna-task-2
 :BLOCKER: ids(edna-task-1)
 :END:
 This task is blocked until edna-task-1 is DONE.
@@ -22,7 +22,7 @@ An entry that triggers a state change on another entry upon completion.
 
 ** TODO Trigger source
 :PROPERTIES:
-:ID: edna-trigger-src
+:ID:      edna-trigger-src
 :TRIGGER: ids(edna-trigger-tgt) todo!(TODO)
 :END:
 When this is marked DONE, the target switches to TODO.

@@ -406,9 +406,9 @@ fn slice3_tricky_titles_pass_org_fmt_check_and_render_clean_markdown() {
 
 // region Slice 4: JSON Schema Contract & Warm Cache Telemetry
 
-/// Verifies `org schema agenda`, JSON validation (plain & composite), and warm `.cache/mabuse.db` sync.
+/// Verifies `org schema agenda`, JSON validation (plain & composite), and warm `.cache/org-cache.db` sync.
 #[test]
-fn slice4_json_conforms_to_schema_and_syncs_only_existing_mabuse_cache() {
+fn slice4_json_conforms_to_schema_and_syncs_only_existing_workspace_cache() {
     let (schema_raw, _) = assert_org_code(&["schema", "agenda"], EXIT_OK);
     let (alias_raw, _) = assert_org_code(&["schema", "org-agenda-output"], EXIT_OK);
     assert_eq!(schema_raw, alias_raw);
@@ -419,7 +419,7 @@ fn slice4_json_conforms_to_schema_and_syncs_only_existing_mabuse_cache() {
     let ws = ws_dir.path();
 
     let plain_raw = agenda_ok(ws, "--from 2026-06-10 --days 14 --format json");
-    assert!(!join_slash_rel(ws, ".cache/mabuse.db").exists());
+    assert!(!join_slash_rel(ws, ".cache/org-cache.db").exists());
     let plain_val: Value = serde_json::from_str(&plain_raw).expect("valid plain JSON");
     validate_schema_node(&plain_val, &schema, &schema).expect("plain JSON matches schema");
     assert!(plain_val.get("composite").is_none());
@@ -428,7 +428,7 @@ fn slice4_json_conforms_to_schema_and_syncs_only_existing_mabuse_cache() {
     assert_eq!(plain_val["telemetry"]["cache_misses"], 1);
 
     assert_org_code(&["cache", "rebuild", ws.to_str().unwrap()], EXIT_OK);
-    assert!(join_slash_rel(ws, ".cache/mabuse.db").is_file());
+    assert!(join_slash_rel(ws, ".cache/org-cache.db").is_file());
 
     let comp_raw = agenda_ok(ws, "--from 2026-06-10 --days 14 --composite --format json");
     let comp_val: Value = serde_json::from_str(&comp_raw).expect("valid composite JSON");

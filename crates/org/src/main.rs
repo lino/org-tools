@@ -59,7 +59,7 @@ struct Cli {
     #[arg(long, value_enum)]
     completions: Option<Shell>,
 
-    /// Bypass the `.cache/mabuse.db` SQLite index and parse `.org` files directly.
+    /// Bypass the `.cache/org-cache.db` SQLite index and parse `.org` files directly.
     #[arg(long, global = true)]
     no_cache: bool,
 }
@@ -107,7 +107,7 @@ enum OrgCommand {
         #[command(subcommand)]
         command: RoamCommand,
     },
-    /// Inspect, rebuild, or clear the Mabuse SQLite + FTS5 workspace cache.
+    /// Inspect, rebuild, or clear the SQLite + FTS5 workspace cache.
     Cache {
         /// Cache management subcommand.
         #[command(subcommand)]

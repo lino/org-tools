@@ -1096,7 +1096,7 @@ fn calc_json_output() {
 }
 
 // ---------------------------------------------------------------------------
-// ORGFMT-WP-02: Uniform MutationResult JSON, Property/Tag Setters, Stempelamt
+// ORGFMT-WP-02: Uniform MutationResult JSON, Property/Tag Setters, Deterministic IDs
 // ---------------------------------------------------------------------------
 
 /// Validates that a JSON value conforms to `org-mutation-output.schema.json`.
@@ -1303,14 +1303,14 @@ fn slice3_set_tags_cli_aligns_and_clears() {
         .success();
 }
 
-/// Verifies Stempelamt golden vectors 1 and 2 via `org update add-id --deterministic`.
+/// Verifies deterministic UUIDv5 golden vectors 1 and 2 via `org update add-id --deterministic`.
 #[test]
-fn slice4_stempelamt_deterministic_add_id_golden_vectors() {
+fn slice4_deterministic_add_id_golden_vectors() {
     let dir = TempDir::new().unwrap();
-    let f1 = dir.path().join("wp.org");
+    let f1 = dir.path().join("tasks.org");
     fs::write(
         &f1,
-        "* TODO Execute WP\n:PROPERTIES:\n:CUSTOM_ID: FRITZ-WP-01\n:END:\n",
+        "* TODO Execute task\n:PROPERTIES:\n:CUSTOM_ID: ORG-TASK-01\n:END:\n",
     )
     .unwrap();
     org()
@@ -1319,23 +1319,23 @@ fn slice4_stempelamt_deterministic_add_id_golden_vectors() {
             "add-id",
             "--deterministic",
             "--scope",
-            "fritz",
+            "core",
             "--kind",
-            "wp",
+            "task",
             f1.to_str().unwrap(),
         ])
         .assert()
         .success();
     let c1 = fs::read_to_string(&f1).unwrap();
-    assert!(c1.contains("cbba66ec-baff-5eb9-b0d3-4e38f56ebcd9"));
-    assert!(c1.contains("urn:babelsberg:fritz:wp:fritz-wp-01"));
+    assert!(c1.contains("eb32a5a1-a982-5f20-a264-1c0657b69171"));
+    assert!(c1.contains("urn:org:core:task:org-task-01"));
     org()
         .args(["fmt", "check"])
         .arg(f1.to_str().unwrap())
         .assert()
         .success();
 
-    let f2 = dir.path().join("jira.org");
+    let f2 = dir.path().join("issues.org");
     fs::write(&f2, "* ORGFMT-101\n").unwrap();
     org()
         .args([
@@ -1345,25 +1345,25 @@ fn slice4_stempelamt_deterministic_add_id_golden_vectors() {
             "--scope",
             "orgfmt",
             "--kind",
-            "jira",
+            "issue",
             f2.to_str().unwrap(),
         ])
         .assert()
         .success();
     let c2 = fs::read_to_string(&f2).unwrap();
-    assert!(c2.contains("9472f8df-1ad0-53bb-baac-dce22a6b1821"));
-    assert!(c2.contains("urn:babelsberg:orgfmt:jira:orgfmt-101"));
+    assert!(c2.contains("e903bb85-3326-5094-8a57-f598003bf5c1"));
+    assert!(c2.contains("urn:org:orgfmt:issue:orgfmt-101"));
 }
 
-/// Verifies author-scoped Stempelamt golden vectors 3 & 4 and env var overrides.
+/// Verifies author-scoped deterministic UUIDv5 golden vectors 3 & 4 and env var overrides.
 #[test]
-fn slice4_stempelamt_author_vectors_and_env_overrides() {
+fn slice4_deterministic_author_vectors_and_env_overrides() {
     let dir = TempDir::new().unwrap();
     for (author, expected_id) in [
-        ("alice", "2d68a2b3-33ca-574f-a339-e55515473106"),
-        ("bob", "cb9854df-43a7-566f-8476-67333b5deec2"),
+        ("alice", "e49367db-0dc6-5641-a0bc-963456dd0d7f"),
+        ("bob", "b6efcd06-ea6b-5bfb-aecf-573171a84005"),
     ] {
-        let f = dir.path().join(format!("finding_{author}.org"));
+        let f = dir.path().join(format!("note_{author}.org"));
         fs::write(&f, "* 20261106-cache-race\n").unwrap();
         let p = f.to_str().unwrap();
         let args = [
@@ -1371,9 +1371,9 @@ fn slice4_stempelamt_author_vectors_and_env_overrides() {
             "add-id",
             "--deterministic",
             "--scope",
-            "fritz",
+            "core",
             "--kind",
-            "finding",
+            "note",
             "--author",
             author,
             p,
@@ -1395,7 +1395,7 @@ fn slice4_stempelamt_author_vectors_and_env_overrides() {
         f5.to_str().unwrap(),
     ];
     org()
-        .env("BABELSBERG_ID_PREFIX", "urn:acme")
+        .env("ORG_ID_PREFIX", "urn:acme")
         .args(env_args)
         .assert()
         .success();
@@ -1451,16 +1451,16 @@ fn slice4_add_todo_deterministic_properties_and_body_fmt_clean() {
         .args([
             "update",
             "add-todo",
-            "Support Stempelamt",
+            "Support Deterministic IDs",
             file.to_str().unwrap(),
             "--tags",
-            "core,stempelamt",
+            "core,identity",
             "--id",
             "deterministic",
             "--scope",
             "orgfmt",
             "--kind",
-            "jira",
+            "issue",
             "--property",
             "CUSTOM_ID=ORGFMT-101",
             "--property",
@@ -1480,8 +1480,8 @@ fn slice4_add_todo_deterministic_properties_and_body_fmt_clean() {
     assert_eq!(json["entries_affected"], 1);
 
     let content = fs::read_to_string(&file).unwrap();
-    assert!(content.contains("9472f8df-1ad0-53bb-baac-dce22a6b1821"));
-    assert!(content.contains("urn:babelsberg:orgfmt:jira:orgfmt-101"));
+    assert!(content.contains("e903bb85-3326-5094-8a57-f598003bf5c1"));
+    assert!(content.contains("urn:org:orgfmt:issue:orgfmt-101"));
     assert!(content.contains(":EFFORT:    2:00"));
     assert!(content.contains("Deterministic RFC 9562 UUIDv5 minting with :ID_SEED: provenance."));
 

@@ -28,9 +28,7 @@
 
 * Cutting a Release
 
-Use =scripts/release.sh= (or =mise run release X.Y.Z=) to synchronize workspace
-manifests, re-run verification checks, create the release commit, tag =vX.Y.Z=,
-and push to =origin=:
+Run =scripts/release.sh= (or =mise run release X.Y.Z=) to synchronize workspace manifests and re-run verification checks. The script creates the release commit, tags =vX.Y.Z=, and pushes to =origin=:
 
 #+begin_src sh
 bash scripts/release.sh X.Y.Z
@@ -40,42 +38,28 @@ Passing =--yes= skips the interactive confirmation prompt for automated runs.
 
 * Automated GoReleaser v2 Pipeline
 
-Pushing a =vX.Y.Z= tag (or triggering =workflow_dispatch= for a snapshot dry-run)
-runs =.github/workflows/release.yml=:
+Pushing a =vX.Y.Z= tag (or triggering =workflow_dispatch= for a snapshot dry-run) runs =.github/workflows/release.yml=:
 
-1. *Validate job*: checks Rust formatting, Clippy lints, full test suite, Org
-   documentation formatting, edge-case smoke tests, and tag-to-=Cargo.toml=
-   version parity.
+1. *Validate job*: checks Rust formatting, Clippy lints, full test suite, Org documentation formatting, edge-case smoke tests, and manifest version parity.
 2. *GoReleaser v2 multi-arch packaging* (=.goreleaser.yaml=):
-   - Builds =aarch64= and =x86_64= release binaries for macOS (Darwin), static
-     =musl= Linux (=cargo-zigbuild=), and Windows MSVC (=cargo-xwin=).
-   - Generates =bash=, =zsh=, and =fish= completions (=scripts/build-completions.sh=)
-     and bundles them into =.tar.gz= / =.zip= archives plus =checksums.txt=.
-   - Builds Linux =.deb= and =.rpm= system packages via GoReleaser nFPM.
-   - Renders and publishes the =org-tools= Cask to =lino/homebrew-tap= when
-     =HOMEBREW_TAP_GITHUB_TOKEN= is configured (see
-     [[file:homebrew-tap.org][Homebrew Tap Operations]] and
-     [[file:installation.org][Installation Guide]]).
-   - Verifies all release artifacts and emits Prometheus / JSONL telemetry via
-     =scripts/verify-release-packages.sh=.
+   - Builds =aarch64= and =x86_64= release binaries for macOS (Darwin), static =musl= Linux (=cargo-zigbuild=), and Windows MSVC (=cargo-xwin=).
+   - Generates =bash=, =zsh=, and =fish= completions (=scripts/build-completions.sh=).
+   - Bundles completions and Unix =roff= manpages (=man/org.1= and =man/org-tools.toml.5=) into =.tar.gz= / =.zip= archives plus =checksums.txt=.
+   - Builds Linux =.deb= and =.rpm= system packages via GoReleaser nFPM (including =/usr/share/man/man1/org.1= and =/usr/share/man/man5/org-tools.toml.5=).
+   - Renders and publishes the =org-tools= Cask to =lino/homebrew-tap= when =HOMEBREW_TAP_GITHUB_TOKEN= is configured (see [[file:homebrew-tap.org][Homebrew Tap Operations]] and [[file:installation.org][Installation Guide]]).
+   - Verifies all release artifacts, manpages, and checksums while emitting Prometheus / JSONL telemetry via =scripts/verify-release-packages.sh=.
 3. *Optional =crates.io= publish gate*:
-   - When =CARGO_REGISTRY_TOKEN= is configured on a =v*= tag push, publishes
-     =org-tools-core= followed by =org-tools=.
-   - When =CARGO_REGISTRY_TOKEN= is unset (or during snapshot =workflow_dispatch=
-     runs), the job logs a GitHub Actions notice and exits =0= cleanly without
-     blocking GitHub Releases or Homebrew tap updates.
+   - When =CARGO_REGISTRY_TOKEN= is configured on a =v*= tag push, publishes =org-tools-core= followed by =org-tools=.
+   - When =CARGO_REGISTRY_TOKEN= is unset (or during snapshot =workflow_dispatch= runs), the job logs a notice and exits =0= cleanly.
 4. *GHCR multi-arch container publish* (=publish-container= job):
-   - Builds the multi-stage =Dockerfile= for =linux/amd64= and =linux/arm64= via
-     Docker Buildx and pushes =ghcr.io/lino/org-tools:<version>=,
-     =:<major>.<minor>=, =:<major>=, and =:latest= using =GITHUB_TOKEN=
-     (=packages: write=).
-   - Snapshot =workflow_dispatch= runs verify the multi-arch Buildx build
-     without pushing tags to =ghcr.io=.
+   - Builds the multi-stage =Dockerfile= for =linux/amd64= and =linux/arm64= via Docker Buildx.
+   - Pushes =ghcr.io/lino/org-tools:<version>=, =:<major>.<minor>=, =:<major>=, and =:latest= using =GITHUB_TOKEN= (=packages: write=).
+   - Snapshot =workflow_dispatch= runs verify the multi-arch Buildx build without pushing tags to =ghcr.io=.
 
 * Post-release Checklist
 
 - [ ] Verify GitHub Actions =Release= workflow succeeded and uploaded =release-telemetry=
 - [ ] Verify GitHub Release page lists multi-OS archives, =.deb= / =.rpm= packages, and =checksums.txt=
 - [ ] Verify =docker run --rm ghcr.io/lino/org-tools:vX.Y.Z --version= resolves the published multi-arch GHCR image
-- [ ] Verify =brew install --cask lino/tap/org-tools= installs =vX.Y.Z= when tap publishing is enabled
+- [ ] Verify =brew install --cask lino/tap/org-tools= installs =vX.Y.Z=, =man 1 org=, and =man 5 org-tools.toml=
 - [ ] Verify =crates.io= shows =vX.Y.Z= if =CARGO_REGISTRY_TOKEN= is configured

@@ -5,7 +5,7 @@
 
 * Homebrew Tap (macOS & Linux — Recommended)
 
-Install the prebuilt =org= binary and shell completions (=bash=, =zsh=, =fish=) directly from the official Homebrew tap — no Rust toolchain required:
+Install the prebuilt =org= binary, shell completions, and Unix manual pages (=man 1 org=, =man 5 org-tools.toml=) via Homebrew:
 
 #+begin_src sh
 brew install --cask lino/tap/org-tools
@@ -17,11 +17,11 @@ To upgrade to the latest release:
 brew upgrade --cask lino/tap/org-tools
 #+end_src
 
-On macOS, the Cask post-install hook automatically clears the =com.apple.quarantine= extended attribute so the unsigned open-source binary runs immediately without Gatekeeper prompts. Operators maintaining the tap can consult [[file:homebrew-tap.org]].
+On macOS, the Cask post-install hook clears the =com.apple.quarantine= extended attribute automatically. The unsigned open-source binary runs immediately without Gatekeeper prompts. Operators maintaining the tap can consult [[file:homebrew-tap.org]].
 
 * Container Image (Docker / Podman via GHCR — Zero Local Toolchain)
 
-Run =org= directly from GitHub Container Registry (=ghcr.io/lino/org-tools=) without installing Rust, Emacs, or any host packages. Multi-architecture images (=linux/amd64= and =linux/arm64=) are published automatically on =main= and on every =vX.Y.Z= release:
+Run =org= directly from GitHub Container Registry (=ghcr.io/lino/org-tools=) without installing Rust, Emacs, or host packages. Multi-architecture images (=linux/amd64= and =linux/arm64=) publish automatically on =main= and on every =vX.Y.Z= release:
 
 #+begin_src sh
 # Pull the latest image
@@ -46,11 +46,11 @@ docker run --rm -v "$PWD:/workspace" org-tools:local --version
 
 * Linux System Packages (=.deb= & =.rpm=)
 
-Every [[https://github.com/lino/org-tools/releases][GitHub Release]] publishes static =musl= Linux packages containing =/usr/bin/org=, shell completions, and license documentation.
+Every [[https://github.com/lino/org-tools/releases][GitHub Release]] publishes static =musl= Linux packages containing =/usr/bin/org=, shell completions, =/usr/share/man/man1/org.1=, =/usr/share/man/man5/org-tools.toml.5=, and license documentation.
 
 ** Debian & Ubuntu (=.deb=)
 
-Download the =.deb= package for your CPU architecture (=amd64= or =arm64=) alongside =checksums.txt=, verify the SHA-256 digest, and install with =dpkg=:
+Download the =.deb= package for your CPU architecture (=amd64= or =arm64=) alongside =checksums.txt=. Verify the SHA-256 digest and install with =dpkg=:
 
 #+begin_src sh
 # Verify SHA-256 checksum before installing
@@ -65,7 +65,7 @@ sudo dpkg -i org-tools_<ver>_linux_arm64.deb
 
 ** Fedora, RHEL & openSUSE (=.rpm=)
 
-Download the =.rpm= package for your CPU architecture alongside =checksums.txt=, verify the SHA-256 digest, and install with =rpm= (or =dnf=):
+Download the =.rpm= package for your CPU architecture alongside =checksums.txt=. Verify the SHA-256 digest and install with =rpm= (or =dnf=):
 
 #+begin_src sh
 # Verify SHA-256 checksum before installing
@@ -78,11 +78,11 @@ sudo rpm -Uvh org-tools-<ver>-1.x86_64.rpm
 sudo rpm -Uvh org-tools-<ver>-1.aarch64.rpm
 #+end_src
 
-Note: Depending on the GoReleaser nFPM archive naming convention in a given release, the RPM asset may also appear as =org-tools_<ver>_linux_amd64.rpm= or =org-tools_<ver>_linux_arm64.rpm=; always verify against =checksums.txt=.
+GoReleaser nFPM may also name RPM assets =org-tools_<ver>_linux_amd64.rpm= or =org-tools_<ver>_linux_arm64.rpm=. Always verify filenames against =checksums.txt=.
 
 * Prebuilt Archives (macOS, Linux & Windows)
 
-Prebuilt release archives bundle =org= (or =org.exe=), =LICENSE=, =README.org=, and =completions/= for all six supported targets:
+Prebuilt release archives bundle =org= (or =org.exe=), =LICENSE=, =README.org=, =completions/=, =man/org.1=, and =man/org-tools.toml.5= for all six targets:
 
 | Platform              | Target Triple                | Archive Asset                         |
 |-----------------------+------------------------------+---------------------------------------|
@@ -102,11 +102,14 @@ sha256sum -c checksums.txt
 # Or on macOS when verifying a single downloaded archive
 shasum -a 256 --ignore-missing -c checksums.txt
 
-# Extract and place `org` on your PATH (override INSTALL_BIN_DIR as needed)
+# Extract and place `org` and Unix manpages on your PATH / MANPATH
 INSTALL_BIN_DIR="${INSTALL_BIN_DIR:-$HOME/.local/bin}"
-mkdir -p "$INSTALL_BIN_DIR"
+INSTALL_MAN_DIR="${INSTALL_MAN_DIR:-$HOME/.local/share/man}"
+mkdir -p "$INSTALL_BIN_DIR" "$INSTALL_MAN_DIR/man1" "$INSTALL_MAN_DIR/man5"
 tar -xzf org-tools_<ver>_<os>_<arch>.tar.gz
 install -m 0755 org "$INSTALL_BIN_DIR/org"
+install -m 0644 man/org.1 "$INSTALL_MAN_DIR/man1/org.1"
+install -m 0644 man/org-tools.toml.5 "$INSTALL_MAN_DIR/man5/org-tools.toml.5"
 #+end_src
 
 If you downloaded a macOS =.tar.gz= in a browser, clear the quarantine attribute before first execution:
@@ -152,9 +155,9 @@ mise run build      # cargo build
 mise run install    # installs `org` into ~/.cargo/bin (override with CARGO_INSTALL_ROOT)
 #+end_src
 
-* Shell Completions
+* Shell Completions & Manual Pages
 
-Homebrew Cask and =.deb=/=.rpm= packages install shell completions automatically. When installing from Cargo, source, or a standalone archive, generate completions directly from the =org= binary into your preferred completion directory:
+Homebrew Cask and =.deb=/=.rpm= packages install shell completions and Unix =roff= manpages automatically. For source or Cargo installs, generate completions from =org= and copy =man/org.1= and =man/org-tools.toml.5=:
 
 #+begin_src sh
 # Bash (user-local completion path)
@@ -175,6 +178,8 @@ org --completions fish > "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/org
 #+begin_src sh
 org --version
 org --help
+man 1 org
+man 5 org-tools.toml
 org fmt check --help
 org query search --help
 org clock report --help

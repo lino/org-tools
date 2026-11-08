@@ -1,18 +1,18 @@
 #+TITLE: org-tools — Homebrew Tap & Release Pipeline Runbook
 #+OPTIONS: toc:2
 
-Operational runbook for bootstrapping and maintaining the =lino/homebrew-tap= repository, rotating least-privilege tokens, running pre-release snapshot checks, and troubleshooting =org-tools= release telemetry. End-user installation commands are documented in [[file:installation.org]].
+Operational runbook for bootstrapping and maintaining the =lino/homebrew-tap= repository, rotating least-privilege tokens, and verifying release telemetry. End-user installation commands are documented in [[file:installation.org]].
 
 * Release Pipeline Architecture
 
-Pushing a =v*= tag (or triggering a manual =workflow_dispatch= snapshot run) executes =.github/workflows/release.yml=. The =release-packages= job and the optional =publish-crates= gate run in parallel after =validate= succeeds, ensuring missing or unconfigured crates.io credentials never block GitHub Releases, Linux =.deb=/=.rpm= packages, or Homebrew Cask updates.
+Pushing a =v*= tag (or triggering a manual =workflow_dispatch= snapshot run) executes =.github/workflows/release.yml=. The =release-packages= job and the optional =publish-crates= gate run in parallel after =validate= succeeds. Missing or unconfigured crates.io credentials never block GitHub Releases, Linux =.deb=/=.rpm= packages, or Homebrew Cask updates.
 
 #+begin_src mermaid :file release-pipeline.png
 flowchart TD
     Trigger["Trigger: git tag v* or workflow_dispatch"] --> Validate["Job: validate (ubuntu-latest: fmt, clippy, test, org fmt check)"]
     Validate --> ReleasePackages["Job: release-packages (macos-latest: 6 Rust targets + GoReleaser v2)"]
     Validate --> PublishCrates["Job: publish-crates (ubuntu-latest: optional CARGO_REGISTRY_TOKEN gate)"]
-    ReleasePackages --> VerifyDist["scripts/verify-release-packages.sh (SHA-256, .deb/.rpm, Cask)"]
+    ReleasePackages --> VerifyDist["scripts/verify-release-packages.sh (SHA-256, .deb/.rpm, Cask, manpages)"]
     VerifyDist --> GitHubRelease["GitHub Release Assets + checksums.txt"]
     VerifyDist --> HomebrewTap["lino/homebrew-tap (Casks/org-tools.rb)"]
     VerifyDist --> Telemetry["GITHUB_STEP_SUMMARY + release-telemetry (Prometheus & JSONL)"]
@@ -22,7 +22,7 @@ flowchart TD
 
 * Bootstrapping =lino/homebrew-tap=
 
-Homebrew resolves =brew install --cask lino/tap/org-tools= to the GitHub repository =https://github.com/lino/homebrew-tap= and looks up =Casks/org-tools.rb=.
+Homebrew resolves =brew install --cask lino/tap/org-tools= to =https://github.com/lino/homebrew-tap= and looks up =Casks/org-tools.rb=.
 
 Perform this one-time bootstrap if =lino/homebrew-tap= does not yet exist:
 
@@ -52,7 +52,7 @@ Perform this one-time bootstrap if =lino/homebrew-tap= does not yet exist:
    git push -u origin main
    #+end_src
 
-During tagged releases, GoReleaser renders =Casks/org-tools.rb= from =.goreleaser.yaml= (=homebrew_casks=) and commits it directly to =lino/homebrew-tap=.
+During tagged releases, GoReleaser renders =Casks/org-tools.rb= (with =org=, shell completions, =man/org.1=, and =man/org-tools.toml.5=) and commits it to =lino/homebrew-tap=.
 
 * Least-Privilege =HOMEBREW_TAP_GITHUB_TOKEN= Setup & Rotation
 
@@ -72,7 +72,7 @@ Never use a classic =repo=-scoped Personal Access Token. Create a GitHub Fine-Gr
    gh secret set HOMEBREW_TAP_GITHUB_TOKEN --repo lino/org-tools
    #+end_src
 
-When =HOMEBREW_TAP_GITHUB_TOKEN= is empty or unset, =.goreleaser.yaml= evaluates =skip_upload= to =true=: GoReleaser still renders and validates =dist/homebrew/Casks/org-tools.rb= locally and uploads GitHub Release archives, while cleanly skipping the remote push to =lino/homebrew-tap=.
+When =HOMEBREW_TAP_GITHUB_TOKEN= is empty or unset, =.goreleaser.yaml= evaluates =skip_upload= to =true=. GoReleaser still renders =dist/homebrew/Casks/org-tools.rb= locally and uploads GitHub Release archives while skipping the remote tap push.
 
 ** Zero-Downtime Token Rotation
 
@@ -86,7 +86,7 @@ When =HOMEBREW_TAP_GITHUB_TOKEN= is empty or unset, =.goreleaser.yaml= evaluates
 
 * Optional =CARGO_REGISTRY_TOKEN= & Pipeline Configuration
 
-Crates.io publishing is isolated in the =publish-crates= job (=needs: validate=), completely decoupled from =release-packages=:
+Crates.io publishing runs in the isolated =publish-crates= job (=needs: validate=), completely decoupled from =release-packages=:
 
 - *When =CARGO_REGISTRY_TOKEN= is unset or empty*: =publish-crates= emits =::notice::CARGO_REGISTRY_TOKEN is not configured; skipping crates.io publish.= and exits =0=.
 - *When =CARGO_REGISTRY_TOKEN= is configured on a =v*= tag*: =publish-crates= publishes =org-tools-core= first and then =org-tools=.
@@ -111,7 +111,7 @@ Before cutting a production =vX.Y.Z= tag, validate both local manifest state and
    ./scripts/release.sh --dry-run 0.2.0
    #+end_src
 
-2. *Remote =workflow_dispatch= snapshot build* on =main= (runs =goreleaser release --snapshot --clean= across all 6 Darwin, Linux =musl=, and Windows MSVC targets, then validates =dist/= via =scripts/verify-release-packages.sh=):
+2. *Remote =workflow_dispatch= snapshot build* on =main= (runs =goreleaser release --snapshot --clean= and validates =dist/= via =scripts/verify-release-packages.sh=):
    #+begin_src sh
    gh workflow run release.yml --repo lino/org-tools -f snapshot_note="pre-release verification"
    #+end_src
@@ -124,7 +124,7 @@ Before cutting a production =vX.Y.Z= tag, validate both local manifest state and
 
 * Observability: Prometheus Metrics & JSONL Telemetry
 
-=scripts/verify-release-packages.sh= instruments every release and snapshot run with Prometheus exposition metrics and W3C-correlated JSONL events. Both are rendered directly in =$GITHUB_STEP_SUMMARY= and archived in the =release-telemetry= workflow artifact.
+=scripts/verify-release-packages.sh= instruments every release and snapshot run with Prometheus exposition metrics and W3C-correlated JSONL events. Both appear in =$GITHUB_STEP_SUMMARY= and inside the =release-telemetry= workflow artifact.
 
 ** Prometheus Metrics (=orgfmt_release_*=)
 
@@ -137,7 +137,7 @@ Before cutting a production =vX.Y.Z= tag, validate both local manifest state and
 
 ** Inspecting =FRITZ_TRACE_ID= JSONL Events
 
-Every event in =release-events.jsonl= carries =timestamp=, =event=, =package=, =tap=, =trace_id= (populated from =FRITZ_TRACE_ID=), =status=, =verified_count=, =failed_count=, =duration_seconds=, and =message=:
+Every event in =release-events.jsonl= carries =timestamp=, =event=, =package=, =tap=, =trace_id= (from =FRITZ_TRACE_ID=), =status=, =verified_count=, =failed_count=, =duration_seconds=, and =message=:
 
 #+begin_src sh
 # Filter failed checks or correlate by FRITZ_TRACE_ID
@@ -150,22 +150,24 @@ jq --arg tid "$FRITZ_TRACE_ID" 'select(.trace_id == $tid)' ./release-telemetry/r
 ** Checksum Mismatch or Missing Artifact (=orgfmt_release_verification_success == 0=)
 
 - *Symptom*: =release-packages= fails during =verify-release-packages.sh=; =orgfmt_release_artifacts_verified_total{status="failed"} > 0=.
-- *Diagnosis*: Inspect =release.check.failed= lines in =release-events.jsonl= or stderr output in the GitHub Actions log to identify whether a target archive/=.deb=/=.rpm= is missing or a SHA-256 digest in =checksums.txt= failed verification.
-- *Resolution*: Ensure =.goreleaser.yaml= builder IDs (=org-darwin=, =org-linux=, =org-windows=) match =archives.ids= and =nfpms.ids=, verify =zig= / =cargo-zigbuild= / =cargo-xwin= step logs, and re-run from a clean =dist/= directory (=--clean=).
+- *Diagnosis*: Inspect =release.check.failed= lines in =release-events.jsonl= to check for missing archives, =.deb=/=.rpm= packages, manpages, or bad =checksums.txt= digests.
+- *Resolution*: Match =.goreleaser.yaml= builder IDs (=org-darwin=, =org-linux=, =org-windows=) with =archives.ids= and =nfpms.ids=, then rebuild with =--clean=.
 
 ** Expired or Mis-Scoped =HOMEBREW_TAP_GITHUB_TOKEN= (=401= / =403= on Tap Push)
 
-- *Symptom*: GoReleaser builds and uploads GitHub Release archives, then fails while pushing =Casks/org-tools.rb= to =lino/homebrew-tap= with =401 Bad credentials= or =403 Resource not accessible by personal access token=.
+- *Symptom*: GoReleaser uploads GitHub Release archives, then fails pushing =Casks/org-tools.rb= to =lino/homebrew-tap= with =401= or =403=.
 - *Diagnosis*: The fine-grained PAT in =HOMEBREW_TAP_GITHUB_TOKEN= has expired, targets the wrong repository, or lacks *Contents: Read and write*.
-- *Resolution*: Rotate =HOMEBREW_TAP_GITHUB_TOKEN= following *Zero-Downtime Token Rotation* above, then re-run the failed =release-packages= job (or commit the verified =Casks/org-tools.rb= from =dist/homebrew/Casks/org-tools.rb= to =lino/homebrew-tap=).
+- *Resolution*: Rotate =HOMEBREW_TAP_GITHUB_TOKEN= using *Zero-Downtime Token Rotation* above, then re-run =release-packages= or commit =dist/homebrew/Casks/org-tools.rb=.
 
 ** macOS Gatekeeper Quarantine (=com.apple.quarantine=)
 
 - *Symptom*: macOS blocks execution with ="org" cannot be opened because Apple cannot check it for malicious software=.
-- *Diagnosis*: Either the user downloaded a raw =.tar.gz= archive via a web browser (which attaches =com.apple.quarantine=), or the Cask =hooks.post.install= block in =.goreleaser.yaml= was altered.
+- *Diagnosis*: Either a web browser download attached =com.apple.quarantine=, or the Cask =hooks.post.install= block in =.goreleaser.yaml= changed.
 - *Resolution*:
-  1. For Homebrew users, verify =dist/homebrew/Casks/org-tools.rb= contains ~xattr -dr com.apple.quarantine "#{staged_path}/org"~ (enforced automatically by =verify-release-packages.sh=) and run =brew reinstall --cask lino/tap/org-tools=.
-  2. For manual archive installs, clear the extended attribute directly:
+  1. For Homebrew users, verify =dist/homebrew/Casks/org-tools.rb= contains ~xattr -dr com.apple.quarantine "#{staged_path}/org"~ and run =brew reinstall --cask lino/tap/org-tools=.
+  2. For manual archive installs, clear the extended attribute directly and verify the installed manpages:
      #+begin_src sh
      xattr -dr com.apple.quarantine "$(command -v org)"
+     man 1 org
+     man 5 org-tools.toml
      #+end_src

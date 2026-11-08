@@ -120,8 +120,12 @@ jobs:
         uses: taiki-e/install-action@cargo-xwin
         continue-on-error: true
 
-      - name: Ensure cross-compilation tools are installed
+      - name: Ensure cross-compilation tools and LLVM are on PATH
         run: |
+          if [ ! -x "$(brew --prefix llvm)/bin/llvm-lib" ]; then
+            brew install llvm
+          fi
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
           command -v cargo-zigbuild >/dev/null 2>&1 || brew install cargo-zigbuild || cargo install --locked cargo-zigbuild
           command -v cargo-xwin >/dev/null 2>&1 || cargo install --locked cargo-xwin
 
@@ -140,6 +144,8 @@ jobs:
       - name: Fallback GoReleaser execution when action download fails
         if: steps.goreleaser.outcome != 'success'
         run: |
+          git checkout -- .
+          git clean -fd
           command -v goreleaser >/dev/null 2>&1 || brew install goreleaser
           if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
             goreleaser release --clean

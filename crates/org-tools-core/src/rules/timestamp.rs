@@ -68,7 +68,7 @@ pub enum TimeUnit {
     Year,
 }
 
-/// Parsed repeater specification (`+1w`, `++2m`, `.+3d`).
+/// Parsed repeater specification (`+1w`, `++2m`, `.+3d`, `.+2d/4d`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepeaterSpec {
     /// Shift strategy when advancing the timestamp.
@@ -77,6 +77,10 @@ pub struct RepeaterSpec {
     pub value: u32,
     /// Calendar or clock unit.
     pub unit: TimeUnit,
+    /// Optional `org-habit` maximum window magnitude (e.g., `4` in `.+2d/4d`).
+    pub max_value: Option<u32>,
+    /// Optional `org-habit` maximum window unit (e.g., `TimeUnit::Day` in `.+2d/4d`).
+    pub max_unit: Option<TimeUnit>,
 }
 
 /// Parsed deadline warning specification (`-3d`, `--2w`).
@@ -93,16 +97,18 @@ pub struct WarningSpec {
 impl OrgTimestamp {
     /// Constructs an active date-only [`OrgTimestamp`] with its canonical 3-letter weekday.
     pub(crate) fn active_date(year: u16, month: u8, day: u8) -> Self {
+        let dayname = Some(day_of_week_abbrev(year, month, day).to_string());
+        let (hour, minute, repeater, warning, active) = (None, None, None, None, true);
         Self {
             year,
             month,
             day,
-            dayname: Some(day_of_week_abbrev(year, month, day).to_string()),
-            hour: None,
-            minute: None,
-            repeater: None,
-            warning: None,
-            active: true,
+            dayname,
+            hour,
+            minute,
+            repeater,
+            warning,
+            active,
         }
     }
 }
@@ -111,24 +117,24 @@ impl std::fmt::Display for OrgTimestamp {
     /// Formats the timestamp using active (`<...>`) or inactive (`[...]`) Org syntax.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (open, close) = if self.active { ('<', '>') } else { ('[', ']') };
-        write!(
-            f,
-            "{open}{:04}-{:02}-{:02}",
-            self.year, self.month, self.day
-        )?;
-        if let Some(ref d) = self.dayname {
-            write!(f, " {d}")?;
-        }
-        if let (Some(h), Some(m)) = (self.hour, self.minute) {
-            write!(f, " {h:02}:{m:02}")?;
-        }
-        if let Some(ref r) = self.repeater {
-            write!(f, " {r}")?;
-        }
-        if let Some(ref w) = self.warning {
-            write!(f, " {w}")?;
-        }
-        write!(f, "{close}")
+        let (y, m, d) = (self.year, self.month, self.day);
+        let dn = self
+            .dayname
+            .as_ref()
+            .map_or(String::new(), |n| format!(" {n}"));
+        let hm = match (self.hour, self.minute) {
+            (Some(h), Some(min)) => format!(" {h:02}:{min:02}"),
+            _ => String::new(),
+        };
+        let rep = self
+            .repeater
+            .as_ref()
+            .map_or(String::new(), |r| format!(" {r}"));
+        let warn = self
+            .warning
+            .as_ref()
+            .map_or(String::new(), |w| format!(" {w}"));
+        write!(f, "{open}{y:04}-{m:02}-{d:02}{dn}{hm}{rep}{warn}{close}")
     }
 }
 
@@ -139,22 +145,16 @@ impl std::fmt::Display for OrgTimestamp {
 /// Applies a single inner whitespace-delimited timestamp token onto `ts`.
 fn apply_timestamp_part(ts: &mut OrgTimestamp, part: &str) {
     let first = part.as_bytes().first().copied();
+    let dash_tail = part.trim_start_matches('-').bytes().next();
     if part.contains(':') && first.is_some_and(|b| b.is_ascii_digit()) {
         if let Some((hs, ms)) = part.split('-').next().unwrap_or(part).split_once(':') {
             if !ms.contains(':') {
-                ts.hour = hs.parse().ok();
-                ts.minute = ms.parse().ok();
+                (ts.hour, ts.minute) = (hs.parse().ok(), ms.parse().ok());
             }
         }
     } else if part.starts_with('+') || part.starts_with(".+") {
         ts.repeater = Some(part.to_string());
-    } else if part.starts_with('-')
-        && part
-            .trim_start_matches('-')
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_digit())
-    {
+    } else if part.starts_with('-') && dash_tail.is_some_and(|b| b.is_ascii_digit()) {
         ts.warning = Some(part.to_string());
     } else if first.is_some_and(|b| b.is_ascii_alphabetic()) {
         ts.dayname = Some(part.to_string());
@@ -179,16 +179,10 @@ pub fn parse_timestamp(text: &str, pos: usize) -> Option<(OrgTimestamp, usize)> 
     let parts: Vec<&str> = rest[1..end].split_whitespace().collect();
     let (year, month, day) = parse_ymd_triplet(parts.first()?)?;
     let mut ts = OrgTimestamp {
-        year,
-        month,
-        day,
-        dayname: None,
-        hour: None,
-        minute: None,
-        repeater: None,
-        warning: None,
         active,
+        ..OrgTimestamp::active_date(year, month, day)
     };
+    ts.dayname = None;
     for &part in &parts[1..] {
         apply_timestamp_part(&mut ts, part);
     }
@@ -235,7 +229,7 @@ pub(crate) fn parse_value_and_unit(rest: &str) -> Option<(u32, TimeUnit)> {
     Some((num_str.parse::<u32>().ok()?, unit))
 }
 
-/// Parses a repeater token (`+Ny`, `+Nm`, `+Nw`, `+Nd`, `+Nh`, `++N_`, `.+N_`).
+/// Parses a repeater token (`+Ny`, `+Nm`, `+Nw`, `+Nd`, `+Nh`, `++N_`, `.+N_`, `.+Nd/Md`).
 pub fn parse_repeater(raw: &str) -> Option<RepeaterSpec> {
     let (kind, rest) = if let Some(r) = raw.strip_prefix(".+") {
         (RepeaterKind::Restart, r)
@@ -244,8 +238,19 @@ pub fn parse_repeater(raw: &str) -> Option<RepeaterSpec> {
     } else {
         (RepeaterKind::Cumulative, raw.strip_prefix('+')?)
     };
-    let (value, unit) = parse_value_and_unit(rest)?;
-    Some(RepeaterSpec { kind, value, unit })
+    let (min_raw, max_pair) = match rest.split_once('/') {
+        Some((a, b)) => (a, Some(parse_value_and_unit(b).filter(|&(v, _)| v > 0)?)),
+        None => (rest, None),
+    };
+    let (value, unit) = parse_value_and_unit(min_raw)?;
+    let (max_value, max_unit) = (max_pair.map(|p| p.0), max_pair.map(|p| p.1));
+    Some(RepeaterSpec {
+        kind,
+        value,
+        unit,
+        max_value,
+        max_unit,
+    })
 }
 
 /// Parses a deadline warning token (`-Ny`, `-Nm`, `-Nw`, `-Nd`, `-Nh`, `--N_`).
@@ -360,10 +365,8 @@ pub fn effective_deadline_warning(ts: &OrgTimestamp, default_days: u32) -> (i64,
             date_to_days(ts.year, ts.month, ts.day) - date_to_days(wy, wm, wd)
         }
     };
-    (
-        days,
-        spec.kind == WarningKind::First && ts.repeater.is_some(),
-    )
+    let first_only = spec.kind == WarningKind::First && ts.repeater.is_some();
+    (days, first_only)
 }
 
 /// Computes the calendar-day warning lead distance before `ts` (falling back to `default_days`).
@@ -384,10 +387,9 @@ fn valid_verbatim_open(bytes: &[u8], i: usize) -> bool {
 
 /// Checks whether byte index `j` is a valid Org closing emphasis/verbatim boundary for `marker`.
 fn valid_verbatim_close(bytes: &[u8], j: usize, marker: u8) -> bool {
-    let post = j + 1 == bytes.len()
-        || bytes[j + 1].is_ascii_whitespace()
-        || b"-.,;:!?')}]\"".contains(&bytes[j + 1]);
-    bytes[j] == marker && !bytes[j - 1].is_ascii_whitespace() && post
+    let post = j + 1 == bytes.len() || bytes[j + 1].is_ascii_whitespace();
+    let punct = j + 1 < bytes.len() && b"-.,;:!?')}]\"".contains(&bytes[j + 1]);
+    bytes[j] == marker && !bytes[j - 1].is_ascii_whitespace() && (post || punct)
 }
 
 /// Finds inline Org `=...=` verbatim and `~...~` code byte spans `[start, end)` on `line`.
@@ -397,8 +399,8 @@ pub(crate) fn inline_verbatim_spans(line: &str) -> Vec<(usize, usize)> {
     while i + 2 <= bytes.len() {
         let m = bytes[i];
         if matches!(m, b'=' | b'~') && valid_verbatim_open(bytes, i) {
-            if let Some(end_idx) = (i + 2..bytes.len()).find(|&j| valid_verbatim_close(bytes, j, m))
-            {
+            let close = (i + 2..bytes.len()).find(|&j| valid_verbatim_close(bytes, j, m));
+            if let Some(end_idx) = close {
                 spans.push((i, end_idx + 1));
                 i = end_idx + 1;
                 continue;
@@ -423,14 +425,12 @@ mod tests {
     fn parse_active_inactive_repeater_and_warning() {
         let (ts, end) = parse_timestamp("<2024-01-15 Mon +1w -3d>", 0).unwrap();
         assert!(ts.active && end == 24 && (ts.year, ts.month, ts.day) == (2024, 1, 15));
-        assert_eq!(
-            (ts.repeater.as_deref(), ts.warning.as_deref()),
-            (Some("+1w"), Some("-3d"))
-        );
+        assert_eq!(ts.repeater.as_deref(), Some("+1w"));
+        assert_eq!(ts.warning.as_deref(), Some("-3d"));
         let (ina, _) = parse_timestamp("[2024-01-15 Mon 09:30]", 0).unwrap();
         assert!(!ina.active && (ina.hour, ina.minute) == (Some(9), Some(30)));
         let (first, _) = parse_timestamp("<2024-01-15 Mon ++1m --2w>", 0).unwrap();
-        assert_eq!(first.clone().warning.as_deref(), Some("--2w"));
+        assert_eq!(first.warning.as_deref(), Some("--2w"));
     }
 
     /// Verifies leap-year date validation, repeater/warning validation, and multi-timestamp scan.

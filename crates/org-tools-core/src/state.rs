@@ -10,6 +10,7 @@
 use crate::diagnostic::{Fix, Span};
 use crate::document::{OrgDocument, OrgEntry};
 use crate::formatter::apply_fixes;
+use crate::logbook::{apply_transition_logging, StateTransitionRecord};
 use crate::planning::{
     advance_line_active_repeaters, for_each_entry_content_line, is_planning_line_trimmed,
     rewrite_planning_line,
@@ -17,7 +18,8 @@ use crate::planning::{
 use crate::rules::heading::{parse_heading_with_keywords, HeadingParts};
 use crate::source::SourceFile;
 
-/// Re-exported civil calendar conversion helpers.
+/// Re-exported time and civil calendar conversion helpers.
+pub use crate::logbook::{current_local_date, now_timestamp};
 pub use crate::planning::{
     date_to_days as days_from_civil, day_of_week_abbrev as weekday_abbrev,
     days_to_date as civil_from_days,
@@ -100,6 +102,12 @@ pub fn set_state(
     )
 }
 
+/// Alias for [`SetStateOptions`].
+pub type StateMutationOptions = SetStateOptions;
+
+/// Alias for [`set_state_with_options`].
+pub use set_state_with_options as apply_state_mutation_with_options;
+
 /// Changes TODO state on entries using explicit [`SetStateOptions`] (including repeater auto-advance).
 pub fn set_state_with_options(
     source: &SourceFile,
@@ -119,13 +127,16 @@ pub fn set_state_with_options(
     let mut changed_indices = Vec::new();
     let mut newly_done_indices = Vec::new();
     let mut repeated_indices = Vec::new();
+    let mut transitions = Vec::new();
     for &idx in &indices {
         let Some(outcome) = build_entry_outcome(
             source, doc, &lines, &kw_refs, idx, new_state, options, today,
         ) else {
             continue;
         };
+        let old_state = doc.entries.get(idx).and_then(|e| e.keyword.clone());
         changed_indices.push(idx);
+        let repeated = matches!(outcome, EntryOutcome::Repeated(_));
         match outcome {
             EntryOutcome::Standard(entry_fixes, newly_done) => {
                 fixes.extend(entry_fixes);
@@ -138,13 +149,20 @@ pub fn set_state_with_options(
                 repeated_indices.push(idx);
             }
         }
+        transitions.push(StateTransitionRecord {
+            entry_idx: idx,
+            old_state,
+            new_state: new_state.to_string(),
+            repeated,
+        });
     }
 
     if changed_indices.is_empty() {
         return None;
     }
     fixes.sort_by_key(|f| f.span.start);
-    let content = apply_fixes(&source.content, &fixes);
+    let fixed = apply_fixes(&source.content, &fixes);
+    let content = apply_transition_logging(&source.path, fixed, &transitions, &now_timestamp());
     Some(SetStateResult {
         content,
         changed: changed_indices.len(),
@@ -374,66 +392,6 @@ fn remove_closed_timestamp(entry: &OrgEntry, lines: &[&str], content: &str) -> O
 // endregion
 
 // region Time Helpers
-
-/// Extracts local `(year, month, day, hour, minute)` from Unix epoch `secs` via `libc`.
-fn local_timestamp_parts(secs: i64) -> Option<(u16, u8, u8, u32, u32)> {
-    #[cfg(unix)]
-    let resolved = unsafe {
-        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
-        let time_t = secs as libc::time_t;
-        (!libc::localtime_r(&time_t, tm.as_mut_ptr()).is_null()).then(|| tm.assume_init())
-    };
-    #[cfg(windows)]
-    let resolved = unsafe {
-        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
-        let time_t = secs as libc::time_t;
-        (libc::localtime_s(tm.as_mut_ptr(), &time_t) == 0).then(|| tm.assume_init())
-    };
-    #[cfg(not(any(unix, windows)))]
-    let resolved: Option<libc::tm> = None;
-
-    resolved.map(|tm| {
-        (
-            (tm.tm_year + 1900) as u16,
-            (tm.tm_mon + 1) as u8,
-            tm.tm_mday as u8,
-            tm.tm_hour as u32,
-            tm.tm_min as u32,
-        )
-    })
-}
-
-/// Returns today's local civil `(year, month, day)` date.
-fn current_local_date() -> (u16, u8, u8) {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    if let Some((y, m, d, _, _)) = local_timestamp_parts(secs) {
-        return (y, m, d);
-    }
-    civil_from_days(secs / 86_400)
-}
-
-/// Returns a formatted Org inactive timestamp payload for the current local time (`YYYY-MM-DD Day HH:MM`).
-pub fn now_timestamp() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    if let Some((year, month, d, h, m)) = local_timestamp_parts(secs) {
-        let day_name = weekday_abbrev(year, month, d);
-        return format!("{year:04}-{month:02}-{d:02} {day_name} {h:02}:{m:02}");
-    }
-    let (year, month, d) = civil_from_days(secs / 86_400);
-    let rem = secs % 86_400;
-    format!(
-        "{year:04}-{month:02}-{d:02} {} {:02}:{:02}",
-        weekday_abbrev(year, month, d),
-        rem / 3_600,
-        (rem % 3_600) / 60
-    )
-}
 
 /// Calculates the byte offset of zero-based `line_idx` in `content`.
 fn line_offset(content: &str, line_idx: usize) -> usize {

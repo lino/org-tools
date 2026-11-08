@@ -3,42 +3,9 @@
 
 //! Shared date utilities for org-tools CLI commands.
 
-/// Get today's local date as (year, month, day).
+/// Gets today's local date as `(year, month, day)`, honoring `ORG_TOOLS_NOW`.
 pub fn current_date() -> (u16, u8, u8) {
-    let now = std::time::SystemTime::now();
-    let duration = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs() as i64;
-
-    #[cfg(unix)]
-    unsafe {
-        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
-        let time_t = secs as libc::time_t;
-        if !libc::localtime_r(&time_t, tm.as_mut_ptr()).is_null() {
-            let tm = tm.assume_init();
-            let year = (tm.tm_year + 1900) as u16;
-            let month = (tm.tm_mon + 1) as u8;
-            let day = tm.tm_mday as u8;
-            return (year, month, day);
-        }
-    }
-
-    #[cfg(windows)]
-    unsafe {
-        let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
-        let time_t = secs as libc::time_t;
-        if libc::localtime_s(tm.as_mut_ptr(), &time_t) == 0 {
-            let tm = tm.assume_init();
-            let year = (tm.tm_year + 1900) as u16;
-            let month = (tm.tm_mon + 1) as u8;
-            let day = tm.tm_mday as u8;
-            return (year, month, day);
-        }
-    }
-
-    let days = secs / 86400;
-    days_to_date(days)
+    org_tools_core::logbook::current_local_date()
 }
 
 /// Convert (year, month, day) to a day count using Howard Hinnant's algorithm.
@@ -61,6 +28,7 @@ pub fn date_to_days(year: u16, month: u8, day: u8) -> i64 {
 }
 
 /// Convert a day count back to (year, month, day) using Howard Hinnant's algorithm.
+#[allow(dead_code)]
 pub fn days_to_date(z: i64) -> (u16, u8, u8) {
     let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
     let doe = (z - era * 146097) as u64;
@@ -113,6 +81,7 @@ pub fn format_duration(minutes: i64) -> String {
 mod tests {
     use super::*;
 
+    /// Verifies `date_to_days` and `days_to_date` round-trip accurately.
     #[test]
     fn date_roundtrip() {
         for (y, m, d) in [(2024, 1, 1), (2024, 6, 15), (2024, 12, 31), (2026, 3, 21)] {
@@ -121,18 +90,21 @@ mod tests {
         }
     }
 
+    /// Verifies valid `YYYY-MM-DD` strings parse cleanly.
     #[test]
     fn parse_date_valid() {
         assert_eq!(parse_date("2024-01-15"), Some((2024, 1, 15)));
         assert_eq!(parse_date("2026-12-31"), Some((2026, 12, 31)));
     }
 
+    /// Verifies malformed or out-of-range dates return `None`.
     #[test]
     fn parse_date_invalid() {
         assert_eq!(parse_date("not-a-date"), None);
         assert_eq!(parse_date("2024-13-01"), None);
     }
 
+    /// Verifies minute durations format as `H:MM`.
     #[test]
     fn format_duration_values() {
         assert_eq!(format_duration(90), "1:30");
@@ -140,6 +112,7 @@ mod tests {
         assert_eq!(format_duration(605), "10:05");
     }
 
+    /// Verifies Monday=0 through Sunday=6 weekday calculation.
     #[test]
     fn day_of_week_known() {
         assert_eq!(day_of_week(2024, 1, 1), 0); // Monday

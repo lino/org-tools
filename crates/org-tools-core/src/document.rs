@@ -452,6 +452,12 @@ impl PreambleAccumulator {
             "PROPERTY" => self.property_lines.push(val.clone()),
             "CONSTANTS" => parse_constants_into(&val, &mut self.table_constants, true),
             "LINK" => parse_link_abbreviation_into(&val, &mut self.link_abbreviations, true),
+            "STARTUP" if self.file_keywords.contains_key("STARTUP") => {
+                if let Some(prev) = self.file_keywords.get_mut("STARTUP") {
+                    *prev = join_property_values(prev, &val);
+                }
+                return;
+            }
             _ => {}
         }
         self.file_keywords.insert(key, val);

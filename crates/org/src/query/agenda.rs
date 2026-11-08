@@ -13,6 +13,7 @@ use std::path::Path;
 
 use org_tools_core::config::DEFAULT_DEADLINE_WARNING_DAYS;
 use org_tools_core::document::{OrgDocument, OrgEntry};
+pub use org_tools_core::logbook::{build_habit_summary, HabitSummary};
 use org_tools_core::planning::{
     date_to_days, day_of_week_abbrev, days_to_date, effective_deadline_warning_days,
     extract_entry_active_body_timestamps, is_first_only_warning, project_repeating_dates,
@@ -96,6 +97,8 @@ pub struct AgendaItem<'a> {
     pub kind: AgendaKind,
     /// Base or repeater-projected active [`OrgTimestamp`].
     pub timestamp: OrgTimestamp,
+    /// Optional `org-habit` repeater and 21-day consistency summary.
+    pub habit: Option<HabitSummary>,
 }
 
 /// One calendar date within the requested agenda horizon and its matched items.
@@ -140,6 +143,8 @@ struct EntryScanCtx<'a, 'b> {
     opts: &'b AgendaBuildOptions<'b>,
     /// Whether this entry carries a `DONE`-state TODO keyword.
     is_done: bool,
+    /// Optional `org-habit` summary computed for this entry.
+    habit: Option<HabitSummary>,
 }
 
 impl<'a> EntryScanCtx<'a, '_> {
@@ -152,6 +157,7 @@ impl<'a> EntryScanCtx<'a, '_> {
             file: &self.doc.file,
             kind,
             timestamp: ts,
+            habit: self.habit.clone(),
         });
     }
 }
@@ -163,13 +169,16 @@ pub fn build_agenda<'a>(
     start_date: (u16, u8, u8),
     num_days: usize,
 ) -> Vec<AgendaDay<'a>> {
-    let opts = AgendaBuildOptions {
-        sources: None,
-        start_date,
-        num_days,
-        warning_days: DEFAULT_DEADLINE_WARNING_DAYS,
-    };
-    build_agenda_with_options(docs, opts)
+    let warning_days = DEFAULT_DEADLINE_WARNING_DAYS;
+    build_agenda_with_options(
+        docs,
+        AgendaBuildOptions {
+            sources: None,
+            start_date,
+            num_days,
+            warning_days,
+        },
+    )
 }
 
 /// Builds a multi-day agenda projecting repeaters, overdue items, deadline warnings, and body timestamps.
@@ -199,12 +208,14 @@ pub fn build_agenda_with_options<'a>(
                 .keyword
                 .as_deref()
                 .is_some_and(|kw| doc.todo_keywords.is_done(kw));
+            let habit = build_habit_summary(src_opt, doc, idx, opts.start_date);
             let ctx = EntryScanCtx {
                 doc,
                 idx,
                 start_days,
                 opts: &opts,
                 is_done,
+                habit,
             };
             collect_entry_agenda_items(&ctx, &mut days, entry, src_opt);
         }
@@ -337,11 +348,9 @@ pub fn date_to_days_pub(year: u16, month: u8, day: u8) -> i64 {
 pub fn render_agenda_human(days: &[AgendaDay<'_>]) -> String {
     let mut out = String::new();
     for d in days.iter().filter(|d| !d.items.is_empty()) {
-        let dow = day_of_week_abbrev(d.year, d.month, d.day);
-        out.push_str(&format!(
-            "{:04}-{:02}-{:02} {dow}\n",
-            d.year, d.month, d.day
-        ));
+        let (y, m, day) = (d.year, d.month, d.day);
+        let dow = day_of_week_abbrev(y, m, day);
+        out.push_str(&format!("{y:04}-{m:02}-{day:02} {dow}\n"));
         for item in &d.items {
             out.push_str(&format_human_agenda_item(item));
         }
@@ -355,25 +364,26 @@ fn format_human_agenda_item(item: &AgendaItem<'_>) -> String {
     let kw = e
         .keyword
         .as_deref()
-        .map(|k| format!("{k} "))
-        .unwrap_or_default();
-    let pri = e.priority.map(|p| format!("[#{p}] ")).unwrap_or_default();
+        .map_or(String::new(), |k| format!("{k} "));
+    let pri = e.priority.map_or(String::new(), |p| format!("[#{p}] "));
     let tags = if e.tags.is_empty() {
         String::new()
     } else {
         format!(" :{}:", e.tags.join(":"))
     };
-    let time = match (item.timestamp.hour, item.timestamp.minute) {
-        (Some(h), Some(m)) => format!("{h:02}:{m:02} "),
-        _ => String::new(),
-    };
+    let hm = item.timestamp.hour.zip(item.timestamp.minute);
+    let time = hm.map_or(String::new(), |(h, m)| format!("{h:02}:{m:02} "));
+    let hab = item
+        .habit
+        .as_ref()
+        .map_or(String::new(), |h| format!(" [{}]", h.consistency_graph));
     let (file, ln, title, lbl) = (
         item.file.display(),
         e.heading_line,
         &e.title,
         item.kind.human_label(),
     );
-    format!("  {file}:{ln}: {kw}{pri}{title}{tags}  {time}{lbl}\n")
+    format!("  {file}:{ln}: {kw}{pri}{title}{tags}  {time}{lbl}{hab}\n")
 }
 
 // endregion

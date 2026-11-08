@@ -35,6 +35,8 @@ pub mod formatter;
 pub mod id;
 /// Canonical `OrgLocator` (`id:`, `file:`, `#custom-id`, `*Heading`) resolver.
 pub mod locator;
+/// `:LOGBOOK:` state-change logging, `:LAST_REPEAT:` updates, `:LOGGING:`, and `org-habit` summaries.
+pub mod logbook;
 /// Human-readable and JSON diagnostic formatters.
 pub mod output;
 /// Timestamp repeaters, deadline warnings, body timestamp scanning, and planning mutations.
@@ -99,7 +101,13 @@ mod wp12_planning_and_repeater_tests {
         for (raw, kind, value, unit) in r_cases {
             assert_eq!(
                 parse_repeater(raw),
-                Some(RepeaterSpec { kind, value, unit })
+                Some(RepeaterSpec {
+                    kind,
+                    value,
+                    unit,
+                    max_value: None,
+                    max_unit: None,
+                })
             );
         }
         assert!(parse_repeater("+").is_none() && parse_repeater("+++1d").is_none());

@@ -164,6 +164,39 @@
           "type": ["integer", "null"],
           "minimum": 1,
           "description": "Days remaining until due date for deadline_warning items, or null."
+        },
+        "habit": {
+          "$ref": "#/$defs/habit_summary"
+        }
+      },
+      "additionalProperties": false
+    },
+    "habit_summary": {
+      "type": "object",
+      "required": [
+        "min_interval_days",
+        "max_interval_days",
+        "last_repeat",
+        "consistency_graph"
+      ],
+      "properties": {
+        "min_interval_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum repeater interval in days."
+        },
+        "max_interval_days": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Optional maximum repeater window in days, or null."
+        },
+        "last_repeat": {
+          "type": ["string", "null"],
+          "description": "Most recent :LAST_REPEAT: inactive timestamp string, or null."
+        },
+        "consistency_graph": {
+          "type": "string",
+          "description": "21-character ASCII habit consistency window ending on the agenda start date."
         }
       },
       "additionalProperties": false

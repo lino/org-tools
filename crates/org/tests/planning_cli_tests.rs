@@ -400,8 +400,8 @@ fn slice3_set_state_done_advances_repeaters_and_reports_repeated_action() {
     assert!(updated.contains("* TODO Weekly Review\nSCHEDULED: <2026-02-08 Sun +1w>"));
     assert!(updated.contains("* TODO Catchup Backup\nDEADLINE: <20"));
     assert!(!updated.contains("DEADLINE: <2026-02-01 Sun ++2d>"));
-    assert!(updated.contains("* TODO Monthly Audit\nActive body <20"));
-    assert!(!updated.contains("<2026-01-15 Thu .+1m>"));
+    assert!(updated.contains("* TODO Monthly Audit\n:PROPERTIES:\n:LAST_REPEAT: [20"));
+    assert!(updated.contains("Active body <20") && !updated.contains("<2026-01-15 Thu .+1m>"));
     assert!(updated.contains("* DONE One-Off Task\nCLOSED: ["));
     assert_eq!(updated.matches("CLOSED:").count(), 1);
 }

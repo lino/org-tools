@@ -53,6 +53,10 @@ pub struct TodoKeywords {
     pub todo: Vec<String>,
     /// Keywords representing "done" states (e.g., `["DONE", "CANCELLED"]`).
     pub done: Vec<String>,
+    /// Keywords configured with `!` or `@` state-entry logging (`KW(!)`, `KW(k!)`, `KW(k@)`).
+    pub log_on_enter: std::collections::HashSet<String>,
+    /// Keywords configured with `!` state-exit logging after `/` (`KW(k/!)`, `KW(!/!)`, `KW(@/!)`).
+    pub log_on_leave: std::collections::HashSet<String>,
 }
 
 impl TodoKeywords {
@@ -73,6 +77,16 @@ impl TodoKeywords {
     /// Returns true if `word` is a "done" keyword.
     pub fn is_done(&self, word: &str) -> bool {
         self.done.iter().any(|k| k == word)
+    }
+
+    /// Returns true if transitioning into `word` triggers state-entry logging (`!` or `@`).
+    pub fn logs_on_enter(&self, word: &str) -> bool {
+        self.log_on_enter.contains(word)
+    }
+
+    /// Returns true if leaving `word` triggers state-exit logging (`!` after `/`).
+    pub fn logs_on_leave(&self, word: &str) -> bool {
+        self.log_on_leave.contains(word)
     }
 }
 
@@ -95,6 +109,8 @@ impl Default for TodoKeywords {
                 "CANCELED".into(),
                 "PUBLISHED".into(),
             ],
+            log_on_enter: std::collections::HashSet::new(),
+            log_on_leave: std::collections::HashSet::new(),
         }
     }
 }
@@ -102,7 +118,7 @@ impl Default for TodoKeywords {
 /// Parse a `#+TODO:` / `#+SEQ_TODO:` / `#+TYP_TODO:` value into [`TodoKeywords`].
 ///
 /// Format: `KW1 KW2 | KW3 KW4` where `|` separates not-done from done states.
-/// Keywords may have fast-access chars in parens: `TODO(t)` — the `(t)` is stripped.
+/// Keywords may have fast-access chars and logging flags in parens: `TODO(t)` or `WAIT(w@/!)`.
 /// If no `|` is present, the last keyword is the done state.
 pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
     let spec = spec.trim();
@@ -116,38 +132,59 @@ pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
         (spec, None)
     };
 
-    let strip_fast_key = |w: &str| -> String {
-        // Strip "(x)" fast-access suffix: "TODO(t)" → "TODO".
-        if let Some(paren) = w.find('(') {
-            w[..paren].to_string()
+    let mut log_on_enter = std::collections::HashSet::new();
+    let mut log_on_leave = std::collections::HashSet::new();
+    let mut extract_kw = |w: &str| -> String {
+        let (kw, enter, leave) = crate::logbook::parse_todo_keyword_flags(w);
+        let name = if let Some(paren) = kw.find('(') {
+            &kw[..paren]
         } else {
-            w.to_string()
+            kw
+        };
+        if !name.is_empty() {
+            if enter {
+                log_on_enter.insert(name.to_string());
+            }
+            if leave {
+                log_on_leave.insert(name.to_string());
+            }
         }
+        name.to_string()
     };
 
     let before: Vec<String> = before_pipe
         .split_whitespace()
-        .map(strip_fast_key)
+        .map(&mut extract_kw)
         .filter(|s| !s.is_empty())
         .collect();
 
     if let Some(after) = after_pipe {
         let done: Vec<String> = after
             .split_whitespace()
-            .map(strip_fast_key)
+            .map(&mut extract_kw)
             .filter(|s| !s.is_empty())
             .collect();
-        TodoKeywords { todo: before, done }
+        TodoKeywords {
+            todo: before,
+            done,
+            log_on_enter,
+            log_on_leave,
+        }
     } else if before.len() > 1 {
-        // No pipe: last keyword is the done state.
         let mut todo = before;
         let done = vec![todo.pop().unwrap()];
-        TodoKeywords { todo, done }
+        TodoKeywords {
+            todo,
+            done,
+            log_on_enter,
+            log_on_leave,
+        }
     } else {
-        // Single keyword, treat as todo.
         TodoKeywords {
             todo: before,
             done: Vec::new(),
+            log_on_enter,
+            log_on_leave,
         }
     }
 }

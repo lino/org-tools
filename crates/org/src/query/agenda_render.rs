@@ -116,15 +116,11 @@ fn append_human_section(out: &mut String, title: &str, count: usize, body: &str)
     out.push_str(&format!("{title} ({count})\n"));
     let trimmed = body.trim_end_matches('\n');
     if trimmed.is_empty() {
-        out.push_str("  (none)\n");
-        return;
+        return out.push_str("  (none)\n");
     }
     for line in trimmed.split('\n') {
-        if line.is_empty() {
-            out.push('\n');
-        } else {
-            out.push_str(&format!("  {line}\n"));
-        }
+        let pad = if line.is_empty() { "" } else { "  " };
+        out.push_str(&format!("{pad}{line}\n"));
     }
 }
 
@@ -143,10 +139,8 @@ pub fn render_agenda_locators(
         push_loc(item.file.to_path_buf(), item.entry.heading_line);
     }
     if let Some(c) = composite {
-        for m in [&c.next_actions, &c.blocked, &c.inbox]
-            .into_iter()
-            .flatten()
-        {
+        let gtd_lists = [&c.next_actions, &c.blocked, &c.inbox];
+        for m in gtd_lists.into_iter().flatten() {
             push_loc(m.doc.file.clone(), m.entry().heading_line);
         }
     }
@@ -231,8 +225,8 @@ fn sanitize_inline_title(raw: &str, markdown: bool) -> String {
     if markdown {
         return s.trim_end().to_string();
     }
-    let bracket_pairs = [("[[", "[ ["), ("]]]", "] ]]"), ("<<", "< <"), (">>", "> >")];
-    for (pat, rep) in bracket_pairs.into_iter().chain([("[fn:", "[fn - ")]) {
+    let b_pairs = [("[[", "[ ["), ("]]]", "] ]]"), ("<<", "< <"), (">>", "> >")];
+    for (pat, rep) in b_pairs.into_iter().chain([("[fn:", "[fn - ")]) {
         while s.contains(pat) {
             s = s.replace(pat, rep);
         }
@@ -240,11 +234,10 @@ fn sanitize_inline_title(raw: &str, markdown: bool) -> String {
     while !find_timestamps(&s).is_empty() {
         s = neutralize_org_timestamps(&s);
     }
-    s.replace("SCHEDULED:", "Scheduled")
-        .replace("DEADLINE:", "Deadline")
-        .replace("CLOSED:", "Closed")
-        .trim_end()
-        .to_string()
+    s = s
+        .replace("SCHEDULED:", "Scheduled")
+        .replace("DEADLINE:", "Deadline");
+    s.replace("CLOSED:", "Closed").trim_end().to_string()
 }
 
 /// Formats `keyword + priority + sanitized_title + tags` for Org (`false`) or Markdown (`true`).
@@ -274,13 +267,18 @@ fn format_doc_timeline_bullet(item: &AgendaItem<'_>, md: bool) -> String {
     let inline = format_entry_inline(item.entry, md);
     let hm = item.timestamp.hour.zip(item.timestamp.minute);
     let time = hm.map_or(String::new(), |(h, m)| format!("{h:02}:{m:02} "));
-    let (f, ln) = (item.file.display(), item.entry.heading_line);
-    let lbl = item.kind.human_label();
+    let (f, ln, lbl) = (
+        item.file.display(),
+        item.entry.heading_line,
+        item.kind.human_label(),
+    );
     let (w, sep, b0, b1) = match md {
         true => ('`', " —", "*(", ")*"),
         false => ('=', "", "— ", ""),
     };
-    format!("- {w}{f}:{ln}{w}{sep} {inline} {b0}{time}{lbl}{b1}\n")
+    let g = item.habit.as_ref().map(|h| h.consistency_graph.as_str());
+    let hab = g.map_or(String::new(), |cg| format!(" {w}[{cg}]{w}"));
+    format!("- {w}{f}:{ln}{w}{sep} {inline} {b0}{time}{lbl}{b1}{hab}\n")
 }
 
 /// Formats a concise blocker summary string for `m` across `doc_refs`.
@@ -362,9 +360,10 @@ pub fn render_agenda_doc(
     md: bool,
 ) -> String {
     let range = format_horizon_range(start_date, num_days);
-    let mut out = match md {
-        true => format!("# Agenda ({range})\n\n## Timeline\n\n"),
-        false => format!("#+TITLE: Agenda ({range})\n\n* Timeline\n"),
+    let mut out = if md {
+        format!("# Agenda ({range})\n\n## Timeline\n\n")
+    } else {
+        format!("#+TITLE: Agenda ({range})\n\n* Timeline\n")
     };
     let non_empty: Vec<&AgendaDay<'_>> = days.iter().filter(|d| !d.items.is_empty()).collect();
     append_doc_timeline_days(&mut out, &non_empty, md);
@@ -384,7 +383,7 @@ pub fn render_agenda_doc(
 fn agenda_item_to_json(item: &AgendaItem<'_>) -> Value {
     let hm = item.timestamp.hour.zip(item.timestamp.minute);
     let time = hm.map(|(h, m)| format!("{h:02}:{m:02}"));
-    json!({
+    let mut val = json!({
         "file": item.file.display().to_string(),
         "line": item.entry.heading_line,
         "locator": locator_for_entry(item.doc, item.entry_idx).to_string(),
@@ -398,7 +397,15 @@ fn agenda_item_to_json(item: &AgendaItem<'_>) -> Value {
         "time": time,
         "overdue_days": item.kind.overdue_days(),
         "warning_days_remaining": item.kind.warning_days_remaining(),
-    })
+    });
+    if let Some(hv) = item
+        .habit
+        .as_ref()
+        .and_then(|h| serde_json::to_value(h).ok())
+    {
+        val["habit"] = hv;
+    }
+    val
 }
 
 /// Builds the full `org-agenda-output.schema.json` JSON value including `telemetry`.

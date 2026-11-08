@@ -11,6 +11,8 @@
 pub mod archive;
 /// Persistent SQLite/FTS5 workspace index (`MabuseCache`).
 pub mod cache;
+/// `#+COLUMNS:` format parser and bottom-up property rollup evaluator.
+pub mod columns;
 /// Configuration loading and validation for `.org-tools.toml`.
 pub mod config;
 /// Statistics cookie (`[n/m]` and `[n%]`) computation and updates.

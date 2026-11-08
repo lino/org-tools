@@ -16,6 +16,7 @@ use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 
 use super::parse_org_files;
+use super::query_columns::{run_columns, ColumnsOutputFormat};
 use super::query_gtd::{run_blocked, run_inbox, run_next, run_stuck, run_waiting};
 use crate::{date, query, EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
@@ -138,6 +139,21 @@ pub(crate) enum QueryCommand {
         /// Only include entries with TODO keywords.
         #[arg(long, default_value = "true")]
         todo_only: bool,
+    },
+    /// Render a tabular #+COLUMNS: / :COLUMNS: property view with parent rollups.
+    Columns {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+        /// Optional locator scoping the column view to a specific subtree.
+        #[arg(long)]
+        locator: Option<String>,
+        /// Override the #+COLUMNS: format specification string.
+        #[arg(long)]
+        columns: Option<String>,
+        /// Output format (human, json, org, md).
+        #[arg(long, value_enum, default_value = "human")]
+        format: ColumnsOutputFormat,
     },
 }
 
@@ -348,6 +364,12 @@ pub(crate) fn run_query(command: QueryCommand, no_cache: bool) -> i32 {
             format,
             todo_only: _,
         } => run_deps(&paths, format),
+        QueryCommand::Columns {
+            paths,
+            locator,
+            columns,
+            format,
+        } => run_columns(&paths, locator.as_deref(), columns.as_deref(), format),
     }
 }
 

@@ -156,8 +156,12 @@ cat todo.org | org update set-state DONE --query 'tags:shipped'
 # Archive completed entries
 org archive ~/org/
 
-# Shell completions
+# Shell completions, Unix manpages, and embedded JSON schemas
 org --completions bash > /etc/bash_completion.d/org
+man 1 org
+man 5 org-tools.toml
+org schema --list
+org schema columns --output build/org-columns-output.schema.json
 #+end_src
 
 * Configuration
@@ -208,12 +212,16 @@ org-tools is a Cargo workspace with two crates:
 
 * Documentation
 
-- [[file:docs/technical/architecture.org][docs/technical/]] — Architecture (arc42), ADRs
-- [[file:docs/operations/installation.org][docs/operations/]] — Installation, release process
-- [[file:docs/product/vision.org][docs/product/]] — Product vision and design principles
-- [[file:docs/user/usage.org][docs/user/]] — Usage guide and rule reference
+Published via the Three-Manual Zensical site ([[file:zensical.toml][zensical.toml]], =mise run docs:build=)
+and native Unix =roff= manpages ([[file:man/org.1][man/org.1]] and [[file:man/org-tools.toml.5][man/org-tools.toml.5]]):
+
+- [[file:docs/index.md][docs/index.md]] — Three-Manual Zensical landing page
+- [[file:docs/user/quickstart.md][docs/user/]] & [[file:docs/cookbook/index.md][docs/cookbook/]] — User Manual, Cookbook recipes, and [[file:docs/user/usage.org][usage.org]]
+- [[file:docs/operations/index.md][docs/operations/]] — Operator Manual (installation, Docker/MCP runtime, GoReleaser, Prometheus metrics)
+- [[file:docs/developer/index.md][docs/developer/]] & [[file:docs/technical/architecture.org][docs/technical/]] — Developer Manual, Architecture (arc42), and ADRs
+- [[file:docs/glossary.md][docs/glossary.md]] — Alphabetical Glossary and Abbreviations
 - [[file:docs/org-ecosystem.org][docs/org-ecosystem.org]] — Org-mode ecosystem and extension reference
-- [[file:schemas/][schemas/]] — JSON schemas for output formats
+- [[file:schemas/][schemas/]] — JSON Schema Draft 2020-12 contracts (=org schema --list=)
 
 * License
 

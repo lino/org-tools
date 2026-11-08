@@ -1,0 +1,105 @@
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[project]
+site_url = "https://lino.github.io/org-tools/"
+site_name = "org-tools Documentation"
+site_description = "Standalone pure-Rust CLI and MCP server for Org-mode formatting, linting, querying, mutation, clocking, and export."
+site_author = "org-tools contributors"
+
+nav = [
+  { "Overview" = "index.md" },
+  { "User Manual" = [
+    { "Five-Minute Quickstart" = "user/quickstart.md" },
+    { "Formatting & Linting" = "user/formatting-and-linting.md" },
+    { "Querying & Agenda Views" = "user/querying-and-agenda.md" },
+    { "Updating, Clocking & Exporting" = "user/updating-clocking-and-exporting.md" },
+    { "Power-User & Scripting" = "user/power-user-and-scripting.md" },
+    { "JSON Schemas & Contracts" = "user/schemas.md" },
+    { "CLI, Config & Rule Reference" = "user/reference.md" },
+  ] },
+  { "Cookbook" = [
+    { "Cookbook Overview" = "cookbook/index.md" },
+    { "Getting Things Done (GTD)" = "cookbook/gtd.md" },
+    { "Zettelkasten & Fleeting Notes" = "cookbook/zettelkasten.md" },
+    { "AI Assistants & MCP Server" = "cookbook/mcp-server.md" },
+    { "CI Pipelines & Shell Automation" = "cookbook/automation-and-ci.md" },
+  ] },
+  { "Operator Manual" = [
+    { "Operations Overview" = "operations/index.md" },
+    { "Multi-Platform Installation" = "operations/installation.md" },
+    { "Container & MCP Runtime" = "operations/docker-and-mcp-runtime.md" },
+    { "Release & Homebrew Tap Runbook" = "operations/release-and-tap.md" },
+    { "Prometheus Metrics & Troubleshooting" = "operations/metrics-and-troubleshooting.md" },
+  ] },
+  { "Developer Manual" = [
+    { "Developer Overview" = "developer/index.md" },
+    { "Architecture (arc42)" = "developer/architecture.md" },
+    { "Contributing & TDD Guide" = "developer/contributing.md" },
+    { "Architecture Decisions (ADRs)" = "developer/decisions.md" },
+  ] },
+  { "Glossary" = "glossary.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.arithmatex.generic = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}

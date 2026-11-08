@@ -1176,40 +1176,56 @@ Every =tools/call= response returns standard MCP =CallToolResult= (=content=,
 
 * Schema (=org schema=)
 
-Print the JSON schema for any org-tools output type. Useful for validating
-JSON output in scripts or generating types for downstream tooling.
+List or print embedded JSON Schema Draft 2020-12 contracts for any org-tools
+output type. Useful for validating JSON output in scripts or generating types
+for downstream tooling.
 
 #+begin_src sh
-org schema <NAME>
+org schema --list [--format human|json]
+org schema <NAME> [--output <PATH>]
 #+end_src
 
-| Name           | Aliases             | Describes output of               |
-|----------------+---------------------+-----------------------------------|
-| =diagnostic=   | =diagnostics=       | =org fmt check --format json=     |
-| =query=        | =entry=, =entries=  | =org query search --format json=  |
-| =agenda=       | =org-agenda-output= | =org query agenda --format json=  |
-| =roam=         | =org-roam-output=   | =org roam * --format json=        |
-| =show=         |                     | =org show --format json=          |
-| =blocked=      |                     | =org query blocked --format json= |
-| =stuck=        |                     | =org query stuck --format json=   |
-| =deps=         | =dependencies=      | =org query deps --format json=    |
-| =clock-report= | =clock_report=      | =org clock report --format json=  |
-| =clock-status= | =clock_status=      | =org clock status --format json=  |
-| =mutation=     | =update=, =archive= | Mutation commands =--format json= |
+| Name           | Aliases               | Describes output of               |
+|----------------+-----------------------+-----------------------------------|
+| =diagnostic=   | =fmt=, =diagnostics=  | =org fmt check --format json=     |
+| =query=        | =entry=, =entries=    | =org query search --format json=  |
+| =agenda=       | =org-agenda-output=   | =org query agenda --format json=  |
+| =columns=      | =org-columns-output=  | =org query columns --format json= |
+| =roam=         | =org-roam-output=     | =org roam * --format json=        |
+| =fleeting=     | =org-fleeting-output= | =org fleeting * --format json=    |
+| =show=         |                       | =org show --format json=          |
+| =blocked=      |                       | =org query blocked --format json= |
+| =stuck=        |                       | =org query stuck --format json=   |
+| =deps=         | =dependencies=        | =org query deps --format json=    |
+| =clock-report= | =clock_report=        | =org clock report --format json=  |
+| =clock-status= | =clock_status=        | =org clock status --format json=  |
+| =jscalendar=   | =jscal=               | =org export jscal=                |
+| =mutation=     | =update=, =archive=   | Mutation commands =--format json= |
 
 Schema files are also available in =schemas/= in the repository.
 
 #+begin_src sh
-# Print the diagnostic or agenda schema
+# List all registered JSON Schema contracts
+org schema --list
+org schema --list --format json
+
+# Print the diagnostic or agenda schema to stdout
 org schema diagnostic
 org schema agenda
 
-# Print the mutation schema (used by update and archive commands)
-org schema mutation
-
-# Pipe into a file for use with json-schema validators
-org schema query > org-query-output.schema.json
+# Write a schema directly to a file path (creating parent directories)
+org schema columns --output build/schemas/org-columns-output.schema.json
+org schema mutation -o build/schemas/org-mutation-output.schema.json
 #+end_src
+
+* Manpages & Zensical Documentation
+
+Native Unix =roff= manual pages are shipped in =man/org.1= (=man 1 org=) and
+=man/org-tools.toml.5= (=man 5 org-tools.toml=).
+
+The Three-Manual Zensical documentation site ([[file:../../zensical.toml][zensical.toml]]) organizes guides
+into the [[file:quickstart.md][User Manual]], [[file:../cookbook/index.md][Cookbook]], [[file:../operations/index.md][Operator Manual]], [[file:../developer/index.md][Developer Manual]], and
+[[file:../glossary.md][Glossary]] (=mise run docs:build= / =uvx zensical build --strict=).
 
 * Archive (=org archive=)
 

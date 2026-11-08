@@ -28,6 +28,14 @@ run = "cargo fmt -- --check && cargo clippy --all-targets -- -D warnings && carg
 description = "Validate repository README.org and docs/ with org fmt check"
 run = "cargo run --quiet -- fmt check README.org docs/"
 
+[tasks."docs:build"]
+description = "Build the Three-Manual Zensical documentation site in strict mode"
+run = "uvx zensical build --strict"
+
+[tasks."docs:serve"]
+description = "Serve the Three-Manual Zensical documentation site locally"
+run = "uvx zensical serve"
+
 [tasks.bench]
 description = "Compile workspace benchmark and release targets"
 run = "cargo bench --no-run"

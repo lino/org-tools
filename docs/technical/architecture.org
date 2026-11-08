@@ -66,7 +66,7 @@ Key requirements:
 ** Business Context
 
 #+begin_src mermaid :file context.png
-graph LR
+flowchart LR
     User["org-mode User"] -->|".org files"| OrgTools["org CLI"]
     OrgTools -->|"diagnostics, query & mutation results"| User
     CI["CI/CD & Automation Agents"] -->|".org files, locators"| OrgTools
@@ -130,7 +130,7 @@ Line-based text processing with span-based fixes:
 ** Level 1: Workspace Overview
 
 #+begin_src mermaid :file building-blocks-l1.png
-graph TD
+flowchart TD
     OrgBin["org binary"] --> Core["org-tools-core"]
     subgraph "org binary (crates/org)"
         FmtCmd["commands/fmt"]
@@ -359,6 +359,19 @@ org-tools is distributed as a single statically-linked binary with zero runtime
 dependencies via **GoReleaser OSS v2** (=.goreleaser.yaml= and
 =.github/workflows/release.yml=):
 
+#+begin_src mermaid :file deployment.png
+flowchart TB
+    Release["GoReleaser v2 & GHCR Build"] --> LocalCLI["Local Workstation (org CLI)"]
+    Release --> McpSub["AI Host Subprocess (org mcp stdio)"]
+    Release --> Container["GitHub Actions CI & Docker Container"]
+    LocalCLI --> Vault["Local .org Files & .org-tools.toml"]
+    McpSub --> Vault
+    Container --> Vault
+    LocalCLI --> SqliteCache["SQLite WAL Cache (.cache/org-cache.db)"]
+    McpSub --> SqliteCache
+    Container --> SqliteCache
+#+end_src
+
 - *Multi-OS release archives*: =aarch64= and =x86_64= builds for macOS
   (Darwin), static =musl= Linux (=cargo-zigbuild=), and Windows MSVC
   (=cargo-xwin=), bundling =bash=, =zsh=, and =fish= shell completions and
@@ -414,6 +427,16 @@ Key decisions:
 - [[file:adr/0002-two-phase-format-then-lint.org][ADR-0002]]: Two-phase pipeline (format, then lint)
 - [[file:adr/0003-gpl-license.org][ADR-0003]]: GPL-3.0-or-later license
 - [[file:adr/0004-cargo-workspace-umbrella-binary.org][ADR-0004]]: Cargo workspace with umbrella =org= binary
+
+* Quality Requirements
+
+| Quality Category | Concrete Target & Verification Scenario                                             |
+|------------------+-------------------------------------------------------------------------------------|
+| Correctness      | =mise run test= validates all format rules, lint rules, queries, and mutations      |
+| Safety           | Protected literal block regions (=src=, =example=, =quote=, =verse=) never modified |
+| Performance      | Warm =WorkspaceCache= (=.cache/org-cache.db=) queries finish in sub-50 ms           |
+| Schema Contracts | Every =--format json= output validates against its embedded Draft 2020-12 schema    |
+| Observability    | Mutation envelopes emit =telemetry= (=duration_us=, =cache_hits=, =cache_misses=)   |
 
 * Risks and Technical Debt
 

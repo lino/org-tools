@@ -1,0 +1,131 @@
+.\" Copyright (C) 2026 org-tools contributors
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH ORG 1 "2026-11-08" "org-tools" "User Commands"
+.SH NAME
+org \- unified pure-Rust command-line tool for Org-mode files
+.SH SYNOPSIS
+.B org
+.RI [ GLOBAL\ OPTIONS ]
+.I SUBCOMMAND
+.RI [ ARGS ...]
+.br
+.B org
+.B \-\-completions
+.I SHELL
+.SH DESCRIPTION
+.B org
+lints, formats, queries, mutates, clocks, and exports Org-mode files without requiring Emacs.
+It processes files using a single-pass parser and an optional incremental SQLite workspace cache.
+All subcommands support human-readable terminal output and machine-readable JSON output for automation pipelines.
+.SH SUBCOMMANDS
+.TP
+.B fmt check \fR[\fIPATHS\fR...]
+Check Org files for formatting and lint issues without modifying files on disk.
+.TP
+.B fmt format \fR[\fIPATHS\fR...]
+Apply auto-fixable formatting rules (`F001` through `F008`) to Org files in place or on standard input.
+.TP
+.B query \fISUBCOMMAND\fR
+Search headings (`search`, `next`, `inbox`, `waiting`, `someday`, `projects`, `stuck`, `blocked`, `deps`, `agenda`, `columns`).
+.TP
+.B update \fISUBCOMMAND\fR
+Mutate Org entries (`add-id`, `set-state`, `add-todo`, `add-cookie`, `set-property`, `delete-property`, `set-tags`, `set-scheduled`, `set-deadline`, `add-blocker`, `add-trigger`, `calc`).
+.TP
+.B clock \fISUBCOMMAND\fR
+Inspect active clocks (`status`), generate duration and effort variance reports (`report`), or mutate clock entries (`in`, `out`, `cancel`).
+.TP
+.B export \fISUBCOMMAND\fR
+Export scheduled and deadline entries to iCalendar (`ical`), RFC 8984 JSCalendar (`jscalendar`), or GitHub Flavored Markdown (`md`).
+.TP
+.B roam \fISUBCOMMAND\fR
+Inspect `org-roam` v2 nodes (`node`), incoming backlinks (`backlinks`), outgoing links (`links`), and workspace link graphs (`graph`).
+.TP
+.B cache \fISUBCOMMAND\fR
+Inspect (`status`), rebuild (`rebuild`), or remove (`clear`) the incremental SQLite and FTS5 workspace cache.
+.TP
+.B show \fILOCATOR\fR
+Extract a scoped entry subtree or level-0 file node by `OrgLocator` (`id:`, `file::#custom_id`, `file::*Heading`, `file::line`).
+.TP
+.B refile \fISOURCE\fR \fITARGET\fR
+Move an entry subtree across files or under a new parent heading while adjusting outline levels atomically.
+.TP
+.B mcp \fR[\fB\-\-workspace\fR \fIDIR\fR]
+Run the built-in Model Context Protocol (MCP) JSON-RPC 2.0 server over standard input and standard output.
+.TP
+.B archive \fR[\fIPATHS\fR...]
+Move completed (`DONE`) subtrees into their configured archive sibling file (`_archive`).
+.TP
+.B schema \fR[\fB\-\-list\fR] [\fB\-o\fR \fIPATH\fR] [\fINAME\fR]
+Print or write embedded JSON Schema Draft 2020-12 contracts for `org` JSON outputs.
+.SH GLOBAL OPTIONS
+.TP
+.B \-\-no\-cache
+Bypass the `.cache/org-cache.db` SQLite workspace index and parse `.org` files directly from disk.
+.TP
+.B \-\-completions \fISHELL\fR
+Generate shell completion scripts for `bash`, `zsh`, `fish`, `elvish`, or `powershell` and exit.
+.TP
+.B \-h\fR, \fB\-\-help
+Print concise or detailed command help and exit.
+.TP
+.B \-V\fR, \fB\-\-version
+Print the `org` binary version and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Operation completed cleanly (`EXIT_OK`).
+.TP
+.B 1
+No query matches found, or lint and format diagnostics were emitted (`EXIT_ISSUES`).
+.TP
+.B 2
+Operational failure such as missing file, parse error, or invalid CLI arguments (`EXIT_ERROR`).
+.TP
+.B 3
+Spreadsheet formula or feature requires Emacs Lisp or full Emacs Calc (`EXIT_REQUIRES_EMACS`).
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+Disable ANSI color escape sequences in human-readable terminal output when set to any non-empty value.
+.TP
+.B TERM
+Terminal capability type; setting `TERM=dumb` disables ANSI styling and rich box-drawing characters.
+.TP
+.B ORG_TOOLS_CONFIG
+Explicit path to a configuration file overriding `.org-tools.toml` discovery.
+.TP
+.B VISUAL
+Preferred full-screen editor invoked by interactive note capture workflows when set.
+.TP
+.B EDITOR
+Fallback text editor invoked when `VISUAL` is unset during interactive capture workflows.
+.SH FILES
+.TP
+.I .org-tools.toml
+Project-scoped configuration file discovered in the current working directory or any ancestor directory.
+.TP
+.I $XDG_CONFIG_HOME/org-tools/config.toml
+User-level configuration file loaded when no project `.org-tools.toml` file exists.
+.TP
+.I .cache/org-cache.db
+Incremental SQLite WAL and FTS5 workspace index (`WorkspaceCache`) storing parsed nodes, links, and properties.
+.SH EXAMPLES
+Check formatting and lint rules across a workspace:
+.PP
+.nf
+    org fmt check README.org docs/
+.fi
+.PP
+Query actionable `NEXT` tasks and emit JSON:
+.PP
+.nf
+    org query next notes/ --format json
+.fi
+.PP
+List all embedded JSON Schema Draft 2020-12 contracts:
+.PP
+.nf
+    org schema --list
+.fi
+.SH SEE ALSO
+.B org-tools.toml(5)

@@ -1,0 +1,142 @@
+.\" Copyright (C) 2026 org-tools contributors
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH ORG-TOOLS.TOML 5 "2026-11-08" "org-tools" "File Formats Manual"
+.SH NAME
+org-tools.toml \- configuration file for the org command-line suite
+.SH SYNOPSIS
+.I .org-tools.toml
+.br
+.I $XDG_CONFIG_HOME/org-tools/config.toml
+.SH DESCRIPTION
+The
+.B .org-tools.toml
+file configures formatting rules, lint diagnostics, agenda warning windows, workflow keywords, roam directories, and capture templates for
+.BR org (1).
+Configuration files use TOML syntax.
+All settings are optional and fall back to Emacs Org-mode compatible defaults when omitted.
+.SH CONFIGURATION HIERARCHY
+.BR org (1)
+resolves configuration settings in the following precedence order:
+.IP 1. 4
+Explicit file path passed via the
+.B \-\-config
+command-line flag.
+.IP 2. 4
+File path specified in the
+.B ORG_TOOLS_CONFIG
+environment variable.
+.IP 3. 4
+Nearest
+.I .org-tools.toml
+file discovered in the current working directory or any parent directory.
+.IP 4. 4
+User configuration file at
+.IR $XDG_CONFIG_HOME/org-tools/config.toml .
+.IP 5. 4
+Built-in Emacs Org-mode compatible default values.
+.SH SECTIONS
+.SS [format]
+Controls auto-fixable formatting rules (`F001` through `F008`):
+.TP
+.B trailing_whitespace \fR(boolean, default: \fBtrue\fR)
+Remove trailing spaces and tabs from non-protected lines (`F001`).
+.TP
+.B blank_lines \fR(boolean, default: \fBfalse\fR)
+Collapse consecutive blank lines to `max_consecutive_blank_lines` (`F002`).
+.TP
+.B max_consecutive_blank_lines \fR(integer, default: \fB1\fR)
+Maximum consecutive blank lines permitted when `blank_lines` is enabled.
+.TP
+.B heading_blank_lines \fR(boolean, default: \fBfalse\fR)
+Enforce blank lines before headings (`F003`).
+.TP
+.B heading_blank_lines_before \fR(integer, default: \fB1\fR)
+Number of blank lines inserted before headings when `heading_blank_lines` is enabled.
+.TP
+.B table_format \fR(boolean, default: \fBtrue\fR)
+Align Org pipe table columns and normalize separator rows (`F004`).
+.TP
+.B property_drawer_align \fR(boolean, default: \fBtrue\fR)
+Align property values inside `:PROPERTIES:` drawers (`F005`).
+.SS [lint]
+Controls structural and stylistic lint rules (`E001` through `I007`):
+.TP
+.B disabled_rules \fR(array of strings, default: \fB[]\fR)
+Rule identifiers or kebab-case names to skip during `org fmt check` (for example, `["W001", "heading-level-gap"]`).
+.SS [agenda]
+Controls daily and weekly agenda timeline projection:
+.TP
+.B deadline_warning_days \fR(integer, default: \fB14\fR)
+Lead-time warning window in days for `DEADLINE:` timestamps without an explicit `-Nd` warning suffix.
+.SS [todo]
+Defines workspace-wide TODO state sequences when files omit `#+TODO:` keywords:
+.TP
+.B active \fR(array of strings, default: \fB["TODO", "NEXT", "WAITING"]\fR)
+Incomplete workflow keywords representing active tasks.
+.TP
+.B done \fR(array of strings, default: \fB["DONE", "CANCELLED"]\fR)
+Terminal workflow keywords representing completed tasks.
+.SS [roam]
+Configures `org-roam` v2 note discovery and daily note paths:
+.TP
+.B directory \fR(string, default: \fB"."\fR)
+Root directory scanned for `org-roam` v2 nodes and `:ID:` drawers.
+.TP
+.B dailies_directory \fR(string, default: \fB"daily"\fR)
+Subdirectory relative to `directory` storing date-stamped daily notes.
+.SS [capture.templates.<name>]
+Defines named note and task capture templates:
+.TP
+.B description \fR(string)
+Human-readable summary displayed when listing capture templates.
+.TP
+.B target_file \fR(string)
+Destination `.org` file path where captured entries are appended or filed.
+.TP
+.B target_heading \fR(string, optional)
+Target heading title under which new entries are inserted.
+.TP
+.B template \fR(string)
+Org heading and body template expanded during capture.
+.SH FILES
+.TP
+.I .org-tools.toml
+Project configuration file at the workspace root.
+.TP
+.I $XDG_CONFIG_HOME/org-tools/config.toml
+User-global fallback configuration file.
+.SH EXAMPLES
+Configure opinionated formatting, deadline warnings, and disabled lint rules:
+.PP
+.nf
+    [format]
+    trailing_whitespace = true
+    blank_lines = true
+    max_consecutive_blank_lines = 1
+    heading_blank_lines = true
+    heading_blank_lines_before = 1
+    table_format = true
+    property_drawer_align = true
+
+    [lint]
+    disabled_rules = ["W001", "I003"]
+
+    [agenda]
+    deadline_warning_days = 7
+
+    [todo]
+    active = ["TODO", "NEXT", "WAITING"]
+    done = ["DONE", "CANCELLED"]
+
+    [roam]
+    directory = "notes"
+    dailies_directory = "daily"
+
+    [capture.templates.inbox]
+    description = "Quick inbox task"
+    target_file = "inbox.org"
+    target_heading = "Tasks"
+    template = "* TODO %?\n:PROPERTIES:\n:CREATED: %U\n:END:\n"
+.fi
+.SH SEE ALSO
+.B org(1)

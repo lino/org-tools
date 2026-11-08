@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-columns-output.schema.json",
+  "title": "org query columns JSON output",
+  "description": "Schema for the JSON output of 'org query columns --format json'.",
+  "type": ["object", "array"],
+  "required": ["columns", "rows"],
+  "properties": {
+    "columns": {
+      "type": "array",
+      "description": "Compiled column header specifications in display order.",
+      "items": {
+        "$ref": "#/$defs/ColumnSpec"
+      }
+    },
+    "rows": {
+      "type": "array",
+      "description": "Evaluated heading rows in outline order.",
+      "items": {
+        "$ref": "#/$defs/ColumnRow"
+      }
+    }
+  },
+  "items": {
+    "$ref": "#/$defs/ColumnRow"
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ColumnSpec": {
+      "type": "object",
+      "required": ["property", "title", "width", "summary"],
+      "properties": {
+        "property": {
+          "type": "string",
+          "description": "Canonical uppercase property identifier (e.g., 'ITEM', 'EFFORT')."
+        },
+        "title": {
+          "type": "string",
+          "description": "Column header display title."
+        },
+        "width": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Optional explicit display width in characters from %[WIDTH]."
+        },
+        "summary": {
+          "type": ["string", "null"],
+          "enum": ["+", ":", "X", null],
+          "description": "Optional bottom-up summary rollup operator ('+', ':', 'X', or null)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ColumnRow": {
+      "type": "object",
+      "required": ["file", "line", "level", "values"],
+      "properties": {
+        "locator": {
+          "type": "string",
+          "description": "Canonical OrgLocator string for the entry."
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to the Org source file containing the entry."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "One-based line number of the heading."
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Heading outline level (1 = top-level *)."
+        },
+        "title": {
+          "type": "string",
+          "description": "Heading title text when projected separately."
+        },
+        "todo": {
+          "type": ["string", "null"],
+          "description": "Optional TODO state keyword on the heading."
+        },
+        "priority": {
+          "type": ["string", "null"],
+          "description": "Optional priority cookie character on the heading."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional tag list attached to the heading."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional raw drawer properties on the heading."
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Evaluated column cell values keyed by canonical uppercase property name."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

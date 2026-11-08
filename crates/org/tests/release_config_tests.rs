@@ -468,7 +468,9 @@ fn assert_archives_and_checksum(doc: &Value) {
             "README.org",
             "completions/org.bash",
             "completions/_org",
-            "completions/org.fish"
+            "completions/org.fish",
+            "man/org.1",
+            "man/org-tools.toml.5"
         ])
     );
     assert_eq!(doc["checksum"]["name_template"], "checksums.txt");
@@ -541,6 +543,11 @@ fn assert_nfpm_linux_packages(nfpm: &Value) {
         (
             "completions/org.fish",
             "/usr/share/fish/vendor_completions.d/org.fish",
+        ),
+        ("man/org.1", "/usr/share/man/man1/org.1"),
+        (
+            "man/org-tools.toml.5",
+            "/usr/share/man/man5/org-tools.toml.5",
         ),
         ("LICENSE", "/usr/share/doc/org-tools/LICENSE"),
         ("README.org", "/usr/share/doc/org-tools/README.org"),

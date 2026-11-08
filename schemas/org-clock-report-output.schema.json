@@ -24,8 +24,60 @@
       "file": {
         "type": "string",
         "description": "Path to the org file. Present when group_by=entry."
+      },
+      "effort": {
+        "type": ["string", "null"],
+        "description": "Human-readable :EFFORT: estimate string when present."
+      },
+      "effort_minutes": {
+        "type": ["integer", "null"],
+        "minimum": 0,
+        "description": "Optional :EFFORT: estimate in minutes when present on the entry."
+      },
+      "variance_minutes": {
+        "type": ["integer", "null"],
+        "description": "Signed variance in minutes (minutes - effort_minutes) when :EFFORT: is present."
       }
     },
     "additionalProperties": false
+  },
+  "$defs": {
+    "ClockEntrySummary": {
+      "type": "object",
+      "required": ["label", "minutes", "duration"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Label for this clock report row (entry title, date, tag, etc.)."
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total clocked time in minutes."
+        },
+        "duration": {
+          "type": "string",
+          "description": "Human-readable duration string (e.g., '2h 30m')."
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to the org file. Present when group_by=entry."
+        },
+        "effort": {
+          "type": ["string", "null"],
+          "description": "Human-readable :EFFORT: estimate string when present."
+        },
+        "effort_minutes": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Optional :EFFORT: estimate in minutes when present on the entry."
+        },
+        "variance_minutes": {
+          "type": ["integer", "null"],
+          "description": "Signed variance in minutes (minutes - effort_minutes) when :EFFORT: is present."
+        }
+      },
+      "additionalProperties": false
+    }
   }
 }

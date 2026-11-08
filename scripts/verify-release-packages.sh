@@ -264,14 +264,34 @@ verify_expected_artifact() {
     record_failure "empty ${kind_label} artifact for ${target_label}: $(basename "$found_path")"
     return 0
   fi
+  if [[ "$kind_label" == "archive" && "$found_path" == *.tar.gz ]] && tar -tzf "$found_path" >/dev/null 2>&1; then
+    local toc
+    toc="$(tar -tzf "$found_path")"
+    for man_rel in "man/org.1" "man/org-tools.toml.5"; do
+      if ! printf '%s\n' "$toc" | grep -q "${man_rel}$"; then
+        record_failure "archive $(basename "$found_path") missing ${man_rel}"
+      fi
+    done
+  fi
   record_verified_artifact "$target_label" "$kind_label" "$found_path" "true"
 }
 # endregion
 
 # region Release Matrix Verification
 
+# Verifies that GoReleaser config and source tree include man/org.1 and man/org-tools.toml.5.
+verify_manpage_packaging() {
+  [[ -f "$GORELEASER_CONFIG" ]] && grep -q "archives:" "$GORELEASER_CONFIG" || return 0
+  for token in "man/org.1" "man/org-tools.toml.5" "/usr/share/man/man1/org.1" "/usr/share/man/man5/org-tools.toml.5" "manpages:"; do
+    if ! grep -q "$token" "$GORELEASER_CONFIG"; then
+      record_failure "${GORELEASER_CONFIG} missing manpage packaging entry: ${token}"
+    fi
+  done
+}
+
 # Runs `goreleaser check` automatically when the `goreleaser` binary is present on PATH.
 verify_goreleaser_config_if_available() {
+  verify_manpage_packaging
   if ! command -v goreleaser >/dev/null 2>&1; then
     return 0
   fi
@@ -279,9 +299,7 @@ verify_goreleaser_config_if_available() {
     record_failure "goreleaser found on PATH but config file is missing: ${GORELEASER_CONFIG}"
     return 0
   fi
-
-  local check_output=""
-  local check_rc=0
+  local check_output="" check_rc=0
   check_output="$(goreleaser check -f "$GORELEASER_CONFIG" 2>&1)" || check_rc=$?
   if [[ "$check_rc" -eq 0 ]]; then
     GORELEASER_CHECKED="true"
@@ -392,15 +410,10 @@ verify_checksum_coverage() {
 # Executes release verification, emits telemetry and JSON summary, and exits with status.
 main() {
   parse_args "$@"
-  if [[ -n "$EVENTS_FILE" ]]; then
-    mkdir -p "$(dirname "$EVENTS_FILE")"
-    : > "$EVENTS_FILE"
-  fi
-  if [[ -n "$METRICS_FILE" ]]; then
-    mkdir -p "$(dirname "$METRICS_FILE")"
-  fi
+  [[ -z "$EVENTS_FILE" ]] || { mkdir -p "$(dirname "$EVENTS_FILE")"; : > "$EVENTS_FILE"; }
+  [[ -z "$METRICS_FILE" ]] || mkdir -p "$(dirname "$METRICS_FILE")"
 
-  local start_ts end_ts duration_sec overall_status success_num exit_code
+  local start_ts end_ts duration_sec overall_status="error" success_num=0 exit_code=1
   start_ts="$(now_epoch_seconds)"
   emit_jsonl_event "release.verification.started" "ok" "starting release verification in ${DIST_DIR}"
 
@@ -416,24 +429,16 @@ main() {
   end_ts="$(now_epoch_seconds)"
   duration_sec="$(elapsed_seconds "$start_ts" "$end_ts")"
   if [[ "$FAILED_COUNT" -eq 0 ]]; then
-    overall_status="ok"
-    success_num=1
-    exit_code=0
-  else
-    overall_status="error"
-    success_num=0
-    exit_code=1
+    overall_status="ok"; success_num=1; exit_code=0
   fi
 
   write_prometheus_metrics "$duration_sec" "$success_num"
   emit_jsonl_event "release.verification.completed" "$overall_status" \
     "completed verification: ${VERIFIED_COUNT} verified, ${FAILED_COUNT} failed" "$duration_sec"
-
   printf '{"status":"%s","package":"%s","dist_dir":"%s","tap":"%s/%s","goreleaser_checked":%s,"verified_artifacts":%d,"failed_checks":%d,"duration_seconds":%s}\n' \
     "$overall_status" "$(json_escape "$PACKAGE_NAME")" "$(json_escape "$DIST_DIR")" \
     "$(json_escape "$TAP_OWNER")" "$(json_escape "$TAP_NAME")" \
     "$GORELEASER_CHECKED" "$VERIFIED_COUNT" "$FAILED_COUNT" "$duration_sec"
-
   exit "$exit_code"
 }
 

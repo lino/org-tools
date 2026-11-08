@@ -6,6 +6,7 @@
 mod confinement;
 mod framing;
 mod schema;
+mod tools_clock;
 mod tools_lifecycle;
 mod tools_planning;
 mod tools_read;
@@ -28,10 +29,12 @@ use self::framing::{read_frame, write_frame, IncomingFrame};
 use self::schema::{
     build_tools_list_result, jsonrpc_err, jsonrpc_ok, optional_str, reject_unknown_keys,
     ALL_TOOL_NAMES, DEFAULT_PROTOCOL_VERSION, ERR_INVALID_PARAMS, ERR_INVALID_REQUEST,
-    ERR_METHOD_NOT_FOUND, ERR_PARSE_ERROR, SERVER_NAME, TOOL_FMT_FILE, TOOL_QUERY_AGENDA,
-    TOOL_QUERY_BLOCKED, TOOL_QUERY_NEXT, TOOL_REFILE, TOOL_ROAM_BACKLINKS, TOOL_ROAM_NODE,
-    TOOL_ROAM_SEARCH, TOOL_SHOW, TOOL_UPDATE_PLANNING, TOOL_UPDATE_STATE,
+    ERR_METHOD_NOT_FOUND, ERR_PARSE_ERROR, SERVER_NAME, TOOL_CLOCK_IN, TOOL_CLOCK_OUT,
+    TOOL_FMT_FILE, TOOL_QUERY_AGENDA, TOOL_QUERY_BLOCKED, TOOL_QUERY_NEXT, TOOL_REFILE,
+    TOOL_ROAM_BACKLINKS, TOOL_ROAM_NODE, TOOL_ROAM_SEARCH, TOOL_SHOW, TOOL_UPDATE_PLANNING,
+    TOOL_UPDATE_STATE,
 };
+use self::tools_clock::{exec_clock_in, exec_clock_out};
 use self::tools_lifecycle::exec_refile;
 use self::tools_planning::{exec_query_agenda, exec_update_planning};
 use self::tools_read::{
@@ -273,6 +276,8 @@ fn dispatch_named_tool(session: &mut McpSession, name: &str, args: &Map<String, 
         TOOL_UPDATE_PLANNING => exec_update_planning(session, args, started),
         TOOL_FMT_FILE => exec_fmt_file(session, args, started),
         TOOL_REFILE => exec_refile(session, args, started),
+        TOOL_CLOCK_IN => exec_clock_in(session, args, started),
+        TOOL_CLOCK_OUT => exec_clock_out(session, args, started),
         _ => unreachable!("tool name pre-validated against ALL_TOOL_NAMES"),
     }
 }
@@ -286,11 +291,8 @@ fn handle_tools_call(session: &mut McpSession, id: Value, params: Option<&Value>
         return jsonrpc_err(id, ERR_INVALID_PARAMS, "Invalid params: missing 'name'");
     };
     if !ALL_TOOL_NAMES.contains(&tool_name) {
-        return jsonrpc_err(
-            id,
-            ERR_INVALID_PARAMS,
-            format!("Invalid params: unknown tool '{tool_name}'"),
-        );
+        let msg = format!("Invalid params: unknown tool '{tool_name}'");
+        return jsonrpc_err(id, ERR_INVALID_PARAMS, msg);
     }
     let empty_args = Map::new();
     let args_ref = match param_map.get("arguments") {

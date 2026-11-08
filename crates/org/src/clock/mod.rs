@@ -3,5 +3,6 @@
 
 //! Clock time tracking for org-mode entries.
 
+pub mod mutate;
 pub mod report;
 pub mod status;

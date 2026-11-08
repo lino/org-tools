@@ -1,15 +1,20 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org clock` subcommand definitions and report/status handlers.
+//! `org clock` subcommand definitions and report/status/mutation handlers.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Subcommand, ValueEnum};
 
-use org_tools_core::files::collect_org_files;
+use org_tools_core::files::{canonicalize_clean, collect_org_files};
+use org_tools_core::locator::OrgLocator;
 
 use super::parse_org_files;
+use super::update::invalidate_warm_mabuse_caches;
+use crate::clock::mutate::{
+    execute_clock_in_on_files, terminate_active_clock, ClockMutationResult,
+};
 use crate::{clock, date, EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
 /// Output format for clock commands.
@@ -55,6 +60,71 @@ pub(crate) enum ClockCommand {
         /// Files or directories to scan.
         #[arg(default_value = ".")]
         paths: Vec<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: ClockOutputFormat,
+    },
+    /// Start an active clock on a target heading entry.
+    In {
+        /// Target heading locator (`id:<uuid>`, `<file>::#<id>`, `<file>::*Heading`, or `<file>::<line>`).
+        locator: String,
+
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Explicit start timestamp (`YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM`, or `[YYYY-MM-DD Day HH:MM]`).
+        #[arg(long)]
+        at: Option<String>,
+
+        /// Automatically close any existing running clock at the same timestamp before clocking in.
+        #[arg(long)]
+        auto_out: bool,
+
+        /// Preview changes without modifying files on disk.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: ClockOutputFormat,
+    },
+    /// Close an active running clock and record its elapsed duration.
+    Out {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Optional locator targeting a specific entry with a running clock.
+        #[arg(long)]
+        locator: Option<String>,
+
+        /// Explicit end timestamp (`YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM`, or `[YYYY-MM-DD Day HH:MM]`).
+        #[arg(long)]
+        at: Option<String>,
+
+        /// Preview changes without modifying files on disk.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value = "human")]
+        format: ClockOutputFormat,
+    },
+    /// Cancel an active running clock without recording elapsed duration.
+    Cancel {
+        /// Files or directories to scan.
+        #[arg(default_value = ".")]
+        paths: Vec<PathBuf>,
+
+        /// Optional locator targeting a specific entry with a running clock.
+        #[arg(long)]
+        locator: Option<String>,
+
+        /// Preview changes without modifying files on disk.
+        #[arg(long)]
+        dry_run: bool,
 
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
@@ -132,7 +202,107 @@ fn run_clock_status(paths: &[PathBuf], format: ClockOutputFormat) -> i32 {
     }
 }
 
-/// Runs the `clock` subcommand (`report` or `status`).
+/// Parses a clock locator string, supporting `<file>::<Heading>` outline shorthand.
+pub(crate) fn parse_clock_locator(raw: &str) -> Result<OrgLocator, String> {
+    let trimmed = raw.trim();
+    if let Ok(loc) = OrgLocator::parse(trimmed) {
+        return Ok(loc);
+    }
+    if let Some((fp, rest)) = trimmed.split_once("::") {
+        let s = rest.trim();
+        let ok = !fp.is_empty() && !s.is_empty() && !s.starts_with('#') && !s.starts_with("*/");
+        if ok && s.parse::<usize>().is_err() {
+            if let Ok(loc) = OrgLocator::parse(&format!("{fp}::*/{s}")) {
+                return Ok(loc);
+            }
+        }
+    }
+    Err(format!("invalid locator '{raw}'"))
+}
+
+/// Extracts the explicit file path from a file-scoped [`OrgLocator`], if any.
+pub(crate) fn locator_file_path(loc: &OrgLocator) -> Option<&Path> {
+    match loc {
+        OrgLocator::CustomId { file, .. }
+        | OrgLocator::OutlinePath { file, .. }
+        | OrgLocator::LineRef { file, .. } => Some(file.as_path()),
+        OrgLocator::Id(_) => None,
+    }
+}
+
+/// Collects deduplicated `.org` files from `paths`, adapting default `"."` when `locator` points elsewhere.
+fn collect_clock_files(
+    paths: &[PathBuf],
+    locator: Option<&OrgLocator>,
+) -> Result<Vec<PathBuf>, String> {
+    let mut files = collect_org_files(paths);
+    if let Some(lf) = locator.and_then(locator_file_path).filter(|p| p.exists()) {
+        let lc = canonicalize_clean(lf).unwrap_or_else(|_| lf.to_path_buf());
+        let has_lc = |list: &[PathBuf]| {
+            list.iter()
+                .any(|f| canonicalize_clean(f).unwrap_or_else(|_| f.clone()) == lc)
+        };
+        if !has_lc(&files) {
+            if paths == [PathBuf::from(".")] {
+                let dir = lf
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(lf);
+                files = collect_org_files(&[dir.to_path_buf()]);
+            }
+            if !has_lc(&files) {
+                files.push(lf.to_path_buf());
+            }
+        }
+    }
+    if files.is_empty() {
+        return Err("no .org files found".to_string());
+    }
+    Ok(files)
+}
+
+/// Emits a [`ClockMutationResult`] in human-readable or JSON format and invalidates warm caches.
+fn finish_clock_mutation(
+    outcome: Result<(ClockMutationResult, Vec<PathBuf>), String>,
+    dry_run: bool,
+    format: ClockOutputFormat,
+) -> i32 {
+    let (result, modified_paths) = match outcome {
+        Ok(pair) => pair,
+        Err(err) => {
+            eprintln!("org: {err}");
+            return EXIT_ERROR;
+        }
+    };
+    if !dry_run {
+        invalidate_warm_mabuse_caches(None, &modified_paths);
+    }
+    match format {
+        ClockOutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            );
+        }
+        ClockOutputFormat::Human => {
+            let prefix = if result.dry_run { "Would " } else { "" };
+            for d in &result.details {
+                let extra = d
+                    .detail
+                    .as_deref()
+                    .map(|s| format!(" ({s})"))
+                    .unwrap_or_default();
+                println!(
+                    "{prefix}{}: {}:{} {}{extra}",
+                    d.action, d.file, d.line, d.title
+                );
+            }
+        }
+    }
+    EXIT_OK
+}
+
+/// Runs the `clock` subcommand (`report`, `status`, `in`, `out`, or `cancel`).
 pub(crate) fn run_clock(command: ClockCommand) -> i32 {
     match command {
         ClockCommand::Report {
@@ -151,5 +321,51 @@ pub(crate) fn run_clock(command: ClockCommand) -> i32 {
             &tags,
         ),
         ClockCommand::Status { paths, format } => run_clock_status(&paths, format),
+        ClockCommand::In {
+            locator,
+            paths,
+            at,
+            auto_out,
+            dry_run,
+            format,
+        } => {
+            let outcome = parse_clock_locator(&locator)
+                .and_then(|p| collect_clock_files(&paths, Some(&p)))
+                .and_then(|f| {
+                    execute_clock_in_on_files(&f, &locator, at.as_deref(), auto_out, dry_run)
+                });
+            finish_clock_mutation(outcome, dry_run, format)
+        }
+        ClockCommand::Out {
+            paths,
+            locator,
+            at,
+            dry_run,
+            format,
+        } => {
+            let outcome = locator
+                .as_deref()
+                .map(parse_clock_locator)
+                .transpose()
+                .and_then(|p| collect_clock_files(&paths, p.as_ref()))
+                .and_then(|f| {
+                    terminate_active_clock(&f, locator.as_deref(), at.as_deref(), false, dry_run)
+                });
+            finish_clock_mutation(outcome, dry_run, format)
+        }
+        ClockCommand::Cancel {
+            paths,
+            locator,
+            dry_run,
+            format,
+        } => {
+            let outcome = locator
+                .as_deref()
+                .map(parse_clock_locator)
+                .transpose()
+                .and_then(|p| collect_clock_files(&paths, p.as_ref()))
+                .and_then(|f| terminate_active_clock(&f, locator.as_deref(), None, true, dry_run));
+            finish_clock_mutation(outcome, dry_run, format)
+        }
     }
 }

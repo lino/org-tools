@@ -19,7 +19,7 @@ use tempfile::TempDir;
 
 /// Forbidden machine-specific path prefix in repository configuration files.
 const FORBIDDEN_USER_PATH_PREFIX: &str = "/Users/";
-/// Expected 11 MCP tool names exposed by `org mcp`.
+/// Expected 13 MCP tool names exposed by `org mcp`.
 const EXPECTED_TOOLS: &[&str] = &[
     "org_roam_node",
     "org_roam_backlinks",
@@ -32,6 +32,8 @@ const EXPECTED_TOOLS: &[&str] = &[
     "org_update_planning",
     "org_fmt_file",
     "org_refile",
+    "org_clock_in",
+    "org_clock_out",
 ];
 /// UUID for the hub specification file node in the synthetic workspace.
 const HUB_ID: &str = "10000000-0000-4000-8000-000000000101";
@@ -42,8 +44,11 @@ const BLOCKED_ID: &str = "10000000-0000-4000-8000-000000000103";
 
 /// Returns the repository workspace root derived from `CARGO_MANIFEST_DIR`.
 fn repo_root() -> PathBuf {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    manifest.ancestors().nth(2).unwrap().to_path_buf()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap()
+        .to_path_buf()
 }
 
 /// Writes UTF-8 fixture text to `path`, creating parent directories as needed.
@@ -56,15 +61,9 @@ fn write_file_str(path: &Path, content: &str) {
 
 /// Seeds a three-file workspace with roam links, edna triggers, checklists, and dirty formatting.
 fn seed_mcp_workspace(root: &Path) {
-    let hub = format!(
-        ":PROPERTIES:\n:ID:           {HUB_ID}\n:ROAM_ALIASES: \"Mabuse Spec\" \"WP07-Hub\"\n:END:\n#+TITLE: Hub Architecture\n#+FILETAGS: :spec:\n\nCore architecture note.\n\n* NEXT [#A] Implement Herzmaschine probe                               :@code:\n:PROPERTIES:\n:CUSTOM_ID: probe-task\n:END:\n- [X] Wire schema\n- [ ] Verify telemetry (v2 — café)\nBody mentions Herzmaschine (v2 engine) for BM25 search.\n"
-    );
-    let tasks = format!(
-        "#+TITLE: Sprint Tasks\n\n* TODO Finish upstream foundation                                      :@code:\n:PROPERTIES:\n:ID:      {BLOCKER_ID}\n:TRIGGER: ids(\"{BLOCKED_ID}\") todo!(\"NEXT\")\n:END:\nImplements [[id:{HUB_ID}][Hub Architecture]] prerequisites.\n"
-    );
-    let roadmap = format!(
-        "#+TITLE: Roadmap\n\n* TODO Ship downstream deliverable                                     :@ops:\n:PROPERTIES:\n:ID: {BLOCKED_ID}\n:BLOCKER: ids(\"{BLOCKER_ID}\")\n:END:\nTrailing spaces here   \n| Name | Count |\n|---|---|\n| alpha | 1 |\nReferences [[id:{HUB_ID}][Hub Spec]].\n"
-    );
+    let hub = format!(":PROPERTIES:\n:ID:           {HUB_ID}\n:ROAM_ALIASES: \"Mabuse Spec\" \"WP07-Hub\"\n:END:\n#+TITLE: Hub Architecture\n#+FILETAGS: :spec:\n\nCore architecture note.\n\n* NEXT [#A] Implement Herzmaschine probe                               :@code:\n:PROPERTIES:\n:CUSTOM_ID: probe-task\n:END:\n- [X] Wire schema\n- [ ] Verify telemetry (v2 — café)\nBody mentions Herzmaschine (v2 engine) for BM25 search.\n");
+    let tasks = format!("#+TITLE: Sprint Tasks\n\n* TODO Finish upstream foundation                                      :@code:\n:PROPERTIES:\n:ID:      {BLOCKER_ID}\n:TRIGGER: ids(\"{BLOCKED_ID}\") todo!(\"NEXT\")\n:END:\nImplements [[id:{HUB_ID}][Hub Architecture]] prerequisites.\n");
+    let roadmap = format!("#+TITLE: Roadmap\n\n* TODO Ship downstream deliverable                                     :@ops:\n:PROPERTIES:\n:ID: {BLOCKED_ID}\n:BLOCKER: ids(\"{BLOCKER_ID}\")\n:END:\nTrailing spaces here   \n| Name | Count |\n|---|---|\n| alpha | 1 |\nReferences [[id:{HUB_ID}][Hub Spec]].\n");
     write_file_str(&join_slash_rel(root, "specs/hub.org"), &hub);
     write_file_str(&join_slash_rel(root, "plan/tasks.org"), &tasks);
     write_file_str(&join_slash_rel(root, "plan/roadmap.org"), &roadmap);

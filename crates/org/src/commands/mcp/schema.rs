@@ -5,6 +5,7 @@
 
 use serde_json::{json, Map, Value};
 
+pub(super) use super::tools_clock::{TOOL_CLOCK_IN, TOOL_CLOCK_OUT};
 use crate::commands::MutationTelemetry;
 
 // region Constants & Tool Identifiers
@@ -60,7 +61,7 @@ pub(super) const TOOL_FMT_FILE: &str = "org_fmt_file";
 /// MCP tool name atomically refiling an Org subtree across files or under a new heading.
 pub(super) const TOOL_REFILE: &str = "org_refile";
 
-/// Ordered registry of all 11 supported MCP tool names.
+/// Ordered registry of all 13 supported MCP tool names.
 pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_ROAM_NODE,
     TOOL_ROAM_BACKLINKS,
@@ -73,6 +74,8 @@ pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_UPDATE_PLANNING,
     TOOL_FMT_FILE,
     TOOL_REFILE,
+    TOOL_CLOCK_IN,
+    TOOL_CLOCK_OUT,
 ];
 
 // endregion
@@ -80,7 +83,12 @@ pub(super) const ALL_TOOL_NAMES: &[&str] = &[
 // region Tool Schema Descriptors
 
 /// Builds a single MCP tool descriptor with `additionalProperties: false`.
-fn tool_descriptor(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
+pub(super) fn tool_descriptor(
+    name: &str,
+    description: &str,
+    properties: Value,
+    required: &[&str],
+) -> Value {
     json!({
         "name": name,
         "description": description,
@@ -236,11 +244,12 @@ fn write_tool_descriptors() -> Vec<Value> {
     ]
 }
 
-/// Constructs the complete `tools/list` result object for all 11 MCP tools.
+/// Constructs the complete `tools/list` result object for all 13 MCP tools.
 pub(super) fn build_tools_list_result() -> Value {
     let mut tools = roam_and_query_descriptors();
     tools.extend(agenda_and_show_descriptors());
     tools.extend(write_tool_descriptors());
+    tools.extend(super::tools_clock::clock_tool_descriptors());
     json!({ "tools": tools })
 }
 

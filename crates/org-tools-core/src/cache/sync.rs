@@ -20,10 +20,10 @@ use crate::export_md::normalize_workspace_path;
 use crate::files::join_slash_rel;
 
 /// Minimum added file count before parallelizing SHA-256 and Org AST extraction across scoped threads.
-const PARALLEL_PARSE_THRESHOLD: usize = 64;
+const PARALLEL_PARSE_THRESHOLD: usize = 32;
 
 /// Maximum scoped worker threads used to parse added `.org` files during cold rebuilds.
-const MAX_PARSE_WORKERS: usize = 4;
+const MAX_PARSE_WORKERS: usize = 12;
 
 /// Sorted file-table diff tuple `(unchanged_hits, added_indices, changed_indices, deleted_rel_paths)`.
 type FileDiffPlan = (usize, Vec<usize>, Vec<usize>, Vec<String>);
@@ -262,18 +262,34 @@ pub(crate) fn sync_discovered_files(
     ))
 }
 
-/// Synchronizes `conn` with `workspace_root` incrementally (or completely when `full_rebuild` is `true`).
-pub(crate) fn sync_workspace(
-    conn: &mut Connection,
+/// Discovers all `.org` files under `workspace_root` and parses them in parallel across worker threads.
+pub(crate) fn collect_and_parse_all(
     workspace_root: &Path,
-    full_rebuild: bool,
+) -> Result<(usize, Vec<ParsedFilePayload>), String> {
+    let disk_files = discover_org_files(workspace_root)?;
+    let indices: Vec<usize> = (0..disk_files.len()).collect();
+    let upserts = build_added_payloads(workspace_root, &disk_files, &indices)?;
+    Ok((disk_files.len(), upserts))
+}
+
+/// Commits pre-parsed `upserts` during a full rebuild, clearing prior rows only when `existed_before` is `true`.
+pub(crate) fn apply_full_rebuild(
+    conn: &mut Connection,
+    existed_before: bool,
+    parsed: (usize, Vec<ParsedFilePayload>),
+    started: Instant,
 ) -> Result<CacheTelemetry, String> {
-    let started = Instant::now();
-    if full_rebuild {
+    let (scanned, upserts) = parsed;
+    if existed_before {
         clear_all_rows(conn)?;
     }
-    let disk_files = discover_org_files(workspace_root)?;
-    sync_discovered_files(conn, workspace_root, &disk_files, started).map(|(tel, _)| tel)
+    commit_batch(conn, &[], &[], &upserts)?;
+    Ok(CacheTelemetry {
+        duration_us: started.elapsed().as_micros() as u64,
+        files_scanned: scanned,
+        cache_hits: 0,
+        cache_misses: scanned,
+    })
 }
 
 /// Converts `path` into a forward-slash relative path under `workspace_root` when possible.

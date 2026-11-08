@@ -214,22 +214,34 @@ pub(crate) fn build_file_payload(
     }
 }
 
+/// Serializes `items` as a JSON array string, borrowing `"[]"` without allocation when empty.
+fn json_slice_or_empty(items: &[String]) -> std::borrow::Cow<'static, str> {
+    if items.is_empty() {
+        std::borrow::Cow::Borrowed("[]")
+    } else {
+        std::borrow::Cow::Owned(serde_json::to_string(items).unwrap_or_else(|_| "[]".into()))
+    }
+}
+
 /// Inserts [`RoamNode`] and excluded `:ID:` rows for `rel` inside `tx`.
 fn insert_nodes_in_tx(
     tx: &Transaction<'_>,
     rel: &str,
     p: &ParsedFilePayload,
 ) -> Result<(), String> {
+    if p.nodes.is_empty() && p.excluded_ids.is_empty() {
+        return Ok(());
+    }
     let sql = "INSERT INTO nodes (id, rel_path, id_seed, title, line, level, todo_keyword, priority, tags_json, olp_json, aliases_json, refs_json, roam_excluded)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)";
     let mut stmt = tx
         .prepare_cached(sql)
         .map_err(|e| format!("nodes prepare failed: {e}"))?;
     for n in &p.nodes {
-        let tags_j = serde_json::to_string(&n.tags).unwrap_or_else(|_| "[]".into());
-        let olp_j = serde_json::to_string(&n.olp).unwrap_or_else(|_| "[]".into());
-        let aliases_j = serde_json::to_string(&n.aliases).unwrap_or_else(|_| "[]".into());
-        let refs_j = serde_json::to_string(&n.refs).unwrap_or_else(|_| "[]".into());
+        let tags_j = json_slice_or_empty(&n.tags);
+        let olp_j = json_slice_or_empty(&n.olp);
+        let aliases_j = json_slice_or_empty(&n.aliases);
+        let refs_j = json_slice_or_empty(&n.refs);
         stmt.execute(params![
             n.id,
             rel,
@@ -239,10 +251,10 @@ fn insert_nodes_in_tx(
             n.level as i64,
             n.todo_keyword,
             n.priority,
-            tags_j,
-            olp_j,
-            aliases_j,
-            refs_j,
+            tags_j.as_ref(),
+            olp_j.as_ref(),
+            aliases_j.as_ref(),
+            refs_j.as_ref(),
             0i64
         ])
         .map_err(|e| format!("nodes insert failed for {rel}: {e}"))?;
@@ -285,20 +297,47 @@ fn write_payload_in_tx(tx: &Transaction<'_>, p: &ParsedFilePayload) -> Result<()
     .map_err(|e| format!("files insert failed for {rel}: {e}"))?;
 
     insert_nodes_in_tx(tx, rel, p)?;
-    for l in &p.links {
-        tx.prepare_cached("INSERT INTO links (rel_path, source_id, target_id, description, line, context) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
-            .and_then(|mut s| s.execute(params![rel, l.source_id, l.target_id, l.description, l.line as i64, l.context]))
+    if !p.links.is_empty() {
+        let mut s = tx
+            .prepare_cached("INSERT INTO links (rel_path, source_id, target_id, description, line, context) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+            .map_err(|e| format!("links prepare failed: {e}"))?;
+        for l in &p.links {
+            s.execute(params![
+                rel,
+                l.source_id,
+                l.target_id,
+                l.description,
+                l.line as i64,
+                l.context
+            ])
             .map_err(|e| format!("links insert failed for {rel}: {e}"))?;
+        }
     }
-    for e in &p.edna_edges {
-        tx.prepare_cached("INSERT INTO edna_edges (rel_path, entry_idx, entry_id, line, kind, target_id, raw_expr) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
-            .and_then(|mut s| s.execute(params![rel, e.entry_idx, e.entry_id, e.line, e.kind, e.target_id, e.raw_expr]))
+    if !p.edna_edges.is_empty() {
+        let mut s = tx
+            .prepare_cached("INSERT INTO edna_edges (rel_path, entry_idx, entry_id, line, kind, target_id, raw_expr) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
+            .map_err(|e| format!("edna_edges prepare failed: {e}"))?;
+        for e in &p.edna_edges {
+            s.execute(params![
+                rel,
+                e.entry_idx,
+                e.entry_id,
+                e.line,
+                e.kind,
+                e.target_id,
+                e.raw_expr
+            ])
             .map_err(|e| format!("edna_edges insert failed for {rel}: {e}"))?;
+        }
     }
-    for f in &p.fts_rows {
-        tx.prepare_cached("INSERT INTO entries_fts (rel_path, entry_idx, heading_line, title, body) VALUES (?1, ?2, ?3, ?4, ?5)")
-            .and_then(|mut s| s.execute(params![rel, f.entry_idx, f.heading_line, f.title, f.body]))
-            .map_err(|e| format!("entries_fts insert failed for {rel}: {e}"))?;
+    if !p.fts_rows.is_empty() {
+        let mut s = tx
+            .prepare_cached("INSERT INTO entries_fts (rel_path, entry_idx, heading_line, title, body) VALUES (?1, ?2, ?3, ?4, ?5)")
+            .map_err(|e| format!("entries_fts prepare failed: {e}"))?;
+        for f in &p.fts_rows {
+            s.execute(params![rel, f.entry_idx, f.heading_line, f.title, f.body])
+                .map_err(|e| format!("entries_fts insert failed for {rel}: {e}"))?;
+        }
     }
     Ok(())
 }
@@ -350,37 +389,48 @@ pub(crate) fn commit_batch(
     touches: &[FileTouch],
     upserts: &[ParsedFilePayload],
 ) -> Result<(), String> {
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("failed to begin SQLite write transaction: {e}"))?;
-    for rel in deleted {
-        tx.prepare_cached("DELETE FROM entries_fts WHERE rel_path = ?1")
-            .and_then(|mut s| s.execute(params![rel]))
-            .map_err(|e| format!("FTS5 delete failed for {rel}: {e}"))?;
-        tx.prepare_cached("DELETE FROM files WHERE rel_path = ?1")
-            .and_then(|mut s| s.execute(params![rel]))
-            .map_err(|e| format!("files delete failed for {rel}: {e}"))?;
+    let pure_insert =
+        deleted.is_empty() && touches.is_empty() && upserts.iter().all(|p| !p.existed);
+    if pure_insert {
+        let _ = conn.execute_batch("PRAGMA foreign_keys = OFF; PRAGMA synchronous = OFF;");
     }
-    for t in touches {
-        tx.prepare_cached(
-            "UPDATE files SET mtime_ns = ?2, byte_len = ?3, is_symlink = ?4, canon_key = ?5
-             WHERE rel_path = ?1",
-        )
-        .and_then(|mut s| {
-            s.execute(params![
-                t.rel_path,
-                t.mtime_ns,
-                t.byte_len,
-                i64::from(t.is_symlink),
-                t.canon_key
-            ])
-        })
-        .map_err(|e| format!("metadata touch failed for {}: {e}", t.rel_path))?;
+    let res = (|| -> Result<(), String> {
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("failed to begin SQLite write transaction: {e}"))?;
+        for rel in deleted {
+            tx.prepare_cached("DELETE FROM entries_fts WHERE rel_path = ?1")
+                .and_then(|mut s| s.execute(params![rel]))
+                .map_err(|e| format!("FTS5 delete failed for {rel}: {e}"))?;
+            tx.prepare_cached("DELETE FROM files WHERE rel_path = ?1")
+                .and_then(|mut s| s.execute(params![rel]))
+                .map_err(|e| format!("files delete failed for {rel}: {e}"))?;
+        }
+        for t in touches {
+            tx.prepare_cached(
+                "UPDATE files SET mtime_ns = ?2, byte_len = ?3, is_symlink = ?4, canon_key = ?5
+                 WHERE rel_path = ?1",
+            )
+            .and_then(|mut s| {
+                s.execute(params![
+                    t.rel_path,
+                    t.mtime_ns,
+                    t.byte_len,
+                    i64::from(t.is_symlink),
+                    t.canon_key
+                ])
+            })
+            .map_err(|e| format!("metadata touch failed for {}: {e}", t.rel_path))?;
+        }
+        for payload in upserts {
+            write_payload_in_tx(&tx, payload)?;
+        }
+        recompute_roam_dups_in_tx(&tx)?;
+        tx.commit()
+            .map_err(|e| format!("failed to commit Mabuse cache transaction: {e}"))
+    })();
+    if pure_insert {
+        let _ = conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;");
     }
-    for payload in upserts {
-        write_payload_in_tx(&tx, payload)?;
-    }
-    recompute_roam_dups_in_tx(&tx)?;
-    tx.commit()
-        .map_err(|e| format!("failed to commit Mabuse cache transaction: {e}"))
+    res
 }

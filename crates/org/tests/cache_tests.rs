@@ -183,12 +183,13 @@ fn render_corpus_1k_file(file_idx: usize) -> String {
     buf
 }
 
-/// Generates the 1,000-file canonical `corpus-1k` workspace inside `root`.
+/// Generates the 1,000-file canonical `corpus-1k` workspace inside `root` and warms OS file caches.
 fn generate_corpus_1k(root: &Path) {
     for idx in 0..CORPUS_1K_FILES {
         let rel = format!("dir_{:02}/note_{idx:04}.org", idx / 100);
         write_org(&join_slash_rel(root, &rel), &render_corpus_1k_file(idx));
     }
+    let _ = MabuseCache::rebuild(root).and_then(|_| MabuseCache::clear(root));
 }
 
 // endregion

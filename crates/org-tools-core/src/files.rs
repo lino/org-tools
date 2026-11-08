@@ -13,7 +13,14 @@ pub fn build_org_walk_builder(root: &Path) -> WalkBuilder {
     #[cfg(windows)]
     {
         let mut builder = WalkBuilder::new(root);
-        builder.add_custom_ignore_filename(r".git\info\exclude");
+        let clean = strip_windows_verbatim(root.to_path_buf());
+        for ancestor in clean.ancestors() {
+            let exclude = ancestor.join(".git").join("info").join("exclude");
+            if exclude.is_file() {
+                let _ = builder.add_ignore(exclude);
+                break;
+            }
+        }
         builder
     }
     #[cfg(not(windows))]

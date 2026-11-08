@@ -24,6 +24,7 @@ const SESSION_PRAGMAS_SQL: &str = "
 /// Schema DDL creating all five required tables and indexes for Mabuse.
 const SCHEMA_DDL_SQL: &str = "
     PRAGMA journal_mode = WAL;
+    BEGIN;
 
     CREATE TABLE IF NOT EXISTS files (
         rel_path TEXT PRIMARY KEY,
@@ -91,6 +92,7 @@ const SCHEMA_DDL_SQL: &str = "
     );
 
     PRAGMA user_version = 3;
+    COMMIT;
 ";
 
 /// Row counts across all five Mabuse tables.

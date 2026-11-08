@@ -45,7 +45,9 @@ use schema::{
     adjust_roam_telemetry_counts, build_cache_status, configure_connection, list_table_names,
     open_in_memory_configured, query_table_counts, sidecar_path,
 };
-use sync::{invalidate_cached_paths, sync_discovered_files, sync_workspace};
+use sync::{
+    apply_full_rebuild, collect_and_parse_all, invalidate_cached_paths, sync_discovered_files,
+};
 use walk::discover_org_files;
 
 /// Default workspace-relative path for the Mabuse SQLite index.
@@ -166,13 +168,6 @@ impl MabuseCache {
         })
     }
 
-    /// Opens `db_path` (creating parent directories if needed) and ensures WAL + FTS5 schema.
-    fn open_rw(workspace_root: &Path, force_ddl: bool) -> Result<Self, String> {
-        let norm_root = normalize_workspace_path(workspace_root);
-        let db_path = Self::resolve_db_path(&norm_root);
-        Self::open_rw_normalized(norm_root, db_path, force_ddl)
-    }
-
     /// Inspects cache status at `workspace_root` without creating `.cache/mabuse.db` when absent.
     pub fn status(workspace_root: &Path) -> Result<CacheStatus, String> {
         let started = Instant::now();
@@ -198,8 +193,17 @@ impl MabuseCache {
 
     /// Rebuilds `.cache/mabuse.db` from scratch inside a single transaction.
     pub fn rebuild(workspace_root: &Path) -> Result<(Self, CacheStatus), String> {
-        let mut cache = Self::open_rw(workspace_root, true)?;
-        let telemetry = sync_workspace(&mut cache.conn, &cache.workspace_root, true)?;
+        let started = Instant::now();
+        let norm_root = normalize_workspace_path(workspace_root);
+        let db_path = Self::resolve_db_path(&norm_root);
+        let existed = db_path.is_file();
+        let (upserts_res, db_res) = std::thread::scope(|s| {
+            let parser = s.spawn(|| collect_and_parse_all(&norm_root));
+            let db = Self::open_rw_normalized(norm_root.clone(), db_path, true);
+            (parser.join().unwrap(), db)
+        });
+        let mut cache = db_res?;
+        let telemetry = apply_full_rebuild(&mut cache.conn, existed, upserts_res?, started)?;
         let counts = query_table_counts(&cache.conn)?;
         let status = build_cache_status(&cache.db_path, Some(counts), telemetry);
         Ok((cache, status))

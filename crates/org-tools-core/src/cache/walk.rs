@@ -11,10 +11,10 @@ use crate::export_md::normalize_workspace_path;
 use crate::files::{build_org_walk_builder, join_slash_rel};
 
 /// Minimum top-level subdirectory count before fanning out scoped parallel `read_dir` workers.
-const PARALLEL_SUBDIR_THRESHOLD: usize = 16;
+const PARALLEL_SUBDIR_THRESHOLD: usize = 4;
 
 /// Maximum scoped worker threads used for parallel directory metadata scanning.
-const MAX_SCAN_WORKERS: usize = 3;
+const MAX_SCAN_WORKERS: usize = 4;
 
 /// On-disk `.org` file metadata collected during a directory scan.
 #[derive(Debug, Clone)]

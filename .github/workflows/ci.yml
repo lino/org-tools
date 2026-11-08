@@ -68,7 +68,7 @@ jobs:
         run: cargo build --release
 
       - name: Run release cache SLO tests
-        run: cargo test --release --test cache_tests
+        run: cargo test --release --test cache_tests -- --test-threads=1
 
       - name: Smoke test on edge case fixtures
         run: |
@@ -98,7 +98,7 @@ jobs:
         run: cargo test
 
       - name: Run release cache SLO tests
-        run: cargo test --release --test cache_tests
+        run: cargo test --release --test cache_tests -- --test-threads=1
 
   container:
     name: Container (GHCR)

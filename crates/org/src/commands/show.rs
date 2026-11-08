@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org show` subcommand handler for bounded subtree and file-node extraction.
+//! Subcommand handler for `org show` bounded subtree and file-node extraction.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ use org_tools_core::export_md::{
     export_slice_to_markdown, extract_org_slice, resolve_workspace_locator,
     scan_file_node_checklists, truncate_unicode_chars, ExtractedOrgSlice, ResolvedWorkspaceNode,
 };
+use org_tools_core::include::expand_includes;
 use org_tools_core::locator::{locator_for_entry, OrgLocator, FILE_NODE_ENTRY_INDEX};
 use org_tools_core::rules::timestamp::OrgTimestamp;
 
@@ -57,6 +58,10 @@ pub(crate) struct ShowArgs {
     /// Include rendered `markdown` alongside `content` in `--format json` output.
     #[arg(long)]
     pub(crate) include_markdown: bool,
+
+    /// Expand `#+INCLUDE:` directives before rendering output.
+    #[arg(long)]
+    pub(crate) expand_includes: bool,
 }
 
 /// Planning timestamps serialized in `org show --format json`.
@@ -221,6 +226,31 @@ fn build_json_envelope(
     }
 }
 
+/// Renders `slice` in the requested `ShowOutputFormat` (`org`, `md`, or `json`).
+fn emit_show_output(
+    loaded: &ResolvedWorkspaceNode,
+    args: &ShowArgs,
+    slice: ExtractedOrgSlice<'_>,
+    started: Instant,
+) {
+    match args.format {
+        ShowOutputFormat::Org => {
+            print!("{}", truncate_unicode_chars(slice.raw, args.max_chars).0);
+        }
+        ShowOutputFormat::Md => {
+            let md = export_slice_to_markdown(slice.raw, &loaded.doc.file, &loaded.workspace_docs);
+            print!("{}", truncate_unicode_chars(&md, args.max_chars).0);
+        }
+        ShowOutputFormat::Json => {
+            let envelope = build_json_envelope(loaded, args, slice, started);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&envelope).unwrap_or_default()
+            );
+        }
+    }
+}
+
 /// Executes `org show <locator>` and returns the process exit status code.
 pub(crate) fn run_show(args: ShowArgs) -> i32 {
     let started = Instant::now();
@@ -231,7 +261,6 @@ pub(crate) fn run_show(args: ShowArgs) -> i32 {
             return EXIT_ERROR;
         }
     };
-
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let need_ws_docs = args.format == ShowOutputFormat::Md || args.include_markdown;
     let loaded =
@@ -242,30 +271,25 @@ pub(crate) fn run_show(args: ShowArgs) -> i32 {
                 return EXIT_ERROR;
             }
         };
-
-    let slice = extract_org_slice(
+    let mut slice = extract_org_slice(
         &loaded.source,
         &loaded.doc,
         &loaded.resolved,
         args.no_children,
     );
-
-    match args.format {
-        ShowOutputFormat::Org => {
-            print!("{}", truncate_unicode_chars(slice.raw, args.max_chars).0);
-        }
-        ShowOutputFormat::Md => {
-            let md = export_slice_to_markdown(slice.raw, &loaded.doc.file, &loaded.workspace_docs);
-            print!("{}", truncate_unicode_chars(&md, args.max_chars).0);
-        }
-        ShowOutputFormat::Json => {
-            let envelope = build_json_envelope(&loaded, &args, slice, started);
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&envelope).unwrap_or_default()
-            );
+    let expanded_buf;
+    if args.expand_includes {
+        match expand_includes(slice.raw, &loaded.doc.file, args.workspace.as_deref()) {
+            Ok(expanded) => {
+                expanded_buf = expanded;
+                slice.raw = &expanded_buf;
+            }
+            Err(err) => {
+                eprintln!("org: {err}");
+                return EXIT_ERROR;
+            }
         }
     }
-
+    emit_show_output(&loaded, &args, slice, started);
     EXIT_OK
 }

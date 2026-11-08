@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org clock` subcommand definitions and report/status/mutation handlers.
+//! Subcommand definitions and report, status, and mutation handlers for `org clock`.
 
 use std::path::{Path, PathBuf};
 
@@ -302,6 +302,23 @@ fn finish_clock_mutation(
     EXIT_OK
 }
 
+/// Executes `org clock out` or `org clock cancel`.
+fn run_clock_termination(
+    paths: &[PathBuf],
+    locator: Option<&str>,
+    at: Option<&str>,
+    cancel: bool,
+    dry_run: bool,
+    format: ClockOutputFormat,
+) -> i32 {
+    let outcome = locator
+        .map(parse_clock_locator)
+        .transpose()
+        .and_then(|p| collect_clock_files(paths, p.as_ref()))
+        .and_then(|f| terminate_active_clock(&f, locator, at, cancel, dry_run));
+    finish_clock_mutation(outcome, dry_run, format)
+}
+
 /// Runs the `clock` subcommand (`report`, `status`, `in`, `out`, or `cancel`).
 pub(crate) fn run_clock(command: ClockCommand) -> i32 {
     match command {
@@ -342,30 +359,19 @@ pub(crate) fn run_clock(command: ClockCommand) -> i32 {
             at,
             dry_run,
             format,
-        } => {
-            let outcome = locator
-                .as_deref()
-                .map(parse_clock_locator)
-                .transpose()
-                .and_then(|p| collect_clock_files(&paths, p.as_ref()))
-                .and_then(|f| {
-                    terminate_active_clock(&f, locator.as_deref(), at.as_deref(), false, dry_run)
-                });
-            finish_clock_mutation(outcome, dry_run, format)
-        }
+        } => run_clock_termination(
+            &paths,
+            locator.as_deref(),
+            at.as_deref(),
+            false,
+            dry_run,
+            format,
+        ),
         ClockCommand::Cancel {
             paths,
             locator,
             dry_run,
             format,
-        } => {
-            let outcome = locator
-                .as_deref()
-                .map(parse_clock_locator)
-                .transpose()
-                .and_then(|p| collect_clock_files(&paths, p.as_ref()))
-                .and_then(|f| terminate_active_clock(&f, locator.as_deref(), None, true, dry_run));
-            finish_clock_mutation(outcome, dry_run, format)
-        }
+        } => run_clock_termination(&paths, locator.as_deref(), None, true, dry_run, format),
     }
 }

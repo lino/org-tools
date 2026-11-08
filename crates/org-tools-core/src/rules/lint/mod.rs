@@ -18,6 +18,7 @@ pub mod duplicate_target;
 pub mod edna_cycle;
 pub mod file_application;
 pub mod heading_level_gap;
+pub mod include_validity;
 pub mod incomplete_drawer;
 pub mod invalid_babel_call;
 pub mod invalid_edna_syntax;

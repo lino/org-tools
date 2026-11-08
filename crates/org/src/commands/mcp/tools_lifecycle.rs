@@ -18,12 +18,30 @@ use super::confinement::{
     canonical_workspace_root, resolve_confined_org_path, verify_confined_mutation_target,
     verify_existing_confined_org_file,
 };
-use super::schema::{finish_tool_call, optional_bool, require_non_empty_str};
+use super::schema::{
+    finish_tool_call, optional_bool, require_non_empty_str, tool_descriptor, TOOL_REFILE,
+};
 use super::McpSession;
 use crate::commands::refile::{
     commit_refile_writes, execute_refile_pass, is_plain_org_path_target, resolve_flexible_locator,
 };
 use crate::commands::MutationDetail;
+
+/// Builds the `tools/list` JSON Schema descriptor for `org_refile`.
+pub(super) fn refile_tool_descriptor() -> Value {
+    tool_descriptor(
+        TOOL_REFILE,
+        "Atomically move an Org subtree across files or under a new heading with star-level and F007 tag alignment.",
+        json!({
+            "source_locator": { "type": "string", "description": "Source heading locator (id:<uuid>, custom-id:<id>, olp:<path>, *Heading, or <file>::<target>)." },
+            "target": { "type": "string", "description": "Destination heading locator or workspace-relative .org file path." },
+            "as_root": { "type": "boolean", "description": "Refile as a level-1 root heading at the end of the target file (default: false)." },
+            "dry_run": { "type": "boolean", "description": "Preview the refile mutation without writing files (default: false)." },
+            "workspace": { "type": "string", "description": "Optional workspace root directory override." }
+        }),
+        &["source_locator", "target"],
+    )
+}
 
 /// Validated workspace and argument context for an `org_refile` MCP tool call.
 struct RefileCallCtx {

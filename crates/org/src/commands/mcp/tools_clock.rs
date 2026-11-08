@@ -139,6 +139,19 @@ pub(super) fn exec_clock_in(
     })())
 }
 
+/// Validates and confines an optional `locator` argument for `org_clock_out`.
+fn parse_optional_clock_locator(
+    args: &Map<String, Value>,
+    display_ws: &Path,
+    canon_ws: &Path,
+) -> Result<Option<String>, String> {
+    match optional_str(args, "locator")? {
+        Some(ref s) if s.trim().is_empty() => Err("argument 'locator' must not be empty".into()),
+        Some(ref s) => confine_clock_locator(s, display_ws, canon_ws).map(Some),
+        None => Ok(None),
+    }
+}
+
 /// Executes `org_clock_out` over MCP `stdio`, enforcing confinement and invalidating `MabuseCache`.
 pub(super) fn exec_clock_out(
     session: &mut McpSession,
@@ -152,27 +165,13 @@ pub(super) fn exec_clock_out(
             .map_err(|e| (e, session.empty_telemetry(started)))?;
         let canon_ws = canonical_workspace_root(&norm_ws)
             .map_err(|e| (e, session.empty_telemetry(started)))?;
-        let raw_loc =
-            optional_str(args, "locator").map_err(|e| (e, session.empty_telemetry(started)))?;
-        let confined_loc = match raw_loc {
-            Some(ref s) if s.trim().is_empty() => {
-                return Err((
-                    "argument 'locator' must not be empty".to_string(),
-                    session.empty_telemetry(started),
-                ))
-            }
-            Some(ref s) => Some(
-                confine_clock_locator(s, &display_ws, &canon_ws)
-                    .map_err(|e| (e, session.empty_telemetry(started)))?,
-            ),
-            None => None,
-        };
+        let confined_loc = parse_optional_clock_locator(args, &display_ws, &canon_ws)
+            .map_err(|e| (e, session.empty_telemetry(started)))?;
         let at = optional_str(args, "at").map_err(|e| (e, session.empty_telemetry(started)))?;
         let dry_run = optional_bool(args, "dry_run", false)
             .map_err(|e| (e, session.empty_telemetry(started)))?;
         let files = collect_confined_workspace_files(&display_ws, &canon_ws)
             .map_err(|e| (e, session.empty_telemetry(started)))?;
-
         let outcome = terminate_active_clock(
             &files,
             confined_loc.as_deref(),
@@ -180,7 +179,6 @@ pub(super) fn exec_clock_out(
             false,
             dry_run,
         );
-
         if let (Ok((_, ref modified)), false) = (&outcome, dry_run) {
             session
                 .invalidate_workspace_paths(&norm_ws, is_default, modified)

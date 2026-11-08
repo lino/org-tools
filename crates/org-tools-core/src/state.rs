@@ -119,15 +119,15 @@ pub fn set_state_with_options(
     let lines: Vec<&str> = source.content.split('\n').collect();
     let kw_refs = doc.todo_keywords.all();
     let today = options.today.unwrap_or_else(current_local_date);
-    let indices: Vec<usize> = match entry_indices {
-        Some(idx) => idx.to_vec(),
-        None => (0..doc.entries.len()).collect(),
-    };
-    let mut fixes: Vec<Fix> = Vec::new();
-    let mut changed_indices = Vec::new();
-    let mut newly_done_indices = Vec::new();
-    let mut repeated_indices = Vec::new();
-    let mut transitions = Vec::new();
+    let indices: Vec<usize> =
+        entry_indices.map_or_else(|| (0..doc.entries.len()).collect(), <[usize]>::to_vec);
+    let (
+        mut fixes,
+        mut changed_indices,
+        mut newly_done_indices,
+        mut repeated_indices,
+        mut transitions,
+    ) = (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for &idx in &indices {
         let Some(outcome) = build_entry_outcome(
             source, doc, &lines, &kw_refs, idx, new_state, options, today,
@@ -138,14 +138,14 @@ pub fn set_state_with_options(
         changed_indices.push(idx);
         let repeated = matches!(outcome, EntryOutcome::Repeated(_));
         match outcome {
-            EntryOutcome::Standard(entry_fixes, newly_done) => {
-                fixes.extend(entry_fixes);
-                if newly_done {
+            EntryOutcome::Standard(f, done) => {
+                fixes.extend(f);
+                if done {
                     newly_done_indices.push(idx);
                 }
             }
-            EntryOutcome::Repeated(entry_fixes) => {
-                fixes.extend(entry_fixes);
+            EntryOutcome::Repeated(f) => {
+                fixes.extend(f);
                 repeated_indices.push(idx);
             }
         }
@@ -156,13 +156,16 @@ pub fn set_state_with_options(
             repeated,
         });
     }
-
     if changed_indices.is_empty() {
         return None;
     }
     fixes.sort_by_key(|f| f.span.start);
-    let fixed = apply_fixes(&source.content, &fixes);
-    let content = apply_transition_logging(&source.path, fixed, &transitions, &now_timestamp());
+    let content = apply_transition_logging(
+        &source.path,
+        apply_fixes(&source.content, &fixes),
+        &transitions,
+        &now_timestamp(),
+    );
     Some(SetStateResult {
         content,
         changed: changed_indices.len(),

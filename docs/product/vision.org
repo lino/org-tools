@@ -24,17 +24,19 @@ compose via Unix pipes.
 
 * Capabilities
 
-| Subcommand      | Purpose                              | Status |
-|-----------------+--------------------------------------+--------|
-| =org fmt=       | Lint and format org files            | Done   |
-| =org query=     | Search entries, agenda view          | Done   |
-| =org update=    | IDs, state, cookies, entries, calc   | Done   |
-| =org clock=     | Clock reports, running status        | Done   |
-| =org export=    | iCalendar, JSCalendar export         | Done   |
-| =org archive=   | Archive done entries                 | Done   |
-| =org schema=    | Print JSON schemas for output types  | Done   |
-| /org-edna/      | Dependency lint + query              | Done   |
-| =org query= GTD | next, inbox, waiting, blocked, stuck | Done   |
+| Subcommand      | Purpose                                              | Status |
+|-----------------+------------------------------------------------------+--------|
+| =org fmt=       | Lint and format org files (incl. =E003= includes)    | Done   |
+| =org query=     | Search, agenda, =org-habit=, and =columns= rollups   | Done   |
+| =org update=    | IDs, state (=:LOGBOOK:= / =:LAST_REPEAT:=), planning | Done   |
+| =org refile=    | Cross-file subtree refiling with level adjustment    | Done   |
+| =org clock=     | Clock =in= / =out= / =cancel=, reports, =:EFFORT:=   | Done   |
+| =org show=      | Bounded node slices with =--expand-includes=         | Done   |
+| =org export=    | iCalendar, JSCalendar, and GFM (=--expand-includes=) | Done   |
+| =org archive=   | Archive done entries                                 | Done   |
+| =org schema=    | Print JSON schemas for output types                  | Done   |
+| /org-edna/      | Dependency lint + query                              | Done   |
+| =org query= GTD | next, inbox, waiting, blocked, stuck                 | Done   |
 
 ** org fmt — Roadmap
 
@@ -80,17 +82,12 @@ parse and respect these to avoid false positives and produce correct results.
 |                           |        | OrgDocument; is_known_link_scheme() helper       |
 | =#+SETUPFILE:=            | Done   | Loads local setupfile and merges keywords;       |
 |                           |        | main file overrides; additive for TAGS/LINK      |
-
-*** Future (not yet needed)
-
-| Setting                   | Impact                                       |
-|---------------------------+----------------------------------------------|
-| =#+STARTUP: logdone= etc. | TODO state transition logging; relevant when |
-|                           | =org update= manages state changes           |
-| =#+COLUMNS:=              | Column view format; relevant if we support   |
-|                           | column view output                           |
-| =#+ARCHIVE:=              | Archive file location; relevant for a future |
-|                           | archive subcommand                           |
+| =#+STARTUP: logdone= etc. | Done   | =:LOGBOOK:= state transition logging and         |
+|                           |        | =:LAST_REPEAT:= timestamps on repeater advance   |
+| =#+COLUMNS:=              | Done   | =org query columns= property rollup views        |
+| =#+ARCHIVE:=              | Done   | =org archive= target resolution                  |
+| =#+INCLUDE:=              | Done   | =--expand-includes= on =org show= / =export md=  |
+|                           |        | and =E003= =include-validity= lint rule          |
 
 * Design Principles
 
@@ -154,8 +151,10 @@ fast and sufficient for most rules, but has inherent limits:
   entries with parent/child relationships. Section-level elements (paragraphs,
   lists, tables) are not modelled as individual nodes — rules scan the raw
   text between headings.
-- *No cross-file include resolution*: =#+INCLUDE:= directives are not
-  expanded. Lint rules operate on each file independently.
+- *Opt-in cross-file include expansion*: =#+INCLUDE:= directives are validated
+  by =E003= (=include-validity=) and expanded on demand via =--expand-includes=
+  in =org show= and =org export md=; other single-file lint rules inspect each
+  source buffer directly.
 
 ** Current known divergences from Emacs
 

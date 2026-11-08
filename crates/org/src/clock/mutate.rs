@@ -5,11 +5,12 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use org_tools_core::document::{OrgDocument, OrgEntry};
 use org_tools_core::files::{canonicalize_clean, write_file_atomic};
 use org_tools_core::locator::{resolve_in_document, OrgLocator};
+use org_tools_core::logbook::now_timestamp;
 use org_tools_core::planning::{date_to_days, day_of_week_abbrev};
 use org_tools_core::rules::heading::parse_heading;
 use org_tools_core::rules::timestamp::{is_valid_date, parse_timestamp, OrgTimestamp};
@@ -100,25 +101,6 @@ fn make_detail(
 
 // region Timestamp Parsing & Formatting
 
-/// Queries the OS local wall-clock timestamp as `YYYY-MM-DDTHH:MM`.
-fn current_local_iso() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as libc::time_t;
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    #[cfg(unix)]
-    unsafe {
-        libc::localtime_r(&secs, &mut tm);
-    }
-    #[cfg(windows)]
-    unsafe {
-        libc::localtime_s(&mut tm, &secs);
-    }
-    let (y, mo, d) = (tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-    format!("{y:04}-{mo:02}-{d:02}T{:02}:{:02}", tm.tm_hour, tm.tm_min)
-}
-
 /// Parses an explicit `--at` timestamp (`YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM`, or `[YYYY-MM-DD Day HH:MM]`).
 pub fn parse_clock_timestamp(raw: &str) -> Result<OrgTimestamp, String> {
     let t = raw.trim();
@@ -146,7 +128,7 @@ pub fn resolve_clock_timestamp(at: Option<&str>) -> Result<OrgTimestamp, String>
     let raw = at
         .map(str::to_string)
         .or(env_v)
-        .unwrap_or_else(current_local_iso);
+        .unwrap_or_else(|| format!("[{}]", now_timestamp()));
     parse_clock_timestamp(&raw)
 }
 
@@ -173,6 +155,27 @@ fn line_indent(line: &str) -> &str {
     &line[..line.len() - line.trim_start().len()]
 }
 
+/// Finds the 0-based line index immediately after planning lines and `:PROPERTIES:` drawer.
+fn find_drawer_insert_index(lines: &[String], head_idx: usize, end_idx: usize) -> usize {
+    let mut cur = head_idx + 1;
+    while cur < end_idx {
+        let t = lines[cur].trim();
+        if !(t.starts_with("SCHEDULED:") || t.starts_with("DEADLINE:") || t.starts_with("CLOSED:"))
+        {
+            break;
+        }
+        cur += 1;
+    }
+    if cur < end_idx && lines[cur].trim().eq_ignore_ascii_case(":PROPERTIES:") {
+        if let Some(ep) =
+            ((cur + 1)..end_idx).find(|&i| lines[i].trim().eq_ignore_ascii_case(":END:"))
+        {
+            return ep + 1;
+        }
+    }
+    cur
+}
+
 /// Inserts an open `CLOCK: [START]` line into `entry`'s `:LOGBOOK:` drawer (creating one if absent).
 fn insert_clock_in_source(content: &str, entry: &OrgEntry, start_ts: &OrgTimestamp) -> String {
     let mut lines: Vec<String> = content.split('\n').map(str::to_string).collect();
@@ -189,21 +192,7 @@ fn insert_clock_in_source(content: &str, entry: &OrgEntry, start_ts: &OrgTimesta
             return lines.join("\n");
         }
     }
-    let is_plan = |s: &str| {
-        let t = s.trim();
-        t.starts_with("SCHEDULED:") || t.starts_with("DEADLINE:") || t.starts_with("CLOSED:")
-    };
-    let mut cur = head_idx + 1;
-    while cur < end_idx && is_plan(&lines[cur]) {
-        cur += 1;
-    }
-    if cur < end_idx && lines[cur].trim().eq_ignore_ascii_case(":PROPERTIES:") {
-        if let Some(ep) =
-            ((cur + 1)..end_idx).find(|&i| lines[i].trim().eq_ignore_ascii_case(":END:"))
-        {
-            cur = ep + 1;
-        }
-    }
+    let cur = find_drawer_insert_index(&lines, head_idx, end_idx);
     let drawer = [
         format!("{head_indent}:LOGBOOK:"),
         format!("{head_indent}CLOCK: {start_ts}"),

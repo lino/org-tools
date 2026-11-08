@@ -1,5 +1,8 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=1010 reason="Cohesive heading, TODO keyword, priority, and tag parser with comprehensive unit test suite"
+
+//! Heading line, `#+TODO:` keyword, `#+PRIORITIES:` range, and `#+TAGS:` specification parsers.
 
 /// Parsed components of an org heading line.
 ///
@@ -115,6 +118,26 @@ impl Default for TodoKeywords {
     }
 }
 
+/// Extracts the bare keyword name and records any `!`/`@` logging flags for `raw_word`.
+fn parse_and_record_todo_word(
+    raw_word: &str,
+    log_on_enter: &mut std::collections::HashSet<String>,
+    log_on_leave: &mut std::collections::HashSet<String>,
+) -> Option<String> {
+    let (kw, enter, leave) = crate::logbook::parse_todo_keyword_flags(raw_word);
+    let name = kw.split('(').next().unwrap_or(kw).trim();
+    if name.is_empty() {
+        return None;
+    }
+    if enter {
+        log_on_enter.insert(name.to_string());
+    }
+    if leave {
+        log_on_leave.insert(name.to_string());
+    }
+    Some(name.to_string())
+}
+
 /// Parse a `#+TODO:` / `#+SEQ_TODO:` / `#+TYP_TODO:` value into [`TodoKeywords`].
 ///
 /// Format: `KW1 KW2 | KW3 KW4` where `|` separates not-done from done states.
@@ -125,67 +148,30 @@ pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
     if spec.is_empty() {
         return TodoKeywords::default();
     }
-
-    let (before_pipe, after_pipe) = if let Some(pos) = spec.find('|') {
-        (&spec[..pos], Some(&spec[pos + 1..]))
-    } else {
-        (spec, None)
-    };
-
+    let (before_pipe, after_pipe) = spec
+        .split_once('|')
+        .map_or((spec, None), |(b, a)| (b, Some(a)));
     let mut log_on_enter = std::collections::HashSet::new();
     let mut log_on_leave = std::collections::HashSet::new();
-    let mut extract_kw = |w: &str| -> String {
-        let (kw, enter, leave) = crate::logbook::parse_todo_keyword_flags(w);
-        let name = if let Some(paren) = kw.find('(') {
-            &kw[..paren]
-        } else {
-            kw
-        };
-        if !name.is_empty() {
-            if enter {
-                log_on_enter.insert(name.to_string());
-            }
-            if leave {
-                log_on_leave.insert(name.to_string());
-            }
-        }
-        name.to_string()
-    };
-
-    let before: Vec<String> = before_pipe
+    let mut before: Vec<String> = before_pipe
         .split_whitespace()
-        .map(&mut extract_kw)
-        .filter(|s| !s.is_empty())
+        .filter_map(|w| parse_and_record_todo_word(w, &mut log_on_enter, &mut log_on_leave))
         .collect();
-
-    if let Some(after) = after_pipe {
-        let done: Vec<String> = after
+    let done = if let Some(after) = after_pipe {
+        after
             .split_whitespace()
-            .map(&mut extract_kw)
-            .filter(|s| !s.is_empty())
-            .collect();
-        TodoKeywords {
-            todo: before,
-            done,
-            log_on_enter,
-            log_on_leave,
-        }
+            .filter_map(|w| parse_and_record_todo_word(w, &mut log_on_enter, &mut log_on_leave))
+            .collect()
     } else if before.len() > 1 {
-        let mut todo = before;
-        let done = vec![todo.pop().unwrap()];
-        TodoKeywords {
-            todo,
-            done,
-            log_on_enter,
-            log_on_leave,
-        }
+        vec![before.pop().unwrap()]
     } else {
-        TodoKeywords {
-            todo: before,
-            done: Vec::new(),
-            log_on_enter,
-            log_on_leave,
-        }
+        Vec::new()
+    };
+    TodoKeywords {
+        todo: before,
+        done,
+        log_on_enter,
+        log_on_leave,
     }
 }
 

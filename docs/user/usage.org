@@ -184,6 +184,7 @@ org fmt check --format json . | jq '.[] | select(.severity == "error")'
 | E001 | unclosed-block         | =#+BEGIN= without matching =#+END=                               |
 | E002 | duplicate-custom-id    | Duplicate =CUSTOM_ID= property                                   |
 | E003 | duplicate-name         | Duplicate =#+NAME:= value                                        |
+| E003 | include-validity       | Broken, escaping, or cyclic =#+INCLUDE:= directive               |
 | E004 | duplicate-target       | Duplicate =<<target>>=                                           |
 | E005 | duplicate-footnote-def | Duplicate footnote definition                                    |
 | E006 | incomplete-drawer      | =:DRAWER:= without =:END:=                                       |
@@ -264,7 +265,8 @@ org query search [OPTIONS] <QUERY> [PATHS...]
 
 Project an Emacs-compatible multi-day agenda timeline covering =SCHEDULED=,
 =DEADLINE=, overdue items, per-timestamp (=-Nd= / =--Nd=) or global deadline
-warnings, =+= / =++= / =.+= repeaters, and active =<...>= body timestamps.
+warnings, =+= / =++= / =.+= repeaters, =org-habit= (=:STYLE: habit=) consistency
+graphs, and active =<...>= body timestamps.
 
 #+begin_src sh
 org query agenda [OPTIONS] [PATHS...]
@@ -291,6 +293,24 @@ org query agenda --from 2026-04-06 --days 14 --composite ~/org/
 org query agenda --composite --format md -o build/docs/agenda.md ~/org/
 org query agenda --warning-days 7 --format org -o agenda.org ~/org/
 #+end_src
+
+** =org query columns=
+
+Evaluate =#+COLUMNS:= format specifications and bottom-up property/effort/clock
+summary rollups (={+}=, ={min}=, ={max}=, ={mean}=, ={:}=).
+
+#+begin_src sh
+org query columns [OPTIONS] [PATHS...]
+#+end_src
+
+| Option             | Description                                                |
+|--------------------+------------------------------------------------------------|
+| =--columns <SPEC>= | Override in-buffer =#+COLUMNS:= specification              |
+| =--id <LOCATOR>=   | Scope column view to a single subtree by =OrgLocator=      |
+| =--format human=   | Aligned ASCII table (default)                              |
+| =--format json=    | JSON output (see =schemas/org-columns-output.schema.json=) |
+| =--format org=     | Org-mode pipe table                                        |
+| =--format md=      | GitHub Flavored Markdown pipe table                        |
 
 ** Query Syntax
 
@@ -575,8 +595,11 @@ or directories. When transitioning to a done state:
   =--no-closed= is passed).
 - Entries carrying a repeating =SCHEDULED=, =DEADLINE=, or active body timestamp
   (=+=, =++=, or =.+=) automatically advance every repeating timestamp to its
-  next occurrence, reset the keyword to the initial active TODO state (or
-  =:REPEAT_TO_STATE:=), and omit =CLOSED= unless =--no-repeat= is passed.
+  next occurrence, record =:LAST_REPEAT:= in =:PROPERTIES:=, append a
+  =- State "DONE" from "TODO" [...]= entry in =:LOGBOOK:= (respecting
+  =#+STARTUP: logdone= / =:LOGGING:= and =org-habit= =:STYLE: habit=), reset the
+  keyword to the initial active TODO state (or =:REPEAT_TO_STATE:=), and omit
+  =CLOSED= unless =--no-repeat= is passed.
 
 #+begin_src sh
 org update set-state [OPTIONS] <STATE> [TARGETS]...
@@ -852,9 +875,21 @@ org update calc ~/org/
 
 * Clock (=org clock=)
 
+** =org clock in=, =org clock out=, and =org clock cancel=
+
+Start, stop, or cancel active =CLOCK:= entries inside an entry's =:LOGBOOK:=
+drawer.
+
+#+begin_src sh
+org clock in [OPTIONS] <LOCATOR>
+org clock out [OPTIONS] [TARGETS...]
+org clock cancel [OPTIONS] [TARGETS...]
+#+end_src
+
 ** =org clock report=
 
-Show a clock time report summarising clocked hours across entries.
+Show a clock time report summarising clocked hours across entries and computing
+=:EFFORT:= vs. clocked duration variance deltas.
 
 #+begin_src sh
 org clock report [OPTIONS] [PATHS...]
@@ -971,10 +1006,11 @@ org export md [OPTIONS] [PATHS...]
 |---------------------+------------------------------------------------------------------|
 | =--output, -o=      | Output file (single input) or output directory (multiple inputs) |
 | =--workspace <DIR>= | Workspace root used to resolve cross-node =id:<uuid>= links      |
+| =--expand-includes= | Expand workspace-confined =#+INCLUDE:= directives before export  |
 
 #+begin_src sh
-# Export a single Org document to stdout as Markdown
-org export md README.org
+# Export a single Org document to stdout as Markdown (expanding #+INCLUDE: lines)
+org export md --expand-includes README.org
 
 # Export a directory tree to a Zensical docs output folder
 org export md --workspace ~/org/ --output build/docs ~/org/specs/
@@ -1028,14 +1064,35 @@ org show [OPTIONS] <LOCATOR>
 | =--no-children=      | Omit descendant subheadings (or stop before first =*= heading) |
 | =--max-chars <N>=    | Truncate extracted text cleanly at =N= Unicode scalar values   |
 | =--include-markdown= | Include rendered =markdown= alongside =content= in JSON output |
+| =--expand-includes=  | Expand workspace-confined =#+INCLUDE:= directives in slice     |
 
 #+begin_src sh
-# Extract a single subtree as bounded Markdown
-org show 'specs/hub.org::#probe-task' --format md --max-chars 2000
+# Extract a single subtree as bounded Markdown with #+INCLUDE: expansion
+org show 'specs/hub.org::#probe-task' --format md --expand-includes --max-chars 2000
 
 # Resolve an id: locator across a workspace as JSON with checklist summary
 org show 'id:550e8400-e29b-41d4-a716-446655440000' --workspace ~/org/ --format json
 #+end_src
+
+* Refile (=org refile=)
+
+Move or copy a heading subtree across files or under a target parent heading,
+automatically adjusting heading stars and recalculating parent =[/]= / =[%]=
+statistic cookies.
+
+#+begin_src sh
+org refile [OPTIONS] <SOURCE> --to <TARGET>
+#+end_src
+
+| Option              | Description                                                 |
+|---------------------+-------------------------------------------------------------|
+| =--to <TARGET>=     | Destination file path or =OrgLocator=                       |
+| =--as-sibling=      | Insert as a sibling immediately after =<TARGET>=            |
+| =--copy=            | Copy the subtree without removing it from the source file   |
+| =--workspace <DIR>= | Workspace root for =id:= locator resolution                 |
+| =--dry-run=         | Preview refile mutations without writing files              |
+| =--format human=    | Human-readable output (default)                             |
+| =--format json=     | JSON output (see =schemas/org-mutation-output.schema.json=) |
 
 * Cache (=org cache=)
 

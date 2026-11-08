@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `#+COLUMNS:` and `:COLUMNS:` tabular property view parser and bottom-up rollup engine.
+//! Tabular property view parser and bottom-up rollup engine for `#+COLUMNS:` and `:COLUMNS:`.
 //!
 //! Spec: [§7.5 Column View](https://orgmode.org/manual/Column-View.html).
 
@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::document::OrgDocument;
 use crate::locator::locator_for_entry;
+
+// region Public Types & Constants
 
 /// Default Org-mode column view format when no `#+COLUMNS:` or `:COLUMNS:` is specified.
 pub const DEFAULT_COLUMNS_FORMAT: &str = "%25ITEM %TODO %3PRIORITY %TAGS";
@@ -66,6 +68,10 @@ pub struct ColumnView {
     /// Evaluated heading rows in outline order.
     pub rows: Vec<ColumnRow>,
 }
+
+// endregion
+
+// region Format Specification Parsing
 
 /// Splits a column format string at top-level `%` markers outside `(...)` and `{...}`.
 fn split_column_tokens(spec: &str) -> Vec<&str> {
@@ -182,6 +188,10 @@ pub fn resolve_columns_format(
         .to_string()
 }
 
+// endregion
+
+// region Duration & Value Formatting
+
 /// Parses unit-suffixed duration tokens (`2h`, `45m`, `1h 30m`, `1.5h`) into minutes.
 fn parse_unit_duration(trimmed: &str) -> Option<i64> {
     let (mut rest, mut total_mins, mut matched) = (trimmed, 0.0f64, false);
@@ -250,6 +260,10 @@ fn format_tag_list<S: AsRef<str>>(tags: &[S]) -> String {
         format!(":{}:", items.join(":"))
     }
 }
+
+// endregion
+
+// region Rollup Evaluation Engine
 
 /// Evaluates the raw (unrolled) property or special property `prop` on `doc.entries[idx]`.
 fn raw_entry_property(doc: &OrgDocument, idx: usize, prop: &str) -> String {
@@ -334,16 +348,19 @@ fn eval_checkbox_column(doc: &OrgDocument, prop: &str) -> Vec<String> {
             .iter()
             .filter_map(|&c| counts[c])
             .fold((0, 0), |(d, t), (cd, ct)| (d + cd, t + ct));
-        if todo_total > 0 {
-            counts[idx] = Some((todo_done, todo_total));
-            out[idx] = format!("[{todo_done}/{todo_total}]");
+        let ratio = if todo_total > 0 {
+            Some((todo_done, todo_total))
         } else if sub_total > 0 {
-            counts[idx] = Some((sub_done, sub_total));
-            out[idx] = format!("[{sub_done}/{sub_total}]");
+            Some((sub_done, sub_total))
         } else if !entry.checklist.is_empty() {
             let s = entry.checklist_summary();
-            counts[idx] = Some((s.checked, s.total));
-            out[idx] = format!("[{}/{}]", s.checked, s.total);
+            Some((s.checked, s.total))
+        } else {
+            None
+        };
+        if let Some((d, t)) = ratio {
+            counts[idx] = Some((d, t));
+            out[idx] = format!("[{d}/{t}]");
         } else {
             let raw = raw_entry_property(doc, idx, prop);
             counts[idx] = match raw.trim() {
@@ -363,12 +380,9 @@ fn evaluate_column(doc: &OrgDocument, col: &ColumnSpec, clocksums: &[i64]) -> Ve
     if p == "CLOCKSUM" {
         return clocksums
             .iter()
-            .map(|&m| {
-                if m > 0 {
-                    format_duration_hmm(m)
-                } else {
-                    String::new()
-                }
+            .map(|&m| match m {
+                1.. => format_duration_hmm(m),
+                _ => String::new(),
             })
             .collect();
     }
@@ -388,17 +402,14 @@ fn evaluate_column(doc: &OrgDocument, col: &ColumnSpec, clocksums: &[i64]) -> Ve
 
 /// Collects entry indices in outline order for either the full document or `root_entry_idx`.
 fn collect_subtree_indices(doc: &OrgDocument, root_entry_idx: Option<usize>) -> Vec<usize> {
-    let Some(root_idx) = root_entry_idx else {
+    let Some(ridx) = root_entry_idx else {
         return (0..doc.entries.len()).collect();
     };
-    let Some(root) = doc.entries.get(root_idx) else {
+    let Some(rlvl) = doc.entries.get(ridx).map(|e| e.level) else {
         return Vec::new();
     };
-    std::iter::once(root_idx)
-        .chain(
-            ((root_idx + 1)..doc.entries.len())
-                .take_while(|&idx| doc.entries[idx].level > root.level),
-        )
+    std::iter::once(ridx)
+        .chain(((ridx + 1)..doc.entries.len()).take_while(|&i| doc.entries[i].level > rlvl))
         .collect()
 }
 
@@ -434,3 +445,5 @@ pub fn build_column_view(
         .collect();
     ColumnView { columns, rows }
 }
+
+// endregion

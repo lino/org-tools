@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org refile` subcommand handler for atomic same-file and cross-file subtree refiling.
+//! Subcommand handler for `org refile` atomic same-file and cross-file subtree refiling.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -58,6 +58,30 @@ pub(crate) struct RefileArgs {
 
 // region Flexible Locator Resolution
 
+/// Parses a fileless shorthand (`custom-id:...`, `#...`, `olp:...`, `*Heading`) against `file`.
+fn parse_default_file_shorthand(trimmed: &str, file: &Path) -> Option<Result<OrgLocator, String>> {
+    if let Some(cid) = trimmed
+        .strip_prefix("custom-id:")
+        .or_else(|| trimmed.strip_prefix('#'))
+    {
+        return Some(
+            OrgLocator::parse(&format!("{}::#{}", file.display(), cid.trim()))
+                .map_err(|e| e.to_string()),
+        );
+    }
+    if let Some(olp) = trimmed
+        .strip_prefix("olp:")
+        .or_else(|| trimmed.strip_prefix('*'))
+    {
+        let cleaned = olp.trim_start_matches('*').trim();
+        return Some(
+            OrgLocator::parse(&format!("{}::*/{cleaned}", file.display()))
+                .map_err(|e| e.to_string()),
+        );
+    }
+    None
+}
+
 /// Normalizes shorthand locator strings (`file.org::*Heading`, `file.org::olp:A/B`) into [`OrgLocator`].
 pub(crate) fn parse_flexible_locator(
     raw: &str,
@@ -86,20 +110,8 @@ pub(crate) fn parse_flexible_locator(
         }
     }
     if let Some(file) = default_file {
-        if let Some(cid) = trimmed
-            .strip_prefix("custom-id:")
-            .or_else(|| trimmed.strip_prefix('#'))
-        {
-            return OrgLocator::parse(&format!("{}::#{}", file.display(), cid.trim()))
-                .map_err(|e| e.to_string());
-        }
-        if let Some(olp) = trimmed
-            .strip_prefix("olp:")
-            .or_else(|| trimmed.strip_prefix('*'))
-        {
-            let cleaned = olp.trim_start_matches('*').trim();
-            return OrgLocator::parse(&format!("{}::*/{cleaned}", file.display()))
-                .map_err(|e| e.to_string());
+        if let Some(res) = parse_default_file_shorthand(trimmed, file) {
+            return res;
         }
     }
     Err(format!("invalid locator format: {trimmed}"))
@@ -301,6 +313,30 @@ pub(crate) fn commit_refile_writes(
 
 // region Entrypoint
 
+/// Builds the [`MutationResult`] envelope for a completed or dry-run refile operation.
+fn build_refile_mutation_result(
+    dest_file: &Path,
+    outcome: &RefileOutcome,
+    modified_count: usize,
+    dry_run: bool,
+    started: Instant,
+) -> MutationResult {
+    let mut mutation = MutationResult::new("refile", dry_run);
+    mutation.files_modified = modified_count;
+    mutation.entries_affected = 1;
+    mutation.details.push(MutationDetail {
+        file: dest_file.display().to_string(),
+        line: outcome.new_line,
+        action: "refiled".to_string(),
+        detail: Some(format!(
+            "{} -> {} (level {} -> {})",
+            outcome.title, outcome.new_locator, outcome.old_level, outcome.new_level
+        )),
+    });
+    mutation.finish(started, modified_count);
+    mutation
+}
+
 /// Executes `org refile` and returns the CLI exit code.
 pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
     let started = Instant::now();
@@ -319,7 +355,6 @@ pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
         );
         return EXIT_ERROR;
     }
-
     let (dest_file, dest_target) = match resolve_refile_destination(
         &args.to,
         args.as_root,
@@ -333,7 +368,6 @@ pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
             return EXIT_ERROR;
         }
     };
-
     let opts = RefileOptions {
         as_root: args.as_root,
         tag_column: resolve_tag_column(None),
@@ -351,7 +385,6 @@ pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
             return EXIT_ERROR;
         }
     };
-
     if !args.dry_run {
         if let Err(msg) = commit_refile_writes(&source_res.file, &dest_file, &outcome) {
             eprintln!("org: {msg}");
@@ -361,20 +394,13 @@ pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
             invalidate_warm_mabuse_caches(args.workspace.as_deref(), &modified_files);
         }
     }
-
-    let mut mutation = MutationResult::new("refile", args.dry_run);
-    mutation.files_modified = modified_files.len();
-    mutation.entries_affected = 1;
-    mutation.details.push(MutationDetail {
-        file: dest_file.display().to_string(),
-        line: outcome.new_line,
-        action: "refiled".to_string(),
-        detail: Some(format!(
-            "{} -> {} (level {} -> {})",
-            outcome.title, outcome.new_locator, outcome.old_level, outcome.new_level
-        )),
-    });
-    mutation.finish(started, modified_files.len());
+    let mutation = build_refile_mutation_result(
+        &dest_file,
+        &outcome,
+        modified_files.len(),
+        args.dry_run,
+        started,
+    );
     output_mutation(&mutation, args.format);
     EXIT_OK
 }

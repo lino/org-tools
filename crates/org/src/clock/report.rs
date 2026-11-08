@@ -60,6 +60,31 @@ pub fn build_report(
     }
 }
 
+/// Returns `true` when `doc.entries[idx]` matches all `filter_tags` (case-insensitively).
+fn matches_filter_tags(doc: &OrgDocument, idx: usize, filter_tags: &[String]) -> bool {
+    if filter_tags.is_empty() {
+        return true;
+    }
+    let inherited = doc.inherited_tags(idx);
+    filter_tags
+        .iter()
+        .all(|ft| inherited.iter().any(|t| t.eq_ignore_ascii_case(ft)))
+}
+
+/// Returns completed clock duration in minutes when `clock` falls within `[from_days, to_days]`.
+fn completed_clock_minutes_in_range(
+    clock: &org_tools_core::document::ClockEntry,
+    from_days: Option<i64>,
+    to_days: Option<i64>,
+) -> Option<i64> {
+    clock.end.as_ref()?;
+    let day = date::date_to_days(clock.start.year, clock.start.month, clock.start.day);
+    if from_days.is_some_and(|f| day < f) || to_days.is_some_and(|t| day > t) {
+        return None;
+    }
+    clock.duration_minutes
+}
+
 /// Builds per-entry clock report rows with optional `:EFFORT:` variance.
 fn build_entry_report(
     docs: &[OrgDocument],
@@ -68,44 +93,24 @@ fn build_entry_report(
     filter_tags: &[String],
 ) -> Vec<ReportRow> {
     let mut rows = Vec::new();
-
     for doc in docs {
         for (idx, entry) in doc.entries.iter().enumerate() {
-            if !filter_tags.is_empty() {
-                let inherited = doc.inherited_tags(idx);
-                if !filter_tags
-                    .iter()
-                    .all(|ft| inherited.iter().any(|t| t.eq_ignore_ascii_case(ft)))
-                {
-                    continue;
-                }
+            if !matches_filter_tags(doc, idx, filter_tags) {
+                continue;
             }
-
             let total = sum_clocked_minutes(entry, from_days, to_days);
             if total > 0 {
-                let effort_minutes = entry
-                    .properties
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("EFFORT"))
-                    .or_else(|| {
-                        doc.default_properties
-                            .iter()
-                            .find(|(k, _)| k.eq_ignore_ascii_case("EFFORT"))
-                    })
-                    .and_then(|(_, v)| parse_duration_minutes(v));
-                let variance_minutes = effort_minutes.map(|eff| total - eff);
-
+                let effort_minutes = doc.property(idx, "EFFORT").and_then(parse_duration_minutes);
                 rows.push(ReportRow {
                     label: entry.title.clone(),
                     file: doc.file.display().to_string(),
                     minutes: total,
                     effort_minutes,
-                    variance_minutes,
+                    variance_minutes: effort_minutes.map(|eff| total - eff),
                 });
             }
         }
     }
-
     rows.sort_by_key(|a| std::cmp::Reverse(a.minutes));
     rows
 }
@@ -118,21 +123,14 @@ fn build_tag_report(
     filter_tags: &[String],
 ) -> Vec<ReportRow> {
     let mut tag_totals: BTreeMap<String, i64> = BTreeMap::new();
-
     for doc in docs {
         for (idx, entry) in doc.entries.iter().enumerate() {
-            let inherited = doc.inherited_tags(idx);
-
-            if !filter_tags.is_empty()
-                && !filter_tags
-                    .iter()
-                    .all(|ft| inherited.iter().any(|t| t.eq_ignore_ascii_case(ft)))
-            {
+            if !matches_filter_tags(doc, idx, filter_tags) {
                 continue;
             }
-
             let total = sum_clocked_minutes(entry, from_days, to_days);
             if total > 0 {
+                let inherited = doc.inherited_tags(idx);
                 if inherited.is_empty() {
                     *tag_totals.entry("(untagged)".to_string()).or_default() += total;
                 } else {
@@ -143,7 +141,6 @@ fn build_tag_report(
             }
         }
     }
-
     let mut rows: Vec<ReportRow> = tag_totals
         .into_iter()
         .map(|(tag, minutes)| ReportRow {
@@ -166,38 +163,13 @@ fn build_day_report(
     filter_tags: &[String],
 ) -> Vec<ReportRow> {
     let mut day_totals: BTreeMap<String, i64> = BTreeMap::new();
-
     for doc in docs {
         for (idx, entry) in doc.entries.iter().enumerate() {
-            if !filter_tags.is_empty() {
-                let inherited = doc.inherited_tags(idx);
-                if !filter_tags
-                    .iter()
-                    .all(|ft| inherited.iter().any(|t| t.eq_ignore_ascii_case(ft)))
-                {
-                    continue;
-                }
+            if !matches_filter_tags(doc, idx, filter_tags) {
+                continue;
             }
-
             for clock in &entry.clocks {
-                if clock.end.is_none() {
-                    continue;
-                }
-                let clock_day =
-                    date::date_to_days(clock.start.year, clock.start.month, clock.start.day);
-
-                if let Some(from) = from_days {
-                    if clock_day < from {
-                        continue;
-                    }
-                }
-                if let Some(to) = to_days {
-                    if clock_day > to {
-                        continue;
-                    }
-                }
-
-                if let Some(mins) = clock.duration_minutes {
+                if let Some(mins) = completed_clock_minutes_in_range(clock, from_days, to_days) {
                     let label = format!(
                         "{:04}-{:02}-{:02}",
                         clock.start.year, clock.start.month, clock.start.day
@@ -207,7 +179,6 @@ fn build_day_report(
             }
         }
     }
-
     day_totals
         .into_iter()
         .map(|(day, minutes)| ReportRow {
@@ -226,27 +197,11 @@ fn sum_clocked_minutes(
     from_days: Option<i64>,
     to_days: Option<i64>,
 ) -> i64 {
-    let mut total = 0i64;
-    for clock in &entry.clocks {
-        if clock.end.is_none() {
-            continue;
-        }
-        let clock_day = date::date_to_days(clock.start.year, clock.start.month, clock.start.day);
-        if let Some(from) = from_days {
-            if clock_day < from {
-                continue;
-            }
-        }
-        if let Some(to) = to_days {
-            if clock_day > to {
-                continue;
-            }
-        }
-        if let Some(mins) = clock.duration_minutes {
-            total += mins;
-        }
-    }
-    total
+    entry
+        .clocks
+        .iter()
+        .filter_map(|c| completed_clock_minutes_in_range(c, from_days, to_days))
+        .sum()
 }
 
 // endregion
@@ -374,6 +329,8 @@ pub fn render_json(rows: &[ReportRow], group_by: GroupBy) -> String {
 
 // endregion
 
+// region Tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,3 +401,5 @@ mod tests {
         assert!(rows.is_empty());
     }
 }
+
+// endregion

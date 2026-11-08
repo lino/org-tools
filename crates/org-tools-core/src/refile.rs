@@ -4,7 +4,7 @@
 //! Atomic subtree refiling across same-file and cross-file Org-mode targets.
 //!
 //! Spec: [§9.5 Refile and Copy](https://orgmode.org/manual/Refile-and-Copy.html),
-//! [Syntax: Headlines and Sections](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections)
+//! [Syntax: Headlines and Sections](https://orgmode.org/worg/org-syntax.html#Headlines_and_Sections).
 
 use std::path::Path;
 

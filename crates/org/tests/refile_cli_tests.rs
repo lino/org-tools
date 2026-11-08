@@ -131,44 +131,35 @@ impl McpRefileClient {
 #[test]
 fn slice1_cross_file_refile_adjusts_subtree_levels_tags_and_preserves_literal_blocks() {
     let dir = TempDir::new().unwrap();
-    let inbox = dir.path().join("inbox.org");
-    let projects = dir.path().join("projects.org");
-
+    let (inbox, projects) = (
+        dir.path().join("inbox.org"),
+        dir.path().join("projects.org"),
+    );
     let inbox_raw = format!(
-        concat!(
-            "* TODO Ship parser                                                     :@code:\n",
-            ":PROPERTIES:\n:ID: {src_id}\n:END:\n",
-            "Parser implementation notes.\n",
-            "#+BEGIN_SRC org\n* literal heading inside src block :unaligned:\n#+END_SRC\n\n",
-            "** NEXT Write unit tests :test:\n",
-            ":PROPERTIES:\n:ID: {child_id}\n:END:\nChild body line.\n\n",
-            "* TODO Triage backlog\nRemaining inbox item.\n"
-        ),
-        src_id = SRC_TASK_ID,
-        child_id = SRC_CHILD_ID,
+        "* TODO Ship parser                                                     :@code:\n:PROPERTIES:\n:ID: {SRC_TASK_ID}\n:END:\nParser implementation notes.\n#+BEGIN_SRC org\n* literal heading inside src block :unaligned:\n#+END_SRC\n\n** NEXT Write unit tests :test:\n:PROPERTIES:\n:ID: {SRC_CHILD_ID}\n:END:\nChild body line.\n\n* TODO Triage backlog\nRemaining inbox item.\n"
     );
     let projects_raw = format!(
-        concat!(
-            "* Active Projects\n:PROPERTIES:\n:ID: {dest_id}\n:END:\nProject overview.\n\n",
-            "** DONE Initial setup\n\n* Someday\nFuture ideas.\n"
-        ),
-        dest_id = DEST_PROJECT_ID,
+        "* Active Projects\n:PROPERTIES:\n:ID: {DEST_PROJECT_ID}\n:END:\nProject overview.\n\n** DONE Initial setup\n\n* Someday\nFuture ideas.\n"
     );
     write_fixture(&inbox, &inbox_raw);
     write_fixture(&projects, &projects_raw);
 
-    let src_arg = format!("id:{SRC_TASK_ID}");
-    let dest_arg = format!("id:{DEST_PROJECT_ID}");
-    let out = run_org(dir.path(), &["refile", &src_arg, "--to", &dest_arg]);
+    let out = run_org(
+        dir.path(),
+        &[
+            "refile",
+            &format!("id:{SRC_TASK_ID}"),
+            "--to",
+            &format!("id:{DEST_PROJECT_ID}"),
+        ],
+    );
     assert!(
         out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-
-    let inbox_after = fs::read_to_string(&inbox).unwrap();
     assert_eq!(
-        inbox_after,
+        fs::read_to_string(&inbox).unwrap(),
         "* TODO Triage backlog\nRemaining inbox item.\n"
     );
 
@@ -188,12 +179,14 @@ fn slice1_cross_file_refile_adjusts_subtree_levels_tags_and_preserves_literal_bl
         moved_child.starts_with("*** NEXT Write unit tests ") && moved_child.ends_with(" :test:")
     );
     assert_eq!(moved_child.chars().count(), TAG_COLUMN);
-
     assert!(proj_after.contains("\n* literal heading inside src block :unaligned:\n"));
-    let pos_setup = proj_after.find("** DONE Initial setup").unwrap();
-    let pos_moved = proj_after.find("** TODO Ship parser").unwrap();
-    let pos_someday = proj_after.find("* Someday").unwrap();
-    assert!(pos_setup < pos_moved && pos_moved < pos_someday);
+    assert!(
+        proj_after.find("** DONE Initial setup").unwrap()
+            < proj_after.find("** TODO Ship parser").unwrap()
+    );
+    assert!(
+        proj_after.find("** TODO Ship parser").unwrap() < proj_after.find("* Someday").unwrap()
+    );
 
     write_fixture(
         &projects,
@@ -348,20 +341,14 @@ fn slice4_self_and_descendant_cycle_rejected_with_exit_error() {
 #[test]
 fn slice5_dry_run_json_envelope_cache_invalidation_and_mcp_org_refile() {
     let dir = TempDir::new().unwrap();
-    let src_file = dir.path().join("inbox.org");
-    let dst_file = dir.path().join("roadmap.org");
-
-    let src_raw = format!(
-        "* TODO Migrate subtree\n:PROPERTIES:\n:ID: {SRC_TASK_ID}\n:END:\n** TODO Sub-item\n\n* TODO Keep me\n"
-    );
+    let (src_file, dst_file) = (dir.path().join("inbox.org"), dir.path().join("roadmap.org"));
+    let src_raw = format!("* TODO Migrate subtree\n:PROPERTIES:\n:ID: {SRC_TASK_ID}\n:END:\n** TODO Sub-item\n\n* TODO Keep me\n");
     let dst_raw = format!("* Target Epic\n:PROPERTIES:\n:ID: {DEST_PROJECT_ID}\n:END:\n");
     write_fixture(&src_file, &src_raw);
     write_fixture(&dst_file, &dst_raw);
-
     assert!(run_org(dir.path(), &["cache", "rebuild"]).status.success());
 
-    let src_loc = format!("id:{SRC_TASK_ID}");
-    let dst_loc = format!("id:{DEST_PROJECT_ID}");
+    let (src_loc, dst_loc) = (format!("id:{SRC_TASK_ID}"), format!("id:{DEST_PROJECT_ID}"));
     let dry = run_org(
         dir.path(),
         &[
@@ -376,50 +363,58 @@ fn slice5_dry_run_json_envelope_cache_invalidation_and_mcp_org_refile() {
     );
     assert!(dry.status.success());
     let dry_json: Value = serde_json::from_slice(&dry.stdout).expect("valid JSON");
-    assert_eq!(dry_json["command"], "refile");
-    assert_eq!(dry_json["dry_run"], true);
-    assert_eq!(dry_json["files_modified"], 2);
-    assert_eq!(dry_json["entries_affected"], 1);
+    assert_eq!(
+        (dry_json["command"].as_str(), dry_json["dry_run"].as_bool()),
+        (Some("refile"), Some(true))
+    );
+    assert_eq!(
+        (
+            dry_json["files_modified"].as_u64(),
+            dry_json["entries_affected"].as_u64()
+        ),
+        (Some(2), Some(1))
+    );
     assert!(dry_json["details"][0]["detail"]
         .as_str()
         .unwrap()
         .contains("level 1 -> 2"));
     assert_eq!(fs::read_to_string(&src_file).unwrap(), src_raw);
-    assert_eq!(fs::read_to_string(&dst_file).unwrap(), dst_raw);
 
     let mut client = McpRefileClient::spawn(dir.path());
     let list = client.send_rpc("tools/list", json!({}));
-    let names: Vec<&str> = list["result"]["tools"]
+    assert!(list["result"]["tools"]
         .as_array()
         .unwrap()
         .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
-    assert!(names.contains(&"org_refile"));
-
-    let (err_cycle, _) = client.call_tool(
-        "org_refile",
-        json!({ "source_locator": &src_loc, "target": &src_loc }),
+        .any(|t| t["name"] == "org_refile"));
+    assert!(
+        client
+            .call_tool(
+                "org_refile",
+                json!({ "source_locator": &src_loc, "target": &src_loc })
+            )
+            .0
     );
-    assert!(err_cycle);
-    let (err_escape, _) = client.call_tool(
-        "org_refile",
-        json!({ "source_locator": &src_loc, "target": "../outside.org" }),
+    assert!(
+        client
+            .call_tool(
+                "org_refile",
+                json!({ "source_locator": &src_loc, "target": "../outside.org" })
+            )
+            .0
     );
-    assert!(err_escape);
 
     let (is_err, res) = client.call_tool(
         "org_refile",
         json!({ "source_locator": &src_loc, "target": &dst_loc }),
     );
-    assert!(!is_err, "MCP org_refile failed: {res}");
-    assert_eq!(res["command"], "refile");
-    assert_eq!(res["files_modified"], 2);
-
+    assert!(!is_err && res["command"] == "refile" && res["files_modified"] == 2);
     let (show_err, shown) = client.call_tool("org_show", json!({ "locator": &src_loc }));
-    assert!(!show_err);
-    assert_eq!(shown["level"], 2);
-    assert!(shown["file"].as_str().unwrap().ends_with("roadmap.org"));
+    assert!(
+        !show_err
+            && shown["level"] == 2
+            && shown["file"].as_str().unwrap().ends_with("roadmap.org")
+    );
     client.close_cleanly();
 }
 

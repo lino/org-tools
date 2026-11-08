@@ -24,14 +24,15 @@ set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.
 - *9 format rules* (auto-fixable): trailing whitespace, blank lines, heading
   spacing, table alignment, property drawer alignment, keyword spacing, tag
   alignment, list formatting, timestamp spacing
-- *37 lint rules* (report-only): structural validation, correctness checks,
-  deprecation warnings, style suggestions — covering ~35 of Emacs org-lint's
+- *38 lint rules* (report-only): structural validation (including =E003=
+  =include-validity= for cross-file =#+INCLUDE:= directives), correctness checks,
+  deprecation warnings, style suggestions — covering ~36 of Emacs org-lint's
   ~58 checks
 - *Protected regions*: source, example, export, quote, verse, center, and
   comment blocks are never modified by format rules
 - *Configurable* via =.org-tools.toml= with sensible defaults matching Emacs
 
-** Query & Agenda (=org query=)
+** Query, Agenda & Columns (=org query=)
 
 - *Query language* with predicates: =todo=, =done=, =tags=, =heading=, =body=,
   =property=, =priority=, =level=, =scheduled=, =deadline=, =closed=, =clocked=,
@@ -39,8 +40,12 @@ set was designed by studying [[https://git.savannah.gnu.org/cgit/emacs/org-mode.
 - *Boolean operators*: =and=, =or=, =not=, parentheses, implicit AND
 - *Agenda view* (=org query agenda=): multi-day timeline (=--from=, =--days=,
   =--warning-days=, =--composite=) projecting =+= / =++= / =.+= repeaters,
-  overdue items, deadline warnings, and active body timestamps in =human=,
-  =json= ([[file:schemas/org-agenda-output.schema.json][JSON schema]] via =org schema agenda=), =locator=, =org=, and =md= (=-o=)
+  =org-habit= (=:STYLE: habit=) consistency graphs, overdue items, deadline
+  warnings, and active body timestamps in =human=, =json=
+  ([[file:schemas/org-agenda-output.schema.json][JSON schema]] via =org schema agenda=), =locator=, =org=, and =md= (=-o=)
+- *Column view* (=org query columns=): =#+COLUMNS:= specification parser and
+  bottom-up property/clock/effort rollup evaluator (={+}=, ={min}=, ={max}=,
+  ={mean}=, ={:}=) in =human=, =json=, =org=, and =md=
 - *Tag inheritance*: child entries inherit parent tags in queries
 - *Output formats*: human, JSON (with [[file:schemas/org-query-output.schema.json][JSON schema]]), locator, Org, Markdown
 
@@ -59,19 +64,37 @@ When an entry has an =:ID:= property, that is always preferred.
 
 ** Clock Tracking (=org clock=)
 
-- *Reports*: total clocked time grouped by entry, tag, or day
+- *Active clocking*: =org clock in=, =org clock out=, and =org clock cancel=
+  mutations managing =:LOGBOOK:= =CLOCK:= timestamps
+- *Reports & Effort Variance*: total clocked time grouped by entry, tag, or day
+  with =:EFFORT:= vs. clocked duration variance deltas
 - *Date filtering*: =--from= and =--to= date range
 - *Running clocks*: detect entries with open clock lines
 - *Output*: human-readable tables and JSON
 
-** Entry Updates (=org update=)
+** Entry Updates & Refiling (=org update=, =org refile=)
 
 - *add-id*: add =:ID:= properties to entries (UUIDv4, Stempelamt UUIDv5, template, or command)
-- *set-state*: change TODO keyword with automatic =CLOSED= timestamps, repeater auto-advance (=--no-repeat= to close permanently), =:TRIGGER:= cascades, and =--query= filtering
+- *set-state*: change TODO keyword with automatic =CLOSED= timestamps, =:LOGBOOK:=
+  state transition logging (=#+STARTUP: logdone= / =:LOGGING:=), =:LAST_REPEAT:=
+  recording, repeater auto-advance (=--no-repeat= to close permanently),
+  =:TRIGGER:= cascades, and =--query= filtering
 - *set-scheduled* / *set-deadline*: set, shift (=today= / =.=, =+Nd=, =+Nw=, =+Nm=, =+Ny=, =-Nd=), or =--clear= =SCHEDULED= and =DEADLINE= timestamps
 - *add-todo*: insert new entries with planning, priority, properties, and tags
 - *set-property* / *delete-property* / *set-tags* / *dep*: drawer, tag, and =org-edna= dependency mutations
 - *add-cookie* / *calc*: compute =[/]= / =[%]= statistic cookies and =#+TBLFM:= formulas
+- *refile* (=org refile=): move or copy subtrees across files or headings with
+  automatic heading level adjustment and statistic cookie recalculation
+
+** Show & Export (=org show=, =org export=)
+
+- *Scoped node extraction* (=org show=): extract headings or level-0 =org-roam=
+  file nodes as =org=, =md=, or =json= with optional =--expand-includes=
+- *Markdown export* (=org export md=): Zensical-ready GFM with Mermaid fences,
+  cross-node =[[id:...]]= resolution, and =--expand-includes= (=#+INCLUDE:= with
+  =::*Heading=, =:minlevel N=, =:lines "A-B"=, and =:only-contents t=)
+- *Calendar export* (=org export ical=, =org export jscal=): RFC 5545 iCalendar
+  and RFC 8984 JSCalendar with date range and tag filtering
 
 ** MCP Server & Workspace Cache (=org mcp=, =org cache=)
 
@@ -86,12 +109,6 @@ When an entry has an =:ID:= property, that is always preferred.
 - Move done entries to an archive file with metadata properties
 - Configurable target via =#+ARCHIVE:= or =--target=
 - Preserves subtree structure and adds =:ARCHIVE_TIME:=, =:ARCHIVE_FILE:=, =:ARCHIVE_OLPATH:=
-
-** Calendar Export (=org export=)
-
-- *iCalendar* (RFC 5545): SCHEDULED → VEVENT, DEADLINE → VTODO
-- *JSCalendar* (RFC 8984): structured JSON with Event/Task types
-- Date range and tag filtering, file or stdout output
 
 * Quick Start
 

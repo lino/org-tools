@@ -229,18 +229,6 @@ fn write_tool_descriptors() -> Vec<Value> {
             }),
             &["path"],
         ),
-        tool_descriptor(
-            TOOL_REFILE,
-            "Atomically move an Org subtree across files or under a new heading with star-level and F007 tag alignment.",
-            json!({
-                "source_locator": { "type": "string", "description": "Source heading locator (id:<uuid>, custom-id:<id>, olp:<path>, *Heading, or <file>::<target>)." },
-                "target": { "type": "string", "description": "Destination heading locator or workspace-relative .org file path." },
-                "as_root": { "type": "boolean", "description": "Refile as a level-1 root heading at the end of the target file (default: false)." },
-                "dry_run": { "type": "boolean", "description": "Preview the refile mutation without writing files (default: false)." },
-                "workspace": ws_prop
-            }),
-            &["source_locator", "target"],
-        ),
     ]
 }
 
@@ -249,6 +237,7 @@ pub(super) fn build_tools_list_result() -> Value {
     let mut tools = roam_and_query_descriptors();
     tools.extend(agenda_and_show_descriptors());
     tools.extend(write_tool_descriptors());
+    tools.push(super::tools_lifecycle::refile_tool_descriptor());
     tools.extend(super::tools_clock::clock_tool_descriptors());
     json!({ "tools": tools })
 }

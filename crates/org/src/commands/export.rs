@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org export` subcommand definitions and iCalendar, JSCalendar, and Markdown handlers.
+//! Subcommand definitions and iCalendar, JSCalendar, and Markdown handlers for `org export`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use org_tools_core::export_md::{
     discover_workspace_root, export_document_to_markdown, normalize_workspace_path,
 };
 use org_tools_core::files::collect_org_files;
+use org_tools_core::include::expand_includes;
 use org_tools_core::source::SourceFile;
 
 use super::parse_org_files;
@@ -78,6 +79,10 @@ pub(crate) enum ExportCommand {
         /// Workspace root directory used to resolve cross-node `[[id:...]]` links.
         #[arg(long)]
         workspace: Option<PathBuf>,
+
+        /// Expand `#+INCLUDE:` directives before rendering Markdown.
+        #[arg(long)]
+        expand_includes: bool,
     },
 }
 
@@ -216,6 +221,7 @@ fn execute_markdown_export(
     paths: &[PathBuf],
     output: Option<&PathBuf>,
     workspace: Option<&Path>,
+    expand_includes_flag: bool,
 ) -> i32 {
     let files = collect_org_files(paths);
     if files.is_empty() {
@@ -226,12 +232,23 @@ fn execute_markdown_export(
     let ws_docs = load_markdown_workspace_docs(&files, workspace);
     let mut rendered = Vec::with_capacity(files.len());
     for file in &files {
-        let source = match SourceFile::from_path(file) {
+        let raw_source = match SourceFile::from_path(file) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("org: error reading {}: {e}", file.display());
                 return EXIT_ERROR;
             }
+        };
+        let source = if expand_includes_flag {
+            match expand_includes(&raw_source.content, file, workspace) {
+                Ok(expanded) => SourceFile::new(file.clone(), expanded),
+                Err(err) => {
+                    eprintln!("org: {err}");
+                    return EXIT_ERROR;
+                }
+            }
+        } else {
+            raw_source
         };
         let doc = OrgDocument::from_source(&source);
         rendered.push((
@@ -295,6 +312,12 @@ pub(crate) fn run_export(command: ExportCommand) -> i32 {
             paths,
             output,
             workspace,
-        } => execute_markdown_export(&paths, output.as_ref(), workspace.as_deref()),
+            expand_includes,
+        } => execute_markdown_export(
+            &paths,
+            output.as_ref(),
+            workspace.as_deref(),
+            expand_includes,
+        ),
     }
 }

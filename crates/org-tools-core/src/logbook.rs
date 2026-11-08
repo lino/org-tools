@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `:LOGBOOK:` state-change logging, `:LAST_REPEAT:` updates, `:LOGGING:`, and `org-habit` summaries.
+//! State-change logging in `:LOGBOOK:`, `:LAST_REPEAT:` updates, `:LOGGING:`, and `org-habit` summaries.
 //!
 //! Spec: [§5.3 Progress Logging](https://orgmode.org/manual/Progress-Logging.html),
 //! [§5.3.2 Tracking TODO state changes](https://orgmode.org/manual/Tracking-TODO-state-changes.html),
@@ -57,7 +57,7 @@ pub struct StateTransitionRecord {
     pub repeated: bool,
 }
 
-/// `org-habit` repeater interval and 21-day consistency summary attached to an agenda item.
+/// Repeater interval and 21-day `org-habit` consistency summary attached to an agenda item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HabitSummary {
     /// Minimum repeater interval in days.
@@ -277,6 +277,20 @@ fn repeater_unit_to_days(value: u32, unit: TimeUnit) -> u32 {
     }
 }
 
+/// Extracts completion day numbers from a single `:LOGBOOK:` state-change line if the target state is done.
+fn record_logbook_done_days(trimmed: &str, doc: &OrgDocument, done_days: &mut HashSet<i64>) {
+    if let Some((kw, _)) = trimmed
+        .strip_prefix("- State \"")
+        .and_then(|r| r.split_once('"'))
+    {
+        if doc.todo_keywords.is_done(kw) {
+            for (ts, _, _) in find_timestamps(trimmed) {
+                done_days.insert(date_to_days(ts.year, ts.month, ts.day));
+            }
+        }
+    }
+}
+
 /// Collects completion civil day numbers from `:LOGBOOK:` done-state lines and `:LAST_REPEAT:`.
 fn collect_habit_completion_days(
     source: Option<&SourceFile>,
@@ -302,22 +316,10 @@ fn collect_habit_completion_days(
         }
         if trimmed.eq_ignore_ascii_case(":LOGBOOK:") {
             in_logbook = true;
-            continue;
-        }
-        if in_logbook && trimmed.eq_ignore_ascii_case(":END:") {
+        } else if in_logbook && trimmed.eq_ignore_ascii_case(":END:") {
             in_logbook = false;
-            continue;
-        }
-        if in_logbook {
-            if let Some(rest) = trimmed.strip_prefix("- State \"") {
-                if let Some((kw, _)) = rest.split_once('"') {
-                    if doc.todo_keywords.is_done(kw) {
-                        for (ts, _, _) in find_timestamps(trimmed) {
-                            done_days.insert(date_to_days(ts.year, ts.month, ts.day));
-                        }
-                    }
-                }
-            }
+        } else if in_logbook {
+            record_logbook_done_days(trimmed, doc, &mut done_days);
         }
     }
     done_days

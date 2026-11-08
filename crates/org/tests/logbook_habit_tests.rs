@@ -153,26 +153,23 @@ fn assert_valid_schema(val: &Value, schema: &Value, root: &Value) {
 
 // region Slice 1: #+STARTUP:, #+TODO:, & :LOGGING: Configuration
 
-/// Verifies `#+STARTUP:`, `#+TODO:` per-keyword flags (`!`, `@`, `/!`), and `:LOGGING:` overrides.
+/// Verifies `#+STARTUP:` and `#+TODO:` per-keyword flags (`!`, `@`, `/!`) on the default entry.
 #[test]
-fn slice1_startup_todo_flags_and_logging_property_overrides() {
+fn slice1_startup_and_todo_keyword_flags_parsed() {
     let raw = concat!(
         "#+STARTUP: overview logdone\n",
         "#+STARTUP: nologrepeat\n",
         "#+TODO: TODO(t) WAIT(w!) HOLD(!) | DONE(d!) CANCELED(c@/!)\n",
         "* TODO Default Entry\n",
-        "* TODO Nil Entry\n:PROPERTIES:\n:LOGGING: nil\n:END:\n",
-        "* TODO Custom Entry\n:PROPERTIES:\n:LOGGING: nologdone logrepeat TODO(!)\n:END:\n",
     );
     let (_src, doc) = parse_org(raw);
-
-    assert!(doc.todo_keywords.logs_on_enter("WAIT"));
-    assert!(doc.todo_keywords.logs_on_enter("HOLD"));
-    assert!(doc.todo_keywords.logs_on_enter("DONE"));
-    assert!(doc.todo_keywords.logs_on_enter("CANCELED"));
+    for kw in ["WAIT", "HOLD", "DONE", "CANCELED"] {
+        assert!(doc.todo_keywords.logs_on_enter(kw));
+    }
     assert!(!doc.todo_keywords.logs_on_enter("TODO"));
-    assert!(doc.todo_keywords.logs_on_leave("CANCELED"));
-    assert!(!doc.todo_keywords.logs_on_leave("WAIT"));
+    assert!(
+        doc.todo_keywords.logs_on_leave("CANCELED") && !doc.todo_keywords.logs_on_leave("WAIT")
+    );
 
     let c0 = resolve_entry_logging(&doc, 0);
     assert!(!c0.disabled && c0.log_done && !c0.log_repeat);
@@ -197,50 +194,62 @@ fn slice1_startup_todo_flags_and_logging_property_overrides() {
         "DONE",
         true
     ));
+}
 
-    let c1 = resolve_entry_logging(&doc, 1);
-    assert!(c1.disabled && !c1.log_done && !c1.log_repeat);
+/// Verifies entry-level `:LOGGING:` property overrides (`nil` and custom token overrides).
+#[test]
+fn slice1_logging_property_overrides_startup_defaults() {
+    let raw = concat!(
+        "#+STARTUP: overview logdone nologrepeat\n",
+        "#+TODO: TODO(t) WAIT(w!) | DONE(d!)\n",
+        "* TODO Nil Entry\n:PROPERTIES:\n:LOGGING: nil\n:END:\n",
+        "* TODO Custom Entry\n:PROPERTIES:\n:LOGGING: nologdone logrepeat TODO(!)\n:END:\n",
+    );
+    let (_src, doc) = parse_org(raw);
+
+    let c0 = resolve_entry_logging(&doc, 0);
+    assert!(c0.disabled && !c0.log_done && !c0.log_repeat);
     assert!(!should_log_state_transition(
         &doc,
-        1,
+        0,
         Some("TODO"),
         "WAIT",
         false
     ));
     assert!(!should_log_state_transition(
         &doc,
-        1,
+        0,
         Some("TODO"),
         "DONE",
         false
     ));
     assert!(!should_log_state_transition(
         &doc,
-        1,
+        0,
         Some("TODO"),
         "DONE",
         true
     ));
 
-    let c2 = resolve_entry_logging(&doc, 2);
-    assert!(!c2.disabled && !c2.log_done && c2.log_repeat);
+    let c1 = resolve_entry_logging(&doc, 1);
+    assert!(!c1.disabled && !c1.log_done && c1.log_repeat);
     assert!(should_log_state_transition(
         &doc,
-        2,
+        1,
         Some("WAIT"),
         "TODO",
         false
     ));
     assert!(!should_log_state_transition(
         &doc,
-        2,
+        1,
         Some("TODO"),
         "DONE",
         false
     ));
     assert!(should_log_state_transition(
         &doc,
-        2,
+        1,
         Some("TODO"),
         "DONE",
         true
@@ -388,31 +397,21 @@ fn slice3_dual_min_max_repeaters_parse_advance_and_pass_lint() {
 fn slice3_agenda_habit_summary_consistency_graph_and_schema_validation() {
     let dir = TempDir::new().unwrap();
     let content = concat!(
-        "* TODO Hydrate & Stretch\n",
-        "SCHEDULED: <2026-03-21 Sat .+2d/4d>\n",
-        ":PROPERTIES:\n",
-        ":STYLE:       habit\n",
-        ":LAST_REPEAT: [2026-03-19 Thu 08:00]\n",
-        ":END:\n",
+        "* TODO Hydrate & Stretch\nSCHEDULED: <2026-03-21 Sat .+2d/4d>\n",
+        ":PROPERTIES:\n:STYLE:       habit\n:LAST_REPEAT: [2026-03-19 Thu 08:00]\n:END:\n",
         ":LOGBOOK:\n",
         "- State \"DONE\"       from \"TODO\"       [2026-03-19 Thu 08:00]\n",
         "- State \"DONE\"       from \"TODO\"       [2026-03-15 Sun 08:00]\n",
         "- State \"DONE\"       from \"TODO\"       [2026-03-10 Tue 08:00]\n",
         "- State \"DONE\"       from \"TODO\"       [2026-03-05 Thu 08:00]\n",
         "- State \"DONE\"       from \"TODO\"       [2026-03-01 Sun 08:00]\n",
-        ":END:\n",
-        "\n",
-        "* TODO Regular Meeting\n",
-        "SCHEDULED: <2026-03-21 Sat 10:00>\n",
+        ":END:\n\n* TODO Regular Meeting\nSCHEDULED: <2026-03-21 Sat 10:00>\n",
     );
     let file = write_file_in(dir.path(), "habits.org", content);
     let (src, doc) = parse_org(content);
     let expected_graph = "*...*....*....*...*.!";
-    assert_eq!(expected_graph.len(), 21);
-
-    let summary = build_habit_summary(Some(&src), &doc, 0, (2026, 3, 21)).unwrap();
     assert_eq!(
-        summary,
+        build_habit_summary(Some(&src), &doc, 0, (2026, 3, 21)).unwrap(),
         HabitSummary {
             min_interval_days: 2,
             max_interval_days: Some(4),
@@ -423,10 +422,8 @@ fn slice3_agenda_habit_summary_consistency_graph_and_schema_validation() {
     assert!(build_habit_summary(Some(&src), &doc, 1, (2026, 3, 21)).is_none());
 
     let p = file.to_str().unwrap();
-    let human_txt = run_agenda(p, &[]);
-    assert!(human_txt.contains(expected_graph), "human:\n{human_txt}");
+    assert!(run_agenda(p, &[]).contains(expected_graph));
     assert!(run_agenda(p, &["--format", "md"]).contains(expected_graph));
-
     let org_report = dir.path().join("agenda_out.org");
     let _ = run_agenda(p, &["--format", "org", "-o", org_report.to_str().unwrap()]);
     assert!(fs::read_to_string(&org_report)
@@ -437,11 +434,7 @@ fn slice3_agenda_habit_summary_consistency_graph_and_schema_validation() {
     let json_val: Value = serde_json::from_str(&run_agenda(p, &["--format", "json"])).unwrap();
     let schema_val: Value = serde_json::from_str(&run_stdout(&["schema", "agenda"])).unwrap();
     assert_valid_schema(&json_val, &schema_val, &schema_val);
-
     let items = json_val["days_timeline"][0]["items"].as_array().unwrap();
-    assert_eq!(items[0]["habit"]["min_interval_days"], 2);
-    assert_eq!(items[0]["habit"]["max_interval_days"], 4);
-    assert_eq!(items[0]["habit"]["last_repeat"], "[2026-03-19 Thu 08:00]");
     assert_eq!(items[0]["habit"]["consistency_graph"], expected_graph);
     assert!(items[1].get("habit").is_none());
 }

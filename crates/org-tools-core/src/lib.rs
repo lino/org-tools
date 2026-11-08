@@ -33,6 +33,8 @@ pub mod files;
 pub mod formatter;
 /// `:ID:` UUID discovery, indexing, and link resolution.
 pub mod id;
+/// Cross-file `#+INCLUDE:` expansion, workspace confinement, and cycle detection.
+pub mod include;
 /// Canonical `OrgLocator` (`id:`, `file:`, `#custom-id`, `*Heading`) resolver.
 pub mod locator;
 /// `:LOGBOOK:` state-change logging, `:LAST_REPEAT:` updates, `:LOGGING:`, and `org-habit` summaries.

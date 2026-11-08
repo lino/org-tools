@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org query columns` CLI handler and multi-format table renderers (`human`, `json`, `org`, `md`).
+//! Subcommand handler and multi-format table renderers (`human`, `json`, `org`, `md`) for `org query columns`.
 
 use std::path::PathBuf;
 

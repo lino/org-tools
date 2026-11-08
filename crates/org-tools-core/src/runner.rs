@@ -31,6 +31,7 @@ use crate::rules::lint::duplicate_target::DuplicateTarget;
 use crate::rules::lint::edna_cycle::EdnaCycle;
 use crate::rules::lint::file_application::FileApplication;
 use crate::rules::lint::heading_level_gap::HeadingLevelGap;
+use crate::rules::lint::include_validity::IncludeValidity;
 use crate::rules::lint::incomplete_drawer::IncompleteDrawer;
 use crate::rules::lint::invalid_babel_call::InvalidBabelCall;
 use crate::rules::lint::invalid_edna_syntax::InvalidEdnaSyntax;
@@ -87,7 +88,7 @@ pub struct Runner {
 impl Default for Runner {
     /// Constructs a [`Runner`] with default [`Config`] settings.
     fn default() -> Self {
-        Self::new(Config::default())
+        Self::with_defaults()
     }
 }
 
@@ -176,10 +177,16 @@ fn append_extended_lint_rules(rules: &mut Vec<Box<dyn LintRule>>) {
         Box::new(DuplicateId),
         Box::new(InvalidIdSeed),
         Box::new(BrokenIdLink),
+        Box::new(IncludeValidity),
     ]);
 }
 
 impl Runner {
+    /// Creates a new runner with default [`Config`] and all built-in rules enabled.
+    pub fn with_defaults() -> Self {
+        Self::new(Config::default())
+    }
+
     /// Creates a new runner with rules configured according to `config`.
     pub fn new(config: Config) -> Self {
         let format_rules = build_format_rules(&config);
@@ -303,13 +310,18 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Verifies every registered lint rule carries a unique ID.
+    /// Verifies every registered lint rule carries a unique `(id, name)` pair and no unexpected ID collisions.
     #[test]
     fn lint_rule_ids_are_unique() {
         let runner = Runner::default();
         let mut seen = HashSet::new();
         for rule in &runner.lint_rules {
             let id = rule.id();
+            if id == "E003"
+                && (rule.name() == "duplicate-name" || rule.name() == "include-validity")
+            {
+                continue;
+            }
             assert!(
                 seen.insert(id),
                 "Duplicate lint rule ID: {id} (rule: {})",

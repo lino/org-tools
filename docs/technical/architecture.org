@@ -173,7 +173,9 @@ graph TD
 | =property.rs=   | F005 drawer mutations, F007 tag alignment, Stempelamt UUIDv5 IDs     |
 | =planning.rs=   | Repeater projection/advancement, body timestamps, planning mutations |
 | =id.rs=         | UUIDv4, template, and external-command =:ID:= generation             |
-| =state.rs=      | TODO transitions, repeater auto-advance, and =CLOSED= updates        |
+| =state.rs=      | TODO transitions, =:LOGBOOK:=, =:LAST_REPEAT:=, repeater advance     |
+| =columns.rs=    | =#+COLUMNS:= parser and bottom-up property/effort/clock rollups      |
+| =include.rs=    | Workspace-confined =#+INCLUDE:= resolver, slicer, and expander       |
 | =cache.rs=      | Incremental SQLite WAL + FTS5 workspace index (=.cache/mabuse.db=)   |
 | =roam.rs=       | =org-roam= v2 node, backlink, outgoing link, and graph resolution    |
 | =cookie.rs=     | Heading =[/]= and =[%]= statistic cookie recalculation               |
@@ -186,32 +188,34 @@ graph TD
 | =config.rs=     | TOML config loading with ancestor directory search                   |
 | =output.rs=     | Renders diagnostics as human-readable or JSON                        |
 | =files.rs=      | Recursive =.org= file collection (respects =.gitignore=)             |
-| =rules/=        | =FormatRule= / =LintRule= traits, 9 F-rules, 37 E/W/I-rules, regions |
+| =rules/=        | =FormatRule= / =LintRule= traits, 9 F-rules, 38 E/W/I-rules (=E003=) |
 
 *** org binary (CLI)
 
-| Module                        | Responsibility                                                                                      |
-|-------------------------------+-----------------------------------------------------------------------------------------------------|
-| =main.rs=                     | Top-level =clap= CLI, exit codes (=0..3=), subcommand dispatch                                      |
-| =commands/mod.rs=             | Shared =MutationResult=, =telemetry=, and document I/O helpers                                      |
-| =commands/fmt.rs=             | =org fmt check= and =org fmt format= (files and piped stdin)                                        |
-| =commands/query.rs=           | =org query= CLI, =search=, and =deps= handlers                                                      |
-| =commands/query_agenda.rs=    | =org query agenda= (=--from=, =--warning-days=, =--composite=)                                      |
-| =commands/query_gtd.rs=       | GTD query views (=blocked=, =next=, =inbox=, =waiting=, =stuck=)                                    |
-| =commands/update.rs=          | =org update= entry module, locator helper, and dispatch                                             |
-| =commands/update_id.rs=       | =org update add-id= (UUIDv4, template, command, Stempelamt)                                         |
-| =commands/update_property.rs= | =org update set-property=, =delete-property=, and =set-tags=                                        |
-| =commands/update_state.rs=    | =org update set-state= with repeater auto-advance & =--no-repeat=                                   |
-| =commands/update_planning.rs= | =org update set-scheduled= and =set-deadline= planning mutators                                     |
-| =commands/update_todo.rs=     | =org update add-todo= entry creation and lint-clean post-pass                                       |
-| =commands/update_table.rs=    | =org update add-cookie= and =org update calc= (=#+TBLFM:=)                                          |
-| =commands/mcp.rs=             | JSON-RPC 2.0 =stdio= MCP server and =tools_planning.rs= (=org_query_agenda=, =org_update_planning=) |
-| =commands/clock.rs=           | =org clock report= and =org clock status= handlers                                                  |
-| =commands/archive.rs=         | =org archive= subtree archiving handler                                                             |
-| =commands/export.rs=          | =org export ical=, =jscal=, and Zensical =md= handlers                                              |
-| =commands/schema.rs=          | =org schema= embedded JSON Schema printer (incl. =agenda=)                                          |
-| =query/=, =clock/=, =export/= | Query parser/predicates/renderers, clock reports, exporters                                         |
-| =date.rs=                     | Civil calendar date parsing and arithmetic                                                          |
+| Module                        | Responsibility                                                                                      |     |                                                       |
+|-------------------------------+-----------------------------------------------------------------------------------------------------+-----+-------------------------------------------------------|
+| =main.rs=                     | Top-level =clap= CLI, exit codes (=0..3=), subcommand dispatch                                      |     |                                                       |
+| =commands/mod.rs=             | Shared =MutationResult=, =telemetry=, and document I/O helpers                                      |     |                                                       |
+| =commands/fmt.rs=             | =org fmt check= and =org fmt format= (files and piped stdin)                                        |     |                                                       |
+| =commands/query.rs=           | =org query= CLI, =search=, =columns=, and =deps= handlers                                           |     |                                                       |
+| =commands/query_agenda.rs=    | =org query agenda= (=--from=, =--warning-days=, =--composite=, =org-habit=)                         |     |                                                       |
+| =commands/query_gtd.rs=       | GTD query views (=blocked=, =next=, =inbox=, =waiting=, =stuck=)                                    |     |                                                       |
+| =commands/refile.rs=          | =org refile= cross-file subtree movement and level adjustment                                       |     |                                                       |
+| =commands/show.rs=            | =org show= bounded node slice extractor with =--expand-includes=                                    |     |                                                       |
+| =commands/update.rs=          | =org update= entry module, locator helper, and dispatch                                             |     |                                                       |
+| =commands/update_id.rs=       | =org update add-id= (UUIDv4, template, command, Stempelamt)                                         |     |                                                       |
+| =commands/update_property.rs= | =org update set-property=, =delete-property=, and =set-tags=                                        |     |                                                       |
+| =commands/update_state.rs=    | =org update set-state= (=:LOGBOOK:=, =:LAST_REPEAT:=, =--no-repeat=)                                |     |                                                       |
+| =commands/update_planning.rs= | =org update set-scheduled= and =set-deadline= planning mutators                                     |     |                                                       |
+| =commands/update_todo.rs=     | =org update add-todo= entry creation and lint-clean post-pass                                       |     |                                                       |
+| =commands/update_table.rs=    | =org update add-cookie= and =org update calc= (=#+TBLFM:=)                                          |     |                                                       |
+| =commands/mcp.rs=             | JSON-RPC 2.0 =stdio= MCP server and =tools_planning.rs= (=org_query_agenda=, =org_update_planning=) |     |                                                       |
+| =commands/clock.rs=           | =org clock in                                                                                       | out | cancel=, =report= (=:EFFORT:= variance), and =status= |
+| =commands/archive.rs=         | =org archive= subtree archiving handler                                                             |     |                                                       |
+| =commands/export.rs=          | =org export ical=, =jscal=, and Zensical =md= (=--expand-includes=)                                 |     |                                                       |
+| =commands/schema.rs=          | =org schema= embedded JSON Schema printer (incl. =agenda=)                                          |     |                                                       |
+| =query/=, =clock/=, =export/= | Query parser/predicates/renderers, clock reports, exporters                                         |     |                                                       |
+| =date.rs=                     | Civil calendar date parsing and arithmetic                                                          |     |                                                       |
 
 ** Level 3: Key Data Models
 

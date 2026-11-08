@@ -41,6 +41,8 @@ pub mod output;
 pub mod planning;
 /// Property drawer mutations (`F005`), tag alignment (`F007`), and Stempelamt UUIDv5 minting.
 pub mod property;
+/// Atomic subtree refiling across headings and files (`org refile`).
+pub mod refile;
 /// `org-roam` v2 node, alias, ref, and backlink queries.
 pub mod roam;
 /// Format (`F*`) and lint (`E*`, `W*`, `I*`) rule traits and implementations.

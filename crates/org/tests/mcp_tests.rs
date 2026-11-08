@@ -19,8 +19,7 @@ use tempfile::TempDir;
 
 /// Forbidden machine-specific path prefix in repository configuration files.
 const FORBIDDEN_USER_PATH_PREFIX: &str = "/Users/";
-
-/// Expected 10 MCP tool names exposed by `org mcp`.
+/// Expected 11 MCP tool names exposed by `org mcp`.
 const EXPECTED_TOOLS: &[&str] = &[
     "org_roam_node",
     "org_roam_backlinks",
@@ -32,6 +31,7 @@ const EXPECTED_TOOLS: &[&str] = &[
     "org_update_state",
     "org_update_planning",
     "org_fmt_file",
+    "org_refile",
 ];
 /// UUID for the hub specification file node in the synthetic workspace.
 const HUB_ID: &str = "10000000-0000-4000-8000-000000000101";

@@ -25,6 +25,7 @@ use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
 use commands::mcp::{run_mcp, McpArgs};
 use commands::query::{run_query, QueryCommand};
+use commands::refile::{run_refile, RefileArgs};
 use commands::roam::{run_roam, RoamCommand};
 use commands::schema::{run_schema, SchemaArgs};
 use commands::show::{run_show, ShowArgs};
@@ -114,6 +115,8 @@ enum OrgCommand {
     },
     /// Extract a scoped entry subtree or file node by locator.
     Show(ShowArgs),
+    /// Move an entry subtree across files or under a new parent heading.
+    Refile(RefileArgs),
     /// Serve the built-in zero-Emacs MCP JSON-RPC 2.0 server over stdio.
     Mcp(McpArgs),
     /// Archive done entries to a separate file.
@@ -165,6 +168,7 @@ fn dispatch_agent_command(command: OrgCommand, no_cache: bool) -> i32 {
         OrgCommand::Roam { command } => run_roam(command, no_cache),
         OrgCommand::Cache { command } => run_cache(command),
         OrgCommand::Show(args) => run_show(args),
+        OrgCommand::Refile(args) => run_refile(args, no_cache),
         OrgCommand::Mcp(args) => run_mcp(args, no_cache),
         OrgCommand::Archive(args) => run_archive(args),
         OrgCommand::Schema(args) => run_schema(&args.name),

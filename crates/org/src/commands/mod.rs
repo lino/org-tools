@@ -12,6 +12,7 @@ pub(crate) mod mcp;
 pub(crate) mod query;
 pub(crate) mod query_columns;
 pub(crate) mod query_gtd;
+pub(crate) mod refile;
 pub(crate) mod roam;
 pub(crate) mod schema;
 pub(crate) mod show;

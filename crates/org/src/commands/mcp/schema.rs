@@ -57,7 +57,10 @@ pub(super) const TOOL_UPDATE_PLANNING: &str = "org_update_planning";
 /// MCP tool name checking or formatting an Org file in-place within the workspace.
 pub(super) const TOOL_FMT_FILE: &str = "org_fmt_file";
 
-/// Ordered registry of all 10 supported MCP tool names.
+/// MCP tool name atomically refiling an Org subtree across files or under a new heading.
+pub(super) const TOOL_REFILE: &str = "org_refile";
+
+/// Ordered registry of all 11 supported MCP tool names.
 pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_ROAM_NODE,
     TOOL_ROAM_BACKLINKS,
@@ -69,6 +72,7 @@ pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_UPDATE_STATE,
     TOOL_UPDATE_PLANNING,
     TOOL_FMT_FILE,
+    TOOL_REFILE,
 ];
 
 // endregion
@@ -177,7 +181,7 @@ fn agenda_and_show_descriptors() -> Vec<Value> {
     ]
 }
 
-/// Builds the 3 mutating tool descriptors (`org_update_state`, `org_update_planning`, `org_fmt_file`).
+/// Builds the 4 mutating tool descriptors (`org_update_state`, `org_update_planning`, `org_fmt_file`, `org_refile`).
 fn write_tool_descriptors() -> Vec<Value> {
     let ws_prop =
         json!({ "type": "string", "description": "Optional workspace root directory override." });
@@ -217,10 +221,22 @@ fn write_tool_descriptors() -> Vec<Value> {
             }),
             &["path"],
         ),
+        tool_descriptor(
+            TOOL_REFILE,
+            "Atomically move an Org subtree across files or under a new heading with star-level and F007 tag alignment.",
+            json!({
+                "source_locator": { "type": "string", "description": "Source heading locator (id:<uuid>, custom-id:<id>, olp:<path>, *Heading, or <file>::<target>)." },
+                "target": { "type": "string", "description": "Destination heading locator or workspace-relative .org file path." },
+                "as_root": { "type": "boolean", "description": "Refile as a level-1 root heading at the end of the target file (default: false)." },
+                "dry_run": { "type": "boolean", "description": "Preview the refile mutation without writing files (default: false)." },
+                "workspace": ws_prop
+            }),
+            &["source_locator", "target"],
+        ),
     ]
 }
 
-/// Constructs the complete `tools/list` result object for all 10 MCP tools.
+/// Constructs the complete `tools/list` result object for all 11 MCP tools.
 pub(super) fn build_tools_list_result() -> Value {
     let mut tools = roam_and_query_descriptors();
     tools.extend(agenda_and_show_descriptors());

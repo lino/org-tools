@@ -46,6 +46,7 @@ pub(crate) const EXIT_REQUIRES_EMACS: i32 = 3;
 #[derive(Parser)]
 #[command(
     name = "org",
+    version,
     about = "Unified CLI for org-mode: lint, format, query, clock, export"
 )]
 struct Cli {

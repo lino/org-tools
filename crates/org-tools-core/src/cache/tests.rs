@@ -8,9 +8,11 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
+#[cfg(unix)]
+use super::RoamWorkspace;
 use super::{
     build_fts5_match_expr, load_cached_fts_candidate_docs, load_docs_with_bodies,
-    matches_body_phrase, rank_matched_indices_bm25, tokenize_unicode61, MabuseCache, RoamWorkspace,
+    matches_body_phrase, rank_matched_indices_bm25, tokenize_unicode61, MabuseCache,
     DEFAULT_CACHE_REL_PATH,
 };
 use crate::edna::{self, EdnaContext};

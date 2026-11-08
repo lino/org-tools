@@ -373,6 +373,15 @@ fn dockerfile_and_ghcr_workflows_provide_zero_toolchain_container_runtime() {
     ] {
         assert!(release_yml.contains(token), "release.yml missing `{token}`");
     }
+
+    let ver_out = Command::new(env!("CARGO_BIN_EXE_org"))
+        .arg("--version")
+        .output()
+        .expect("execute org --version");
+    assert!(
+        ver_out.status.success(),
+        "`org --version` must succeed for container smoke tests"
+    );
 }
 
 // endregion

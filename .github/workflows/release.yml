@@ -114,16 +114,38 @@ jobs:
 
       - name: Install cargo-zigbuild
         uses: taiki-e/install-action@cargo-zigbuild
+        continue-on-error: true
 
       - name: Install cargo-xwin
         uses: taiki-e/install-action@cargo-xwin
+        continue-on-error: true
+
+      - name: Ensure cross-compilation tools are installed
+        run: |
+          command -v cargo-zigbuild >/dev/null 2>&1 || brew install cargo-zigbuild || cargo install --locked cargo-zigbuild
+          command -v cargo-xwin >/dev/null 2>&1 || cargo install --locked cargo-xwin
 
       - name: Run GoReleaser multi-target build and package pipeline
+        id: goreleaser
         uses: goreleaser/goreleaser-action@v6
+        continue-on-error: true
         with:
           distribution: goreleaser
           version: "~> ${{ env.ORGFMT_GORELEASER_VERSION }}"
           args: "${{ startsWith(github.ref, 'refs/tags/v') && 'release --clean' || 'release --snapshot --clean' }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Fallback GoReleaser execution when action download fails
+        if: steps.goreleaser.outcome != 'success'
+        run: |
+          command -v goreleaser >/dev/null 2>&1 || brew install goreleaser
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            goreleaser release --clean
+          else
+            goreleaser release --snapshot --clean
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

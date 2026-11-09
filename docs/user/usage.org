@@ -1174,6 +1174,48 @@ Every =tools/call= response returns standard MCP =CallToolResult= (=content=,
 | =org_update_planning= | =kind=             | =locator=, =targets=, =value=, =clear=, =dry_run=, =workspace=             | Set, shift, or clear =SCHEDULED= / =DEADLINE= & sync cache   |
 | =org_fmt_file=        | =path=             | =check_only=, =workspace=                                                  | Check or format a workspace =.org= file & refresh warm cache |
 
+* Language Server Protocol (=org lsp=)
+
+Run the built-in zero-Emacs Language Server Protocol (LSP) JSON-RPC 2.0 server
+over =stdio=. The server provides real-time diagnostics, formatting, code
+actions, symbols, links, definitions, backlink references, folding, completion,
+hover, workspace rename, and semantic tokens.
+
+#+begin_src sh
+org lsp [--workspace <DIR>] [--roam-dir <DIR>]
+#+end_src
+
+| Option              | Description                                                      |
+|---------------------+------------------------------------------------------------------|
+| =--workspace <DIR>= | Workspace root directory to index and serve over LSP =stdio=     |
+| =--roam-dir <DIR>=  | Explicit org-roam directory if different from the workspace root |
+
+** Supported LSP Capabilities
+
+| Capability      | LSP Method                         | Purpose                                                   |
+|-----------------+------------------------------------+-----------------------------------------------------------|
+| Diagnostics     | =textDocument/publishDiagnostics=  | Real-time F* format and E*/W*/I* lint diagnostics on edit |
+| Formatting      | =textDocument/formatting=          | Full-document auto-formatting matching =org fmt format=   |
+| Code Actions    | =textDocument/codeAction=          | Quick-fix actions for auto-fixable rules and ID minting   |
+| Symbols         | =textDocument/documentSymbol=      | Outline heading hierarchy tree for editor symbol pickers  |
+| Links           | =textDocument/documentLink=        | Clickable links for file paths, URLs, and =id:<uuid>=     |
+| Definition      | =textDocument/definition=          | Jump to target heading or level-0 org-roam file node      |
+| References      | =textDocument/references=          | Find incoming backlinks across the workspace vault        |
+| Folding         | =textDocument/foldingRange=        | Foldable ranges for heading subtrees and property drawers |
+| Completion      | =textDocument/completion=          | Auto-complete =id:<uuid>= and =roam:= targets as you type |
+| Hover           | =textDocument/hover=               | Markdown previews of linked heading content and metadata  |
+| Rename          | =textDocument/rename=              | Workspace-wide rename of heading titles and custom IDs    |
+| Semantic Tokens | =textDocument/semanticTokens/full= | Syntax highlighting for drawers, tags, and timestamps     |
+
+** Editor Configuration
+
+Connect =org lsp= to your editor of choice:
+
+- *Neovim*: configure with =vim.lsp.start= or =nvim-lspconfig=
+- *Helix*: add =[language-server.org-lsp]= to =~/.config/helix/languages.toml=
+- *VS Code / Zed*: configure as an external =stdio= language server running =org lsp --workspace .=
+- *Emacs eglot*: add =(add-to-list 'eglot-server-programs '(org-mode . ("org" "lsp")))=
+
 * Schema (=org schema=)
 
 List or print embedded JSON Schema Draft 2020-12 contracts for any org-tools

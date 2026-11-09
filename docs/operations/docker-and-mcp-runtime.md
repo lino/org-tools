@@ -96,8 +96,19 @@ docker run -i --rm --network none --read-only \
   ghcr.io/lino/org-tools:latest --no-cache mcp --workspace /workspace
 ```
 
+You can also launch `org lsp` inside an isolated container for secure editor integration:
+
+```sh
+# Launch the language server inside a privilege-dropped container over stdio
+docker run -i --rm --network none --cap-drop=ALL \
+  -u "$(id -u):$(id -g)" -v "$PWD:/workspace" \
+  ghcr.io/lino/org-tools:latest lsp --workspace /workspace --roam-dir /workspace/roam
+```
+
 ??? info "Deep Dive: Path Confinement & SQLite WAL Cache Mechanics"
-`org mcp` resolves the startup workspace from `--workspace`, `ORG_TOOLS_WORKSPACE`, or ancestor project markers (`.org-tools.toml`, `.git`). Every tool file path or `OrgLocator` must carry a `.org` extension and contain zero `..` segments. Canonical paths must stay inside the workspace root, and external symlinks return an immediate JSON-RPC error.
+`org mcp` and `org lsp` resolve startup workspaces from `--workspace`, `ORG_TOOLS_WORKSPACE`, or ancestor project markers.
+Both servers enforce identical boundary checks and symlink escape protection via `resolve_startup_workspace`.
+Target files must stay inside the configured workspace, and external symlinks return immediate JSON-RPC errors.
 
 ```
 When caching is enabled, `WorkspaceCache` opens `.cache/org-cache.db` in SQLite Write-Ahead Logging (`WAL`) mode alongside `.cache/org-cache.db-wal` and `.cache/org-cache.db-shm`. Ensure the container user (`-u "$(id -u):$(id -g)"`) has write access to `.cache/`, or pass `--no-cache` for immutable volumes.

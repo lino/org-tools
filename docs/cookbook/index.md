@@ -9,8 +9,8 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 **What you will learn:**
 
-- Which goal-oriented recipe matches your daily task, knowledge-graph, AI assistant, or Continuous Integration (CI) workflow.
-- How to combine `org` subcommands (`query`, `roam`, `update`, `refile`, `mcp`, `fmt`) to solve real-world problems.
+- Which goal-oriented recipe matches your daily task, knowledge-graph, editor, AI assistant, or Continuous Integration (CI) workflow.
+- How to combine `org` subcommands (`query`, `roam`, `update`, `refile`, `mcp`, `lsp`, `fmt`) to solve real-world problems.
 - How to run multi-vault setups separating Getting Things Done (GTD) tasks from Zettelkasten permanent notes.
 
 Reference manuals explain individual flags, while cookbooks show how commands fit together in daily practice.
@@ -24,6 +24,7 @@ Pick the recipe that matches your immediate goal below.
 | [Getting Things Done (GTD)](gtd.md)                     | Capture inbox items, clarify next actions by `@context`, wire `org-edna` blockers, and run weekly reviews.       | `org query inbox\|next\|waiting\|blocked\|stuck\|agenda`, `org refile` |
 | [Zettelkasten & Fleeting Notes](zettelkasten.md)        | Capture fleeting thoughts, promote notes into `org-roam` v2 nodes, query backlinks, and render knowledge graphs. | `org roam fleeting\|capture\|node\|backlinks\|graph`, `org update`     |
 | [AI Assistants & MCP Server](mcp-server.md)             | Connect Claude Code, Cursor, or custom AI hosts to a workspace-confined `stdio` Model Context Protocol server.   | `org mcp`, `org cache`, `org show`                                     |
+| [Editors & LSP Server](lsp-editor-setup.md)             | Connect Neovim, Helix, VS Code, Zed, or Emacs `eglot` to the zero-Emacs Language Server Protocol server.         | `org lsp`, `org cache`, `org fmt`                                      |
 | [CI Pipelines & Shell Automation](automation-and-ci.md) | Enforce formatting and lint gates in GitHub Actions, pre-commit hooks, and `jq`-powered shell scripts.           | `org fmt`, `org schema`, `org query`, `org update`                     |
 
 ## Multi-Vault Workspace Pattern

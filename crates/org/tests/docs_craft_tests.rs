@@ -1,5 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=490 reason="Comprehensive Zensical documentation craft and LSP guide contract tests"
 
 //! Automated documentation craft, Zensical navigation, `arc42`, and readability verification suite (`ORGFMT-WP-30`).
 
@@ -22,22 +23,23 @@ const REQUIRED_NAV_DOCS: &[&str] = &[
     "user/querying-and-agenda.md", "user/updating-clocking-and-exporting.md",
     "user/power-user-and-scripting.md", "user/schemas.md", "user/reference.md",
     "cookbook/index.md", "cookbook/gtd.md", "cookbook/zettelkasten.md",
-    "cookbook/mcp-server.md", "cookbook/automation-and-ci.md",
-    "operations/index.md", "operations/installation.md",
+    "cookbook/mcp-server.md", "cookbook/lsp-editor-setup.md",
+    "cookbook/automation-and-ci.md", "operations/index.md", "operations/installation.md",
     "operations/docker-and-mcp-runtime.md", "operations/release-and-tap.md",
     "operations/metrics-and-troubleshooting.md", "developer/index.md",
     "developer/architecture.md", "developer/contributing.md",
     "developer/decisions.md", "glossary.md",
 ];
 
-/// All 15 task, feature, cookbook, operator, and contributor guides requiring six-part scaffolding.
+/// All 16 task, feature, cookbook, operator, and contributor guides requiring six-part scaffolding.
 #[rustfmt::skip]
 const SCAFFOLDED_GUIDES: &[&str] = &[
     "docs/user/quickstart.md", "docs/user/formatting-and-linting.md",
     "docs/user/querying-and-agenda.md", "docs/user/updating-clocking-and-exporting.md",
     "docs/user/power-user-and-scripting.md", "docs/user/schemas.md",
     "docs/cookbook/gtd.md", "docs/cookbook/zettelkasten.md",
-    "docs/cookbook/mcp-server.md", "docs/cookbook/automation-and-ci.md",
+    "docs/cookbook/mcp-server.md", "docs/cookbook/lsp-editor-setup.md",
+    "docs/cookbook/automation-and-ci.md",
     "docs/operations/installation.md", "docs/operations/docker-and-mcp-runtime.md",
     "docs/operations/release-and-tap.md", "docs/operations/metrics-and-troubleshooting.md",
     "docs/developer/contributing.md",
@@ -352,11 +354,42 @@ fn zensical_toml_configures_three_manuals_cookbook_and_glossary() {
     }
 }
 
-/// Verifies all 15 User, Cookbook, Operator, and Contributor guides follow the six-part scaffolding template.
+/// Verifies all 16 User, Cookbook, Operator, and Contributor guides follow the six-part scaffolding template.
 #[test]
-fn all_fifteen_guides_conform_to_six_part_topic_scaffolding() {
+fn all_sixteen_guides_conform_to_six_part_topic_scaffolding() {
     for &guide in SCAFFOLDED_GUIDES {
         assert_guide_scaffolding(guide, &read_repo_file(guide));
+    }
+}
+
+/// Verifies LSP editor cookbook coverage, metrics runbook entries, and glossary definitions (`ORGFMT-WP-35`).
+#[test]
+fn lsp_cookbook_metrics_runbook_and_glossary_meet_contract() {
+    let cookbook = read_repo_file("docs/cookbook/lsp-editor-setup.md");
+    for editor in [
+        "nvim-lspconfig",
+        "languages.toml",
+        "VS Code",
+        "Zed",
+        "eglot",
+    ] {
+        assert!(cookbook.contains(editor), "LSP cookbook missing `{editor}`");
+    }
+    let metrics = read_repo_file("docs/operations/metrics-and-troubleshooting.md");
+    for token in [
+        "orgfmt_lsp_requests_total",
+        "orgfmt_lsp_request_duration_seconds",
+        "orgfmt_lsp_diagnostics_published_total",
+        "ORG_LSP_TELEMETRY_DIR",
+    ] {
+        assert!(metrics.contains(token), "metrics runbook missing `{token}`");
+    }
+    let glossary = read_repo_file("docs/glossary.md");
+    for term in [
+        "Language Server Protocol",
+        "16-Bit Unicode Transformation Format",
+    ] {
+        assert!(glossary.contains(term), "glossary missing `{term}`");
     }
 }
 

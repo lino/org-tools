@@ -18,44 +18,46 @@ Entries appear in alphabetical order so you can look up unfamiliar terms quickly
 
 ## Alphabetical Reference Table
 
-| Term or Acronym    | Full Expansion                                                           | Plain-Language Definition                                                                                              |
-| ------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `AST`              | Abstract Syntax Tree                                                     | Tree representation of parsed query expressions or document syntax nodes.                                              |
-| `CLI`              | Command-Line Interface                                                   | Text-based terminal interface provided by the `org` executable.                                                        |
-| `Diagnostic`       | Lint or Format Diagnostic                                                | Structured report describing a file, line, column, severity, rule ID, and message.                                     |
-| `Fix`              | Byte-Span Replacement Fix                                                | Non-overlapping byte range `[start, end)` and replacement text produced by a format rule.                              |
-| `FormatRule`       | Auto-Fix Format Rule Trait                                               | Stateless rule (`F001..F009`) that emits `Fix` replacements to normalize Org formatting.                               |
-| `GTD`              | Getting Things Done                                                      | Action-management methodology organizing tasks into `inbox`, `next`, `waiting`, `blocked`, and `stuck` views.          |
-| `iCalendar`        | Internet Calendaring and Scheduling Core Object Specification (RFC 5545) | Standard `.ics` calendar text format exported by `org export ical`.                                                    |
-| `JSCalendar`       | JSON Representation of Calendar Data (RFC 8984)                          | Modern JSON calendar event and task format exported by `org export jscal`.                                             |
-| `JSON-RPC`         | JSON Remote Procedure Call 2.0                                           | Stateless JSON request-response wire protocol used by `org mcp` over `stdio`.                                          |
-| `JSONL`            | JSON Lines (Newline-Delimited JSON)                                      | Streaming log format where each line contains one complete JSON object.                                                |
-| `LintRule`         | Diagnostic Lint Rule Trait                                               | Stateless rule (`E*`, `W*`, `I*`) that inspects Org text and emits `Diagnostic` warnings or errors.                    |
-| `MCP`              | Model Context Protocol                                                   | Open protocol connecting AI assistants to local tools and workspace data over `JSON-RPC` `stdio`.                      |
-| `MutationResult`   | Uniform Mutation Output Envelope                                         | Schema-validated JSON response reporting modified files, affected entries, errors, and execution `telemetry`.          |
-| `OrgDocument`      | Parsed Org Document Model                                                | In-memory heading tree, file keywords, and level-0 `org-roam` v2 properties for one `.org` file.                       |
-| `OrgEntry`         | Parsed Org Heading Entry                                                 | Single heading node storing level, TODO keyword, priority, tags, properties, planning, clocks, and checklist items.    |
-| `OrgLocator`       | Universal Org Node Locator                                               | Canonical address (`id:UUID`, `file::#custom-id`, `file::*/Outline`, or `file::line`) targeting an entry or file node. |
-| `org-edna`         | Extensible Dependencies for Org-mode Tasks                               | Dependency syntax using `:BLOCKER:` conditions and `:TRIGGER:` actions across tasks.                                   |
-| `org-habit`        | Org-mode Habit Tracking Module                                           | Recurring task workflow using `:STYLE: habit`, `.+` repeaters, and `:LAST_REPEAT:` history logs.                       |
-| `org-roam`         | Org-mode Zettelkasten Knowledge Graph v2                                 | Linked-note extension using `:ID:` drawers, `:ROAM_ALIASES:`, `:ROAM_REFS:`, and backlink queries.                     |
-| `Predicate`        | Query Filter Predicate                                                   | Boolean condition (`todo:TODO`, `tags:work`, `scheduled:<=today`) evaluated against each `OrgEntry`.                   |
-| `Protected Region` | Literal Block Protected Region                                           | Block range (`src`, `example`, `quote`, `verse`, `export`, `center`, `comment`) skipped by format rules.               |
-| `RFC 9562`         | Universally Unique Identifiers Specification                             | Internet standard defining UUID layouts, including random UUIDv4 and deterministic SHA-1 UUIDv5.                       |
-| `ROFF`             | Runoff Unix Typesetting Language                                         | Classic Unix markup format used to render `man/org.1` and `man/org-tools.toml.5` manual pages.                         |
-| `Runner`           | Format and Lint Pipeline Runner                                          | Engine in `org-tools-core` that runs format rules, applies fixes, and executes lint rules.                             |
-| `SourceFile`       | Line-Indexed Source Buffer                                               | In-memory UTF-8 file buffer with precomputed line-start byte offsets for `O(log n)` coordinate lookups.                |
-| `SPDX`             | Software Package Data Exchange                                           | Standard header format (`SPDX-License-Identifier: GPL-3.0-or-later`) declaring file licensing.                         |
-| `SQLite FTS5`      | SQLite Full-Text Search Version 5                                        | Embedded SQLite virtual table engine providing fast tokenized text search inside `WorkspaceCache`.                     |
-| `TBLFM`            | Org Table Formula Line (`#+TBLFM:`)                                      | Spreadsheet formula directive attached beneath an Org table and evaluated by `org update calc`.                        |
-| `TDD`              | Test-Driven Development                                                  | Engineering workflow where contributors write a failing test (**Red**) before writing production code (**Green**).     |
-| `TOML`             | Tom's Obvious Minimal Language                                           | Human-readable configuration file format used by `.org-tools.toml`, `Cargo.toml`, and `mise.toml`.                     |
-| `TTY`              | Teletypewriter Interactive Terminal                                      | Interactive terminal device detected to toggle ANSI colors and human-friendly output formatting.                       |
-| `UUIDv5`           | Name-Based SHA-1 UUID (Version 5)                                        | Deterministic 128-bit identifier derived by hashing a namespace UUID and a canonical `:ID_SEED:` string.               |
-| `WAL`              | Write-Ahead Logging                                                      | SQLite journaling mode enabling concurrent readers and atomic transactions in `.cache/org-cache.db`.                   |
-| `WorkspaceCache`   | Incremental SQLite Workspace Cache                                       | Persistent SQLite `WAL` and `SQLite FTS5` index stored at `.cache/org-cache.db` for fast queries.                      |
-| `XDG`              | Cross-Desktop Group Base Directory Specification                         | Standard environment variable conventions governing user configuration and cache paths on Unix systems.                |
-| `Zettelkasten`     | Slip-Box Linked Note-Taking Method                                       | Knowledge management system linking atomic notes via unique IDs, aliases, and bidirectional backlinks.                 |
+| Term or Acronym    | Full Expansion                                                           | Plain-Language Definition                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `AST`              | Abstract Syntax Tree                                                     | Tree representation of parsed query expressions or document syntax nodes.                                                 |
+| `CLI`              | Command-Line Interface                                                   | Text-based terminal interface provided by the `org` executable.                                                           |
+| `Diagnostic`       | Lint or Format Diagnostic                                                | Structured report describing a file, line, column, severity, rule ID, and message.                                        |
+| `Fix`              | Byte-Span Replacement Fix                                                | Non-overlapping byte range `[start, end)` and replacement text produced by a format rule.                                 |
+| `FormatRule`       | Auto-Fix Format Rule Trait                                               | Stateless rule (`F001..F009`) that emits `Fix` replacements to normalize Org formatting.                                  |
+| `GTD`              | Getting Things Done                                                      | Action-management methodology organizing tasks into `inbox`, `next`, `waiting`, `blocked`, and `stuck` views.             |
+| `iCalendar`        | Internet Calendaring and Scheduling Core Object Specification (RFC 5545) | Standard `.ics` calendar text format exported by `org export ical`.                                                       |
+| `JSCalendar`       | JSON Representation of Calendar Data (RFC 8984)                          | Modern JSON calendar event and task format exported by `org export jscal`.                                                |
+| `JSON-RPC`         | JSON Remote Procedure Call 2.0                                           | Stateless JSON request-response wire protocol used by `org mcp` over `stdio`.                                             |
+| `JSONL`            | JSON Lines (Newline-Delimited JSON)                                      | Streaming log format where each line contains one complete JSON object.                                                   |
+| `LintRule`         | Diagnostic Lint Rule Trait                                               | Stateless rule (`E*`, `W*`, `I*`) that inspects Org text and emits `Diagnostic` warnings or errors.                       |
+| `LSP`              | Language Server Protocol                                                 | Open protocol providing editor diagnostics, formatting, completion, hover, navigation, and workspace rename over `stdio`. |
+| `MCP`              | Model Context Protocol                                                   | Open protocol connecting AI assistants to local tools and workspace data over `JSON-RPC` `stdio`.                         |
+| `MutationResult`   | Uniform Mutation Output Envelope                                         | Schema-validated JSON response reporting modified files, affected entries, errors, and execution `telemetry`.             |
+| `OrgDocument`      | Parsed Org Document Model                                                | In-memory heading tree, file keywords, and level-0 `org-roam` v2 properties for one `.org` file.                          |
+| `OrgEntry`         | Parsed Org Heading Entry                                                 | Single heading node storing level, TODO keyword, priority, tags, properties, planning, clocks, and checklist items.       |
+| `OrgLocator`       | Universal Org Node Locator                                               | Canonical address (`id:UUID`, `file::#custom-id`, `file::*/Outline`, or `file::line`) targeting an entry or file node.    |
+| `org-edna`         | Extensible Dependencies for Org-mode Tasks                               | Dependency syntax using `:BLOCKER:` conditions and `:TRIGGER:` actions across tasks.                                      |
+| `org-habit`        | Org-mode Habit Tracking Module                                           | Recurring task workflow using `:STYLE: habit`, `.+` repeaters, and `:LAST_REPEAT:` history logs.                          |
+| `org-roam`         | Org-mode Zettelkasten Knowledge Graph v2                                 | Linked-note extension using `:ID:` drawers, `:ROAM_ALIASES:`, `:ROAM_REFS:`, and backlink queries.                        |
+| `Predicate`        | Query Filter Predicate                                                   | Boolean condition (`todo:TODO`, `tags:work`, `scheduled:<=today`) evaluated against each `OrgEntry`.                      |
+| `Protected Region` | Literal Block Protected Region                                           | Block range (`src`, `example`, `quote`, `verse`, `export`, `center`, `comment`) skipped by format rules.                  |
+| `RFC 9562`         | Universally Unique Identifiers Specification                             | Internet standard defining UUID layouts, including random UUIDv4 and deterministic SHA-1 UUIDv5.                          |
+| `ROFF`             | Runoff Unix Typesetting Language                                         | Classic Unix markup format used to render `man/org.1` and `man/org-tools.toml.5` manual pages.                            |
+| `Runner`           | Format and Lint Pipeline Runner                                          | Engine in `org-tools-core` that runs format rules, applies fixes, and executes lint rules.                                |
+| `SourceFile`       | Line-Indexed Source Buffer                                               | In-memory UTF-8 file buffer with precomputed line-start byte offsets for `O(log n)` coordinate lookups.                   |
+| `SPDX`             | Software Package Data Exchange                                           | Standard header format (`SPDX-License-Identifier: GPL-3.0-or-later`) declaring file licensing.                            |
+| `SQLite FTS5`      | SQLite Full-Text Search Version 5                                        | Embedded SQLite virtual table engine providing fast tokenized text search inside `WorkspaceCache`.                        |
+| `TBLFM`            | Org Table Formula Line (`#+TBLFM:`)                                      | Spreadsheet formula directive attached beneath an Org table and evaluated by `org update calc`.                           |
+| `TDD`              | Test-Driven Development                                                  | Engineering workflow where contributors write a failing test (**Red**) before writing production code (**Green**).        |
+| `TOML`             | Tom's Obvious Minimal Language                                           | Human-readable configuration file format used by `.org-tools.toml`, `Cargo.toml`, and `mise.toml`.                        |
+| `TTY`              | Teletypewriter Interactive Terminal                                      | Interactive terminal device detected to toggle ANSI colors and human-friendly output formatting.                          |
+| `UTF-16`           | 16-Bit Unicode Transformation Format                                     | Character encoding used for zero-based character offsets in Language Server Protocol range coordinates.                   |
+| `UUIDv5`           | Name-Based SHA-1 UUID (Version 5)                                        | Deterministic 128-bit identifier derived by hashing a namespace UUID and a canonical `:ID_SEED:` string.                  |
+| `WAL`              | Write-Ahead Logging                                                      | SQLite journaling mode enabling concurrent readers and atomic transactions in `.cache/org-cache.db`.                      |
+| `WorkspaceCache`   | Incremental SQLite Workspace Cache                                       | Persistent SQLite `WAL` and `SQLite FTS5` index stored at `.cache/org-cache.db` for fast queries.                         |
+| `XDG`              | Cross-Desktop Group Base Directory Specification                         | Standard environment variable conventions governing user configuration and cache paths on Unix systems.                   |
+| `Zettelkasten`     | Slip-Box Linked Note-Taking Method                                       | Knowledge management system linking atomic notes via unique IDs, aliases, and bidirectional backlinks.                    |
 
 ## Detailed Term Definitions
 
@@ -113,6 +115,11 @@ Operators use `JSONL` records to collect structured execution telemetry and audi
 
 `LintRule` is the Rust trait implemented by diagnostic rules (`E*` errors, `W*` warnings, `I*` info).
 Lint rules inspect formatted text and report structural or stylistic problems without mutating files.
+
+### LSP (Language Server Protocol)
+
+The Language Server Protocol (`LSP`) standardizes communication between development tools and language smartness providers.
+`org lsp` delivers real-time diagnostics, formatting, code actions, hover, backlinks, and workspace rename to modern editors.
 
 ### MCP (Model Context Protocol)
 
@@ -213,6 +220,12 @@ Tom's Obvious Minimal Language (`TOML`) is a typed configuration format with `[s
 
 A `TTY` is an interactive terminal attached to standard input or output.
 `org` checks `TTY` status and the `NO_COLOR` environment variable to format terminal output cleanly.
+
+### UTF-16 (16-Bit Unicode Transformation Format)
+
+UTF-16 encodes Unicode code points as one or two 16-bit code units.
+The Language Server Protocol specifies UTF-16 code units for document range character offsets.
+`org lsp` accurately translates UTF-16 character positions to UTF-8 byte spans.
 
 ### UUIDv5 (Universally Unique Identifier Version 5)
 

@@ -57,6 +57,17 @@ jq 'select(.event == "release.verification.completed")' dist/telemetry/release-e
 org update set-state README.org --line 1 "DONE" --dry-run --format json | jq '.telemetry'
 ```
 
+The `org lsp` server flushes Prometheus metrics to `<workspace>/.cache/telemetry/orgfmt_lsp.prom`.
+You can override the destination directory by setting `ORG_LSP_TELEMETRY_DIR`.
+
+| Metric                                   | Type      | Labels             | Operational Target & Alert Threshold             |
+| ---------------------------------------- | --------- | ------------------ | ------------------------------------------------ |
+| `orgfmt_lsp_requests_total`              | `counter` | `method`, `status` | Alert if `status="error"` rate increases sharply |
+| `orgfmt_lsp_request_duration_seconds`    | `gauge`   | `method`           | Target latency under 50 milliseconds for editing |
+| `orgfmt_lsp_diagnostics_published_total` | `counter` | `severity`         | Tracks published diagnostics by severity level   |
+
+Each request also records an `lsp.request` line in `events.jsonl` with W3C `trace_id` correlation.
+
 5. Check process exit codes against the canonical `0..3` contract in CI workflows and shell scripts.
 
 | Exit Code | Constant              | Operational Meaning                                                    |
@@ -110,4 +121,5 @@ Every mutating CLI subcommand and MCP tool call attaches a `MutationTelemetry` (
 | `orgfmt_release_artifacts_verified_total{status="failed"} > 0` | Target builder ID mismatch or truncated package in `dist/`      | Verify `.goreleaser.yaml` builder IDs (`org-darwin`, `org-linux`, `org-windows`)    |
 | `org` exits with code `3` (`EXIT_REQUIRES_EMACS`)              | Spreadsheet `#+TBLFM:` uses unsupported Emacs Lisp or Calc form | Evaluate that formula in batch Emacs or simplify it to standard arithmetic          |
 | `cache_hit: false` on repeated CLI or MCP queries              | `--no-cache` is set or `.cache/org-cache.db` is not writable    | Ensure write permissions on `.cache/` and run `org roam sync` to warm the cache     |
+| LSP diagnostics or completion lag behind edits                 | High request latency or slow filesystem                         | Check `orgfmt_lsp_request_duration_seconds` and ensure cache is warmed              |
 | SQLite lock or corrupt `.cache/org-cache.db` error             | Stale `.cache/org-cache.db-wal` after an abrupt host crash      | Remove `.cache/org-cache.db*` and let `WorkspaceCache` rebuild the index cleanly    |

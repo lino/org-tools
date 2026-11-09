@@ -129,7 +129,7 @@ flowchart TD
         FmtCmd["commands/fmt"]
         QueryCmd["commands/query + roam + show"]
         UpdateCmd["commands/update + refile + archive"]
-        McpCmd["commands/mcp + clock + export + schema"]
+        McpCmd["commands/mcp + lsp + clock + export"]
     end
     subgraph "org-tools-core (crates/org-tools-core)"
         Runner["Runner + FormatRule + LintRule"]
@@ -201,6 +201,7 @@ flowchart TD
 | `commands/update_todo.rs`     | Implements `org update add-todo` and `org update check-item` checklist mutations.                |
 | `commands/update_table.rs`    | Implements `org update add-cookie` and `org update calc` (`#+TBLFM:` recalculation).             |
 | `commands/mcp.rs`             | Serves the built-in JSON-RPC 2.0 `stdio` MCP server and tool handlers.                           |
+| `commands/lsp.rs`             | Implements `org lsp` JSON-RPC 2.0 stdio server, diagnostics, navigation, and tokens.             |
 | `commands/clock.rs`           | Implements `org clock in`, `out`, `cancel`, `status`, and `report` with `:EFFORT:` variance.     |
 | `commands/archive.rs`         | Implements `org archive` for moving `DONE` subtrees to `.org_archive` targets.                   |
 | `commands/export.rs`          | Implements `org export ical`, `jscal`, and Markdown (`md`) exports.                              |
@@ -348,6 +349,12 @@ Mutating commands call `invalidate_paths` immediately after writing files, and `
 
 `property.rs` mints reproducible UUIDv5 identifiers from a namespace UUID and canonical `:ID_SEED:` strings.
 Writing `:ID_SEED:` alongside `:ID:` lets contributors audit and regenerate deterministic node identifiers.
+
+### 8.7 Language Server Protocol (`org lsp`)
+
+`crates/org/src/commands/lsp.rs` and submodules (`diagnostics.rs`, `navigation.rs`, `intelligence.rs`, `refactor_tokens.rs`) implement the Language Server Protocol.
+The server shares JSON-RPC 2.0 `Content-Length` and JSONL framing with `mcp/framing.rs`.
+It enforces workspace path confinement via `mcp/confinement.rs` and queries `WorkspaceCache`.
 
 ## 9. Architecture Decisions
 

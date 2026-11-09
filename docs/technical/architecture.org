@@ -137,7 +137,7 @@ flowchart TD
         QueryCmd["commands/query + query_gtd"]
         UpdateCmd["commands/update*"]
         ArchiveCmd["commands/archive"]
-        ClockExport["commands/clock + export + schema"]
+        ClockExport["commands/mcp + lsp + clock + export"]
     end
     subgraph "org-tools-core"
         Runner
@@ -210,6 +210,7 @@ flowchart TD
 | =commands/update_todo.rs=     | =org update add-todo= entry creation and lint-clean post-pass                                       |     |                                                       |
 | =commands/update_table.rs=    | =org update add-cookie= and =org update calc= (=#+TBLFM:=)                                          |     |                                                       |
 | =commands/mcp.rs=             | JSON-RPC 2.0 =stdio= MCP server and =tools_planning.rs= (=org_query_agenda=, =org_update_planning=) |     |                                                       |
+| =commands/lsp.rs=             | =org lsp= JSON-RPC 2.0 stdio server, diagnostics, navigation, and tokens                            |     |                                                       |
 | =commands/clock.rs=           | =org clock in                                                                                       | out | cancel=, =report= (=:EFFORT:= variance), and =status= |
 | =commands/archive.rs=         | =org archive= subtree archiving handler                                                             |     |                                                       |
 | =commands/export.rs=          | =org export ical=, =jscal=, and Zensical =md= (=--expand-includes=)                                 |     |                                                       |
@@ -416,6 +417,14 @@ files). Otherwise, it falls back to =CUSTOM_ID=, outline path, or line number.
 Rules are fully independent — no rule reads another rule's output. This
 makes the system easy to reason about, test, and extend. Each rule is a
 self-contained module with its own tests.
+
+** Language Server Protocol (=org lsp=)
+
+=crates/org/src/commands/lsp.rs= and submodules (=diagnostics.rs=, =navigation.rs=,
+=intelligence.rs=, =refactor_tokens.rs=) implement the Language Server Protocol.
+The server shares JSON-RPC 2.0 =Content-Length= / JSONL framing with
+=mcp/framing.rs=, workspace confinement with =mcp/confinement.rs=, and queries
+the incremental SQLite WAL + FTS5 =WorkspaceCache=.
 
 * Architecture Decisions
 

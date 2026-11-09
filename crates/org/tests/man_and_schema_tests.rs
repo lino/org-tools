@@ -1,5 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
+// fritz: allow-file-length=480 reason="Comprehensive manpage and JSON Schema Draft 2020-12 contract tests"
 
 //! Behavioural and contract tests for Unix manpages (`man/org.1`, `man/org-tools.toml.5`),
 //! release packaging, `org schema --list`/`--output`, and JSON Schema Draft 2020-12 parity (`ORGFMT-WP-27`).
@@ -28,7 +29,14 @@ const REQUIRED_ORG_1_SECTIONS: &[&str] = &[
 ];
 
 /// Required environment variables documented in `man/org.1`.
-const REQUIRED_ENV_VARS: &[&str] = &["NO_COLOR", "TERM", "ORG_TOOLS_CONFIG", "VISUAL", "EDITOR"];
+const REQUIRED_ENV_VARS: &[&str] = &[
+    "NO_COLOR",
+    "TERM",
+    "ORG_TOOLS_CONFIG",
+    "VISUAL",
+    "EDITOR",
+    "ORG_LSP_TELEMETRY_DIR",
+];
 
 /// Required top-level `.SH` section headings in `man/org-tools.toml.5`.
 const REQUIRED_TOML_5_SECTIONS: &[&str] = &[
@@ -146,6 +154,9 @@ fn slice1_man_org_1_contains_required_roff_sections_exit_codes_and_env_vars() {
     }
     for env_var in REQUIRED_ENV_VARS {
         assert!(org1.contains(env_var), "man/org.1 missing `{env_var}`");
+    }
+    for token in ["lsp", "--roam-dir", "ORG_LSP_TELEMETRY_DIR"] {
+        assert!(org1.contains(token), "man/org.1 missing `{token}`");
     }
     for code in ["0", "1", "2", "3"] {
         assert!(org1.contains(code), "man/org.1 missing exit code `{code}`");

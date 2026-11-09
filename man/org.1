@@ -52,6 +52,9 @@ Move an entry subtree across files or under a new parent heading while adjusting
 .B mcp \fR[\fB\-\-workspace\fR \fIDIR\fR]
 Run the built-in Model Context Protocol (MCP) JSON-RPC 2.0 server over standard input and standard output.
 .TP
+.B lsp \fR[\fB\-\-workspace\fR \fIDIR\fR] [\fB\-\-roam\-dir\fR \fIDIR\fR]
+Run the built-in Language Server Protocol (LSP) JSON-RPC 2.0 server over standard input and standard output (--roam-dir overrides the org-roam directory).
+.TP
 .B archive \fR[\fIPATHS\fR...]
 Move completed (`DONE`) subtrees into their configured archive sibling file (`_archive`).
 .TP
@@ -99,6 +102,9 @@ Preferred full-screen editor invoked by interactive note capture workflows when 
 .TP
 .B EDITOR
 Fallback text editor invoked when `VISUAL` is unset during interactive capture workflows.
+.TP
+.B ORG_LSP_TELEMETRY_DIR
+Directory overriding `<workspace>/.cache/telemetry` for Prometheus metrics (`orgfmt_lsp.prom`) and structured events (`events.jsonl`).
 .SH FILES
 .TP
 .I .org-tools.toml
@@ -126,6 +132,12 @@ List all embedded JSON Schema Draft 2020-12 contracts:
 .PP
 .nf
     org schema --list
+.fi
+.PP
+Start the Language Server Protocol server for an editor:
+.PP
+.nf
+    org lsp --workspace .
 .fi
 .SH SEE ALSO
 .B org-tools.toml(5)

@@ -4,7 +4,7 @@
 [project]
 site_url = "https://lino.github.io/org-tools/"
 site_name = "org-tools Documentation"
-site_description = "Standalone pure-Rust CLI and MCP server for Org-mode formatting, linting, querying, mutation, clocking, and export."
+site_description = "Standalone pure-Rust CLI, LSP, and MCP server for Org-mode formatting, linting, querying, mutation, clocking, and export."
 site_author = "org-tools contributors"
 
 nav = [
@@ -23,6 +23,7 @@ nav = [
     { "Getting Things Done (GTD)" = "cookbook/gtd.md" },
     { "Zettelkasten & Fleeting Notes" = "cookbook/zettelkasten.md" },
     { "AI Assistants & MCP Server" = "cookbook/mcp-server.md" },
+    { "Editors & LSP Server" = "cookbook/lsp-editor-setup.md" },
     { "CI Pipelines & Shell Automation" = "cookbook/automation-and-ci.md" },
   ] },
   { "Operator Manual" = [

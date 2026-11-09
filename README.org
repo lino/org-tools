@@ -104,6 +104,12 @@ When an entry has an =:ID:= property, that is always preferred.
   =org_update_planning=, and =org_fmt_file=
 - Incremental SQLite WAL + FTS5 cache (=.cache/org-cache.db=) with warm telemetry
 
+** Language Server Protocol (=org lsp=)
+
+- Built-in zero-Emacs JSON-RPC 2.0 =stdio= server (=org lsp [--workspace <DIR>] [--roam-dir <DIR>]=)
+- Editor capabilities: diagnostics, formatting, code actions, document symbols, document links, definition, backlink references, folding, completion, hover, workspace rename, and semantic tokens
+- Ready out of the box with Neovim, Helix, VS Code, Zed, and Emacs =eglot=
+
 ** Archive (=org archive=)
 
 - Move done entries to an archive file with metadata properties
@@ -155,6 +161,9 @@ cat todo.org | org update set-state DONE --query 'tags:shipped'
 
 # Archive completed entries
 org archive ~/org/
+
+# Start Language Server Protocol server for editor integration
+org lsp --workspace ~/org/
 
 # Shell completions, Unix manpages, and embedded JSON schemas
 org --completions bash > /etc/bash_completion.d/org

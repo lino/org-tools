@@ -32,6 +32,7 @@ See the [Glossary](../glossary.md) for definitions of all domain terms and acron
 | `org export ical\|jscal\|md`     | Export scheduled/deadline entries to iCalendar (`.ics`), JSCalendar (`.json`), or Zensical Markdown.         |
 | `org cache status\|rebuild\|...` | Inspect, rebuild, or clear the incremental SQLite Write-Ahead Logging (`WAL`) cache (`.cache/org-cache.db`). |
 | `org mcp [--workspace <DIR>]`    | Run the built-in zero-Emacs JSON Remote Procedure Call 2.0 (`JSON-RPC`) Model Context Protocol server.       |
+| `org lsp [--workspace <DIR>]`    | Run the built-in zero-Emacs Language Server Protocol (`LSP`) server for diagnostics, formatting, and rename. |
 | `org schema [--list\|<NAME>]`    | List or print embedded JSON Schema Draft 2020-12 contracts (`--output <PATH>`).                              |
 | `--config <PATH>`                | Load `.org-tools.toml` from an explicit path instead of searching ancestor directories.                      |
 | `--no-cache`                     | Bypass `.cache/org-cache.db` and parse `.org` files directly from disk.                                      |

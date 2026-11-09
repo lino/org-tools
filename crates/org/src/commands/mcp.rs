@@ -3,8 +3,8 @@
 
 //! Built-in zero-Emacs Model Context Protocol (`org mcp`) JSON-RPC 2.0 `stdio` server.
 
-mod confinement;
-mod framing;
+pub(crate) mod confinement;
+pub(crate) mod framing;
 mod schema;
 mod tools_clock;
 mod tools_lifecycle;

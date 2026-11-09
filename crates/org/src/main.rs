@@ -23,6 +23,7 @@ use commands::cache::{run_cache, CacheCommand};
 use commands::clock::{run_clock, ClockCommand};
 use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
+use commands::lsp::{run_lsp, LspArgs};
 use commands::mcp::{run_mcp, McpArgs};
 use commands::query::{run_query, QueryCommand};
 use commands::refile::{run_refile, RefileArgs};
@@ -119,6 +120,8 @@ enum OrgCommand {
     Refile(RefileArgs),
     /// Serve the built-in zero-Emacs MCP JSON-RPC 2.0 server over stdio.
     Mcp(McpArgs),
+    /// Serve the built-in zero-Emacs LSP JSON-RPC 2.0 server over stdio.
+    Lsp(LspArgs),
     /// Archive done entries to a separate file.
     Archive(ArchiveArgs),
     /// Print the JSON schema for a given output type.
@@ -170,6 +173,7 @@ fn dispatch_agent_command(command: OrgCommand, no_cache: bool) -> i32 {
         OrgCommand::Show(args) => run_show(args),
         OrgCommand::Refile(args) => run_refile(args, no_cache),
         OrgCommand::Mcp(args) => run_mcp(args, no_cache),
+        OrgCommand::Lsp(args) => run_lsp(args, no_cache),
         OrgCommand::Archive(args) => run_archive(args),
         OrgCommand::Schema(args) => run_schema(&args.name),
         _ => unreachable!("non-agent commands handled in dispatch_command"),

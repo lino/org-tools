@@ -18,7 +18,7 @@ const PARSE_ERROR_CODE: i64 = -32700;
 
 /// Wire framing mode detected on an incoming `stdio` JSON-RPC message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum FramingMode {
+pub(crate) enum FramingMode {
     /// Standard MCP newline-delimited UTF-8 JSON (`{"jsonrpc":"2.0",...}\n`).
     Newline,
     /// Header-framed UTF-8 JSON (`Content-Length: <N>\r\n\r\n<body_bytes>`).
@@ -27,7 +27,7 @@ pub(super) enum FramingMode {
 
 /// Decoded outcome of reading a single frame from the `stdin` stream.
 #[derive(Debug)]
-pub(super) enum IncomingFrame {
+pub(crate) enum IncomingFrame {
     /// Complete UTF-8 JSON frame paired with its wire [`FramingMode`].
     Message {
         /// Framing mode used by the sender.
@@ -163,7 +163,7 @@ fn read_header_framed_message<R: BufRead>(
 }
 
 /// Reads the next non-blank JSON-RPC frame from `reader`, returning `Ok(None)` at EOF.
-pub(super) fn read_frame<R: BufRead>(reader: &mut R) -> io::Result<Option<IncomingFrame>> {
+pub(crate) fn read_frame<R: BufRead>(reader: &mut R) -> io::Result<Option<IncomingFrame>> {
     let mut line = String::new();
     loop {
         line.clear();
@@ -185,7 +185,7 @@ pub(super) fn read_frame<R: BufRead>(reader: &mut R) -> io::Result<Option<Incomi
 }
 
 /// Serializes and flushes a JSON-RPC response `payload` to `writer` using `mode`.
-pub(super) fn write_frame<W: Write>(
+pub(crate) fn write_frame<W: Write>(
     writer: &mut W,
     mode: FramingMode,
     payload: &Value,

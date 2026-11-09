@@ -14,7 +14,7 @@ use org_tools_core::locator::OrgLocator;
 const WORKSPACE_MARKERS: &[&str] = &[".git", "kb.toml", ".org-tools.toml", ".fritz.toml"];
 
 /// Discovers a default workspace directory via `--workspace`, `ORG_TOOLS_WORKSPACE`, or markers.
-pub(super) fn resolve_startup_workspace(explicit: Option<&Path>) -> Result<PathBuf, String> {
+pub(crate) fn resolve_startup_workspace(explicit: Option<&Path>) -> Result<PathBuf, String> {
     if let Some(ws) = explicit {
         if !ws.is_dir() {
             return Err(format!("workspace directory not found: {}", ws.display()));
@@ -44,14 +44,14 @@ pub(super) fn resolve_startup_workspace(explicit: Option<&Path>) -> Result<PathB
 }
 
 /// Returns `true` when `path` carries a case-insensitive `.org` file extension.
-pub(super) fn is_org_extension(path: &Path) -> bool {
+pub(crate) fn is_org_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("org"))
 }
 
 /// Resolves the canonical filesystem root for `norm_ws`.
-pub(super) fn canonical_workspace_root(norm_ws: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonical_workspace_root(norm_ws: &Path) -> Result<PathBuf, String> {
     canonicalize_clean(norm_ws).map_err(|e| {
         format!(
             "failed to canonicalize workspace {}: {e}",
@@ -61,7 +61,7 @@ pub(super) fn canonical_workspace_root(norm_ws: &Path) -> Result<PathBuf, String
 }
 
 /// Verifies that existing `candidate` is an `.org` file whose canonical target stays under `canon_ws`.
-pub(super) fn verify_existing_confined_org_file(
+pub(crate) fn verify_existing_confined_org_file(
     candidate: &Path,
     canon_ws: &Path,
     label: &str,
@@ -84,7 +84,7 @@ pub(super) fn verify_existing_confined_org_file(
 }
 
 /// Resolves `raw_path` relative to `display_ws` and confines its canonical target within `canon_ws`.
-pub(super) fn resolve_confined_org_path(
+pub(crate) fn resolve_confined_org_path(
     raw_path: &str,
     display_ws: &Path,
     canon_ws: &Path,

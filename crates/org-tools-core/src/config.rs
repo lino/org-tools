@@ -3,21 +3,36 @@
 
 //! Configuration loading and validation for `.org-tools.toml`.
 
+mod loader;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::capture::{CaptureConfig, CaptureTemplateLayer};
 use crate::rules::heading::{parse_todo_spec, TodoKeywords};
+
+use self::loader::{
+    collect_config_chain, merge_config_layer, parse_env_roam_directories, resolve_spec_directories,
+    vault_name_from_path, LayerMergeState,
+};
+pub use self::loader::{discover_global_config_path, expand_config_path};
 
 // region Public Types & Constants
 
 /// Default lead-time days before an unwarned `DEADLINE:` appears in the agenda.
 pub const DEFAULT_DEADLINE_WARNING_DAYS: u32 = 14;
-
+/// Default subdirectory for base GTD files under a roam vault.
+pub const DEFAULT_ROAM_GTD_SUBDIR: &str = "gtd";
+/// Default subdirectory for permanent Zettelkasten notes under a roam vault.
+pub const DEFAULT_ROAM_ZETTEL_SUBDIR: &str = "zettel";
+/// Default subdirectory for fleeting notes under a roam vault.
+pub const DEFAULT_ROAM_FLEETING_SUBDIR: &str = "fleeting";
+/// Default subdirectory for daily journal notes under a roam vault.
+pub const DEFAULT_ROAM_DAILY_SUBDIR: &str = "daily";
 /// Environment variable overriding the global user configuration file path.
 pub const ORG_TOOLS_CONFIG_ENV_VAR: &str = "ORG_TOOLS_CONFIG";
-
 /// Environment variable overriding configured `org-roam` v2 directories.
 pub const ORG_ROAM_DIRECTORIES_ENV_VAR: &str = "ORG_ROAM_DIRECTORIES";
 
@@ -45,10 +60,10 @@ impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConfigError::Read { path, source } => {
-                write!(f, "error reading {}: {}", path.display(), source)
+                write!(f, "error reading {}: {source}", path.display())
             }
             ConfigError::Parse { path, source } => {
-                write!(f, "error parsing {}: {}", path.display(), source)
+                write!(f, "error parsing {}: {source}", path.display())
             }
         }
     }
@@ -78,6 +93,8 @@ pub struct Config {
     pub roam: RoamConfig,
     /// Fallback TODO keyword sequence configuration.
     pub todo: TodoConfig,
+    /// Capture template configuration (`[capture.templates.<name>]`).
+    pub capture: CaptureConfig,
 }
 
 /// Configuration for agenda views (`[agenda]` section in `.org-tools.toml`).
@@ -158,19 +175,49 @@ impl Default for RoamDirectoriesSpec {
 }
 
 /// Multi-directory `org-roam` v2 vault configuration (`[roam]` in `.org-tools.toml`).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct RoamConfig {
     /// Named vault table or list of vault directory paths.
     pub directories: RoamDirectoriesSpec,
     /// Optional default vault name or directory path.
     pub default_directory: Option<String>,
+    /// Relative subdirectory holding base GTD files (default `"gtd"`).
+    pub gtd_subdir: String,
+    /// Relative subdirectory holding permanent Zettelkasten notes (default `"zettel"`).
+    pub zettel_subdir: String,
+    /// Relative subdirectory holding fleeting notes (default `"fleeting"`).
+    pub fleeting_subdir: String,
+    /// Relative subdirectory holding daily notes (default `"daily"`).
+    pub daily_subdir: String,
+    /// Optional editor command override for interactive captures.
+    pub editor: Option<String>,
+    /// Whether captures and transformations append a log item to today's daily note.
+    pub log_to_daily: bool,
     /// Pre-resolved `(vault_name, path)` pairs anchored to the defining config file's directory.
     #[serde(skip)]
     pub resolved_directories: Vec<(String, PathBuf)>,
     /// Base directory of the config file that last defined `default_directory`.
     #[serde(skip)]
     pub default_base_dir: Option<PathBuf>,
+}
+
+impl Default for RoamConfig {
+    /// Returns default `org-roam` v2 vault settings (`gtd`, `zettel`, `fleeting`, `daily`).
+    fn default() -> Self {
+        Self {
+            directories: RoamDirectoriesSpec::default(),
+            default_directory: None,
+            gtd_subdir: DEFAULT_ROAM_GTD_SUBDIR.to_string(),
+            zettel_subdir: DEFAULT_ROAM_ZETTEL_SUBDIR.to_string(),
+            fleeting_subdir: DEFAULT_ROAM_FLEETING_SUBDIR.to_string(),
+            daily_subdir: DEFAULT_ROAM_DAILY_SUBDIR.to_string(),
+            editor: None,
+            log_to_daily: false,
+            resolved_directories: Vec::new(),
+            default_base_dir: None,
+        }
+    }
 }
 
 /// Fallback TODO sequence configuration (`[todo]` in `.org-tools.toml`).
@@ -196,175 +243,19 @@ impl TodoConfig {
         if !self.keywords.is_empty() {
             return Some(parse_todo_spec(&self.keywords.join(" ")));
         }
-        if !self.todo.is_empty() || !self.done.is_empty() {
-            return Some(TodoKeywords {
-                sequences: vec![(self.todo.clone(), self.done.clone())],
-                todo: self.todo.clone(),
-                done: self.done.clone(),
-                log_on_enter: std::collections::HashSet::new(),
-                log_on_leave: std::collections::HashSet::new(),
-            });
-        }
-        None
-    }
-}
-
-// endregion
-
-// region Path Expansion & Hierarchical Merging
-
-/// Expands `~/`, `$HOME/`, and `${HOME}/` prefixes and resolves relative paths against `base_dir`.
-pub fn expand_config_path(raw: &str, base_dir: &Path) -> PathBuf {
-    let trimmed = raw.trim();
-    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty());
-    let expanded = if trimmed == "~" {
-        home.unwrap_or_else(|| trimmed.to_string())
-    } else if let Some(rest) = trimmed.strip_prefix("~/") {
-        home.map_or_else(|| trimmed.to_string(), |h| format!("{h}/{rest}"))
-    } else if let Some(rest) = trimmed
-        .strip_prefix("$HOME/")
-        .or_else(|| trimmed.strip_prefix("${HOME}/"))
-    {
-        home.map_or_else(|| trimmed.to_string(), |h| format!("{h}/{rest}"))
-    } else {
-        trimmed.to_string()
-    };
-    let path = PathBuf::from(&expanded);
-    if path.is_absolute() || expanded.starts_with('~') {
-        path
-    } else {
-        base_dir.join(expanded.strip_prefix("./").unwrap_or(&expanded))
-    }
-}
-
-/// Derives a canonical vault name from `path`'s final path component.
-fn vault_name_from_path(path: &Path, fallback: &str) -> String {
-    path.file_name()
-        .and_then(|s| s.to_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(fallback)
-        .to_string()
-}
-
-/// Resolves a [`RoamDirectoriesSpec`] against `base_dir` into `(vault_name, PathBuf)` pairs.
-fn resolve_spec_directories(spec: &RoamDirectoriesSpec, base_dir: &Path) -> Vec<(String, PathBuf)> {
-    match spec {
-        RoamDirectoriesSpec::Named(map) => map
-            .iter()
-            .map(|(k, v)| (k.clone(), expand_config_path(v, base_dir)))
-            .collect(),
-        RoamDirectoriesSpec::List(list) => list
-            .iter()
-            .map(|raw| {
-                let resolved = expand_config_path(raw, base_dir);
-                (vault_name_from_path(&resolved, raw.trim()), resolved)
-            })
-            .collect(),
-    }
-}
-
-/// Parses `ORG_ROAM_DIRECTORIES` (`name=/path` or `/path` separated by `,` or `:`).
-fn parse_env_roam_directories(raw: &str, base_dir: &Path) -> Vec<(String, PathBuf)> {
-    raw.split([',', ':'])
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|item| {
-            if let Some((name, val)) = item.split_once('=') {
-                (name.trim().to_string(), expand_config_path(val, base_dir))
-            } else {
-                let p = expand_config_path(item, base_dir);
-                (vault_name_from_path(&p, item), p)
-            }
+        (!self.todo.is_empty() || !self.done.is_empty()).then(|| TodoKeywords {
+            sequences: vec![(self.todo.clone(), self.done.clone())],
+            todo: self.todo.clone(),
+            done: self.done.clone(),
+            log_on_enter: std::collections::HashSet::new(),
+            log_on_leave: std::collections::HashSet::new(),
         })
-        .collect()
-}
-
-/// Merges a parsed TOML `overlay` table from `config_path` into `merged` and updates roam anchors.
-fn merge_config_layer(
-    merged: &mut toml::Table,
-    overlay: toml::Table,
-    config_path: &Path,
-    resolved_dirs: &mut Vec<(String, PathBuf)>,
-    default_base_dir: &mut Option<PathBuf>,
-) -> Result<(), ConfigError> {
-    let base_dir = config_path.parent().unwrap_or(Path::new("."));
-    if let Some(toml::Value::Table(roam_tbl)) = overlay.get("roam") {
-        if let Some(dir_val) = roam_tbl.get("directories") {
-            let spec: RoamDirectoriesSpec =
-                dir_val
-                    .clone()
-                    .try_into()
-                    .map_err(|source| ConfigError::Parse {
-                        path: config_path.to_path_buf(),
-                        source,
-                    })?;
-            *resolved_dirs = resolve_spec_directories(&spec, base_dir);
-        }
-        if roam_tbl.contains_key("default_directory") {
-            *default_base_dir = Some(base_dir.to_path_buf());
-        }
     }
-    for (sec_key, sec_val) in overlay {
-        match (merged.get_mut(&sec_key), sec_val) {
-            (Some(toml::Value::Table(dst)), toml::Value::Table(src)) => {
-                for (k, v) in src {
-                    dst.insert(k, v);
-                }
-            }
-            (_, val) => {
-                merged.insert(sec_key, val);
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Discovers the optional global user config file from `$ORG_TOOLS_CONFIG` or `$XDG_CONFIG_HOME`.
-fn discover_global_config_path() -> Option<PathBuf> {
-    if let Some(val) = std::env::var_os(ORG_TOOLS_CONFIG_ENV_VAR).filter(|v| !v.is_empty()) {
-        let p = PathBuf::from(val);
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-    let candidate = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|v| !v.is_empty())
-        .map(|xdg| PathBuf::from(xdg).join("org-tools/config.toml"))
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .map(|h| PathBuf::from(h).join(".config/org-tools/config.toml"))
-        })?;
-    candidate.is_file().then_some(candidate)
-}
-
-/// Collects ordered `.org-tools.toml` files from `global_override` down to `start_dir`.
-fn collect_config_chain(start_dir: &Path, global_override: Option<&Path>) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    if let Some(g) = global_override.filter(|p| p.is_file()) {
-        files.push(g.to_path_buf());
-    }
-    let mut ancestors = Vec::new();
-    let mut cur = Some(if start_dir.is_file() {
-        start_dir.parent().unwrap_or(start_dir)
-    } else {
-        start_dir
-    });
-    while let Some(dir) = cur {
-        let candidate = dir.join(".org-tools.toml");
-        if candidate.is_file() {
-            ancestors.push(candidate);
-        }
-        cur = dir.parent();
-    }
-    ancestors.reverse();
-    files.extend(ancestors);
-    files
 }
 
 // endregion
 
-// region Config Implementation & Tests
+// region Config Implementation
 
 impl Config {
     /// Loads configuration from `.org-tools.toml` in `start_dir` or its ancestors.
@@ -374,8 +265,7 @@ impl Config {
 
     /// Hierarchically loads and merges global, workspace, and per-directory `.org-tools.toml` files.
     pub fn load_for_dir(start_dir: &Path) -> Result<Self, ConfigError> {
-        let global = discover_global_config_path();
-        Self::load_for_dir_with_global(start_dir, global.as_deref())
+        Self::load_for_dir_with_global(start_dir, discover_global_config_path().as_deref())
     }
 
     /// Hierarchically loads configuration for `start_dir` with an explicit `global_override` path.
@@ -383,16 +273,50 @@ impl Config {
         start_dir: &Path,
         global_override: Option<&Path>,
     ) -> Result<Self, ConfigError> {
-        let files = collect_config_chain(start_dir, global_override);
-        if files.is_empty() {
+        Self::load_from_chain(&collect_config_chain(start_dir, global_override))
+    }
+
+    /// Loads configuration for a specific `roam_dir` layered over `workspace_dir` and global config.
+    pub fn load_for_roam_dir(workspace_dir: &Path, roam_dir: &Path) -> Result<Self, ConfigError> {
+        Self::load_for_roam_dir_with_global(
+            workspace_dir,
+            roam_dir,
+            discover_global_config_path().as_deref(),
+        )
+    }
+
+    /// Loads configuration for `roam_dir` layered over `workspace_dir` and `global_override`.
+    pub fn load_for_roam_dir_with_global(
+        workspace_dir: &Path,
+        roam_dir: &Path,
+        global_override: Option<&Path>,
+    ) -> Result<Self, ConfigError> {
+        let mut chain = collect_config_chain(workspace_dir, global_override);
+        for (_, layer) in &mut chain {
+            if *layer == CaptureTemplateLayer::Vault {
+                *layer = CaptureTemplateLayer::Workspace;
+            }
+        }
+        let vault_cfg = roam_dir.join(".org-tools.toml");
+        if vault_cfg.is_file() {
+            if let Some((_, l)) = chain.iter_mut().find(|(p, _)| p == &vault_cfg) {
+                *l = CaptureTemplateLayer::Vault;
+            } else {
+                chain.push((vault_cfg, CaptureTemplateLayer::Vault));
+            }
+        }
+        Self::load_from_chain(&chain)
+    }
+
+    /// Materializes a [`Config`] from an ordered `(path, layer)` chain.
+    fn load_from_chain(chain: &[(PathBuf, CaptureTemplateLayer)]) -> Result<Self, ConfigError> {
+        if chain.is_empty() {
             return Ok(Self::default());
         }
-        let mut merged = toml::Table::new();
-        let mut resolved_dirs = Vec::new();
-        let mut default_base_dir = None;
-        let mut last_path = files[0].clone();
-        for path in files {
-            let contents = std::fs::read_to_string(&path).map_err(|source| ConfigError::Read {
+        let mut state = LayerMergeState::default();
+        let mut last_path = chain[0].0.clone();
+        for (path, layer) in chain {
+            let contents = std::fs::read_to_string(path).map_err(|source| ConfigError::Read {
                 path: path.clone(),
                 source,
             })?;
@@ -401,24 +325,23 @@ impl Config {
                     path: path.clone(),
                     source,
                 })?;
-            merge_config_layer(
-                &mut merged,
-                overlay,
-                &path,
-                &mut resolved_dirs,
-                &mut default_base_dir,
-            )?;
-            last_path = path;
+            merge_config_layer(&mut state, overlay, path, *layer)?;
+            last_path = path.clone();
         }
-        let mut cfg: Self =
-            toml::Value::Table(merged)
-                .try_into()
-                .map_err(|source| ConfigError::Parse {
-                    path: last_path,
-                    source,
-                })?;
-        cfg.roam.resolved_directories = resolved_dirs;
-        cfg.roam.default_base_dir = default_base_dir;
+        let mut cfg: Self = toml::Value::Table(state.merged)
+            .try_into()
+            .map_err(|source| ConfigError::Parse {
+                path: last_path,
+                source,
+            })?;
+        cfg.roam.resolved_directories = state.resolved_dirs;
+        cfg.roam.default_base_dir = state.default_base_dir;
+        for (name, (layer, base_dir)) in state.template_meta {
+            if let Some(tpl) = cfg.capture.templates.get_mut(&name) {
+                tpl.source_layer = layer;
+                tpl.base_dir = Some(base_dir);
+            }
+        }
         Ok(cfg)
     }
 
@@ -479,61 +402,14 @@ impl Config {
         }
         let expanded = expand_config_path(trimmed, Path::new("."));
         if expanded.is_dir() {
-            let matched_name = dirs
+            let matched = dirs
                 .iter()
                 .find(|(_, p)| p == &expanded)
                 .map(|(n, _)| n.clone())
                 .or_else(|| Some(vault_name_from_path(&expanded, trimmed)));
-            return Some((matched_name, expanded));
+            return Some((matched, expanded));
         }
         None
-    }
-}
-
-/// Unit tests for `.org-tools.toml` configuration loading and defaults.
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies default configuration matches Emacs org-mode defaults.
-    #[test]
-    fn default_config_matches_emacs() {
-        let config = Config::default();
-        assert!(!config.format.blank_lines);
-        assert!(!config.format.heading_blank_lines);
-        assert!(config.format.trailing_whitespace);
-        assert!(config.format.table_format);
-        assert!(config.format.property_drawer_align);
-        assert_eq!(
-            config.agenda.deadline_warning_days,
-            DEFAULT_DEADLINE_WARNING_DAYS
-        );
-    }
-
-    /// Verifies deserializing `[format]` and `[lint]` settings from TOML.
-    #[test]
-    fn parse_toml_config() {
-        let toml = "[format]\nblank_lines = true\nheading_blank_lines = true\nheading_blank_lines_before = 2\n[lint]\ndisabled_rules = [\"heading-level-gap\"]\n";
-        let config: Config = toml::from_str(toml).unwrap();
-        assert!(config.format.blank_lines);
-        assert!(config.format.heading_blank_lines);
-        assert_eq!(config.format.heading_blank_lines_before, 2);
-        assert!(config.is_rule_disabled("W001", "heading-level-gap"));
-    }
-
-    /// Verifies `Config::load` reads valid `.org-tools.toml` and errors on malformed TOML.
-    #[test]
-    fn load_valid_and_invalid_toml() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!Config::load(dir.path()).unwrap().format.blank_lines);
-        let config_file = dir.path().join(".org-tools.toml");
-        std::fs::write(&config_file, "[format]\nblank_lines = true\n").unwrap();
-        assert!(Config::load(dir.path()).unwrap().format.blank_lines);
-        std::fs::write(&config_file, "this is not valid toml = [[[").unwrap();
-        assert!(matches!(
-            Config::load(dir.path()).unwrap_err(),
-            ConfigError::Parse { .. }
-        ));
     }
 }
 

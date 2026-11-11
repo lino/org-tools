@@ -15,6 +15,7 @@ use org_tools_core::config::Config;
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
 use org_tools_core::roam::{RoamBacklink, RoamLink, RoamNode, RoamOutgoingLink};
 
+use super::roam_capture::{run_roam_capture, RoamCaptureArgs};
 use super::MutationTelemetry;
 use crate::{EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
@@ -102,6 +103,8 @@ pub(crate) enum RoamCommand {
         #[arg(long, value_enum, default_value = "json")]
         format: RoamGraphFormat,
     },
+    /// Capture a new `org-roam` v2 note or entry using a built-in or configured template.
+    Capture(Box<RoamCaptureArgs>),
 }
 
 // endregion
@@ -174,12 +177,10 @@ fn discover_default_workspace(cwd: &Path) -> PathBuf {
         return PathBuf::from(env_ws);
     }
     let norm = normalize_workspace_path(cwd);
-    let mut cur: Option<&Path> = Some(&norm);
-    while let Some(dir) = cur {
+    for dir in norm.ancestors() {
         if ROAM_WORKSPACE_MARKERS.iter().any(|m| dir.join(m).exists()) {
             return dir.to_path_buf();
         }
-        cur = dir.parent();
     }
     cwd.to_path_buf()
 }
@@ -210,10 +211,12 @@ fn resolve_scan_roots(paths: &[PathBuf], workspace: Option<&Path>) -> Result<Vec
 }
 
 /// Opens a synchronized [`RoamWorkspace`] for `scope` and `no_cache`.
-fn open_roam_backend(scope: &RoamScopeArgs, no_cache: bool) -> Result<RoamWorkspace, String> {
+pub(crate) fn open_roam_backend(
+    scope: &RoamScopeArgs,
+    no_cache: bool,
+) -> Result<RoamWorkspace, String> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let cfg = Config::load_for_dir(scope.workspace.as_deref().unwrap_or(&cwd)).unwrap_or_default();
-
     if !scope.roam_dir.is_empty() {
         let mut named = Vec::with_capacity(scope.roam_dir.len());
         for selector in &scope.roam_dir {
@@ -227,16 +230,16 @@ fn open_roam_backend(scope: &RoamScopeArgs, no_cache: bool) -> Result<RoamWorksp
         }
         return RoamWorkspace::open_named(&named, no_cache);
     }
-
     if scope.paths.is_empty() && scope.workspace.is_none() {
         let configured = cfg.roam_directories();
         if !configured.is_empty() {
             return RoamWorkspace::open_named(&configured, no_cache);
         }
     }
-
-    let roots = resolve_scan_roots(&scope.paths, scope.workspace.as_deref())?;
-    RoamWorkspace::open(&roots, no_cache)
+    RoamWorkspace::open(
+        &resolve_scan_roots(&scope.paths, scope.workspace.as_deref())?,
+        no_cache,
+    )
 }
 
 /// Finalizes [`MutationTelemetry`] from `started` and `(scanned, hits, misses)` counters.
@@ -251,8 +254,11 @@ fn finish_telemetry(started: Instant, counts: (usize, usize, usize)) -> Mutation
 
 /// Writes pretty-printed JSON to stdout without panicking on broken pipes.
 fn emit_json<T: Serialize>(payload: &T) {
-    let rendered = serde_json::to_string_pretty(payload).unwrap_or_default();
-    let _ = writeln!(std::io::stdout().lock(), "{rendered}");
+    let _ = writeln!(
+        std::io::stdout().lock(),
+        "{}",
+        serde_json::to_string_pretty(payload).unwrap_or_default()
+    );
 }
 
 /// Writes raw text to stdout without panicking on broken pipes.
@@ -272,8 +278,9 @@ fn handle_node(
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let res = open_roam_backend(scope, no_cache).and_then(|b| Ok((b.resolve(&query)?, b.counts())));
-    let (nodes, counts) = match res {
+    let (nodes, counts) = match open_roam_backend(scope, no_cache)
+        .and_then(|b| Ok((b.resolve(&query)?, b.counts())))
+    {
         Ok(v) => v,
         Err(err) => {
             eprintln!("org: {err}");
@@ -293,11 +300,9 @@ fn handle_node(
             telemetry: finish_telemetry(started, counts),
         }),
         RoamOutputFormat::Human => {
-            let mut buf = String::new();
             for n in &nodes {
-                buf.push_str(&format!("{}  {}  ({}:{})\n", n.id, n.title, n.file, n.line));
+                emit_text(&format!("{}  {}  ({}:{})\n", n.id, n.title, n.file, n.line));
             }
-            emit_text(&buf);
         }
     }
     code
@@ -311,12 +316,10 @@ fn handle_backlinks(
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let res = open_roam_backend(scope, no_cache).and_then(|b| {
+    let (nodes, backlinks, counts) = match open_roam_backend(scope, no_cache).and_then(|b| {
         let ns = b.resolve(&target)?;
-        let bl = b.backlinks(&ns)?;
-        Ok((ns, bl, b.counts()))
-    });
-    let (nodes, backlinks, counts) = match res {
+        Ok((ns.clone(), b.backlinks(&ns)?, b.counts()))
+    }) {
         Ok(v) => v,
         Err(err) => {
             eprintln!("org: {err}");
@@ -337,15 +340,15 @@ fn handle_backlinks(
             telemetry: finish_telemetry(started, counts),
         }),
         RoamOutputFormat::Human => {
-            let mut buf = String::new();
             for bl in &backlinks {
-                let src = bl.source_id.as_deref().unwrap_or("-");
-                buf.push_str(&format!(
+                emit_text(&format!(
                     "{}:{}  [{}]  {}\n",
-                    bl.source_file, bl.line, src, bl.context
+                    bl.source_file,
+                    bl.line,
+                    bl.source_id.as_deref().unwrap_or("-"),
+                    bl.context
                 ));
             }
-            emit_text(&buf);
         }
     }
     code
@@ -359,12 +362,10 @@ fn handle_links(
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let res = open_roam_backend(scope, no_cache).and_then(|b| {
+    let (nodes, links, counts) = match open_roam_backend(scope, no_cache).and_then(|b| {
         let ns = b.resolve(&source)?;
-        let out = b.outgoing(&ns)?;
-        Ok((ns, out, b.counts()))
-    });
-    let (nodes, links, counts) = match res {
+        Ok((ns.clone(), b.outgoing(&ns)?, b.counts()))
+    }) {
         Ok(v) => v,
         Err(err) => {
             eprintln!("org: {err}");
@@ -385,15 +386,13 @@ fn handle_links(
             telemetry: finish_telemetry(started, counts),
         }),
         RoamOutputFormat::Human => {
-            let mut buf = String::new();
             for l in &links {
                 let title = l.target_title.as_deref().unwrap_or("<unresolved>");
-                buf.push_str(&format!(
+                emit_text(&format!(
                     "{}:{} -> {} ({title})\n",
                     l.source_file, l.line, l.target_id
                 ));
             }
-            emit_text(&buf);
         }
     }
     code
@@ -442,6 +441,7 @@ pub(crate) fn run_roam(command: RoamCommand, no_cache: bool) -> i32 {
             format,
         } => handle_links(source, &scope, format, no_cache),
         RoamCommand::Graph { scope, format } => handle_graph(&scope, format, no_cache),
+        RoamCommand::Capture(args) => run_roam_capture(*args, no_cache),
     }
 }
 

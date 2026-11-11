@@ -16,6 +16,7 @@ pub(crate) mod query_columns;
 pub(crate) mod query_gtd;
 pub(crate) mod refile;
 pub(crate) mod roam;
+pub(crate) mod roam_capture;
 pub(crate) mod schema;
 pub(crate) mod show;
 pub(crate) mod update;

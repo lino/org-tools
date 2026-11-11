@@ -11,6 +11,8 @@
 pub mod archive;
 /// Persistent SQLite/FTS5 workspace index (`WorkspaceCache`).
 pub mod cache;
+/// Capture template merging, variable expansion, and `org-roam` v2 note rendering.
+pub mod capture;
 /// `#+COLUMNS:` format parser and bottom-up property rollup evaluator.
 pub mod columns;
 /// Configuration loading and validation for `.org-tools.toml`.

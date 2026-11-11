@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=1010 reason="Cohesive heading, TODO keyword, priority, and tag parser with comprehensive unit test suite"
+// fritz: allow-file-length=1060 reason="Cohesive heading, TODO keyword, priority, and tag parser with comprehensive unit test suite"
 
 //! Heading line, `#+TODO:` keyword, `#+PRIORITIES:` range, and `#+TAGS:` specification parsers.
 
@@ -32,7 +32,9 @@ pub const DEFAULT_TODO_KEYWORDS: &[&str] = &[
     "TODO",
     "DONE",
     "NEXT",
+    "WAIT",
     "WAITING",
+    "BLOCKED",
     "HOLD",
     "CANCELLED",
     "CANCELED",
@@ -56,6 +58,8 @@ pub struct TodoKeywords {
     pub todo: Vec<String>,
     /// Keywords representing "done" states (e.g., `["DONE", "CANCELLED"]`).
     pub done: Vec<String>,
+    /// Ordered `(todo, done)` keyword sequences accumulated across `#+TODO:` lines.
+    pub sequences: Vec<(Vec<String>, Vec<String>)>,
     /// Keywords configured with `!` or `@` state-entry logging (`KW(!)`, `KW(k!)`, `KW(k@)`).
     pub log_on_enter: std::collections::HashSet<String>,
     /// Keywords configured with `!` state-exit logging after `/` (`KW(k/!)`, `KW(!/!)`, `KW(@/!)`).
@@ -91,27 +95,92 @@ impl TodoKeywords {
     pub fn logs_on_leave(&self, word: &str) -> bool {
         self.log_on_leave.contains(word)
     }
+
+    /// Merges another [`TodoKeywords`] specification additively in document order.
+    pub fn merge(&mut self, other: TodoKeywords) {
+        for kw in other.todo {
+            if !self.todo.contains(&kw) && !self.done.contains(&kw) {
+                self.todo.push(kw);
+            }
+        }
+        for kw in other.done {
+            if !self.done.contains(&kw) && !self.todo.contains(&kw) {
+                self.done.push(kw);
+            }
+        }
+        self.sequences.extend(other.sequences);
+        self.log_on_enter.extend(other.log_on_enter);
+        self.log_on_leave.extend(other.log_on_leave);
+    }
+
+    /// Builds an additive [`TodoKeywords`] from an ordered iterator of `#+TODO:` specification strings.
+    pub fn from_specs<I, S>(specs: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let non_empty: Vec<String> = specs
+            .into_iter()
+            .map(|s| s.as_ref().trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if non_empty.is_empty() {
+            return Self::default();
+        }
+        let mut acc = Self {
+            todo: Vec::new(),
+            done: Vec::new(),
+            sequences: Vec::new(),
+            log_on_enter: std::collections::HashSet::new(),
+            log_on_leave: std::collections::HashSet::new(),
+        };
+        for spec in non_empty {
+            acc.merge(parse_todo_spec(&spec));
+        }
+        acc
+    }
+
+    /// Returns the first not-done keyword of the sequence owning `current_kw` or `target_kw`.
+    pub fn first_todo_for(&self, current_kw: Option<&str>, target_kw: &str) -> &str {
+        for probe in [current_kw, Some(target_kw)].into_iter().flatten() {
+            for (seq_todo, seq_done) in &self.sequences {
+                let in_seq =
+                    seq_todo.iter().any(|k| k == probe) || seq_done.iter().any(|k| k == probe);
+                if in_seq {
+                    if let Some(first) = seq_todo.first() {
+                        return first.as_str();
+                    }
+                }
+            }
+        }
+        self.todo.first().map_or("TODO", String::as_str)
+    }
 }
 
 impl Default for TodoKeywords {
     fn default() -> Self {
+        let todo = vec![
+            "TODO".into(),
+            "NEXT".into(),
+            "WAIT".into(),
+            "WAITING".into(),
+            "BLOCKED".into(),
+            "HOLD".into(),
+            "STARTED".into(),
+            "DELEGATED".into(),
+            "REVIEW".into(),
+            "DRAFT".into(),
+        ];
+        let done = vec![
+            "DONE".into(),
+            "CANCELLED".into(),
+            "CANCELED".into(),
+            "PUBLISHED".into(),
+        ];
         Self {
-            todo: vec![
-                "TODO".into(),
-                "NEXT".into(),
-                "WAITING".into(),
-                "HOLD".into(),
-                "STARTED".into(),
-                "DELEGATED".into(),
-                "REVIEW".into(),
-                "DRAFT".into(),
-            ],
-            done: vec![
-                "DONE".into(),
-                "CANCELLED".into(),
-                "CANCELED".into(),
-                "PUBLISHED".into(),
-            ],
+            sequences: vec![(todo.clone(), done.clone())],
+            todo,
+            done,
             log_on_enter: std::collections::HashSet::new(),
             log_on_leave: std::collections::HashSet::new(),
         }
@@ -157,7 +226,7 @@ pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
         .split_whitespace()
         .filter_map(|w| parse_and_record_todo_word(w, &mut log_on_enter, &mut log_on_leave))
         .collect();
-    let done = if let Some(after) = after_pipe {
+    let done: Vec<String> = if let Some(after) = after_pipe {
         after
             .split_whitespace()
             .filter_map(|w| parse_and_record_todo_word(w, &mut log_on_enter, &mut log_on_leave))
@@ -168,6 +237,7 @@ pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
         Vec::new()
     };
     TodoKeywords {
+        sequences: vec![(before.clone(), done.clone())],
         todo: before,
         done,
         log_on_enter,
@@ -177,17 +247,20 @@ pub fn parse_todo_spec(spec: &str) -> TodoKeywords {
 
 /// Build a [`TodoKeywords`] from file keywords in an [`OrgDocument`].
 ///
-/// Checks `#+TODO:`, `#+SEQ_TODO:`, and `#+TYP_TODO:` (in that order).
+/// Combines `#+TODO:`, `#+SEQ_TODO:`, and `#+TYP_TODO:` additively in order.
 /// Returns the default set if none are found.
 pub fn todo_keywords_from_file(
     file_keywords: &std::collections::HashMap<String, String>,
 ) -> TodoKeywords {
-    for key in &["TODO", "SEQ_TODO", "TYP_TODO"] {
-        if let Some(val) = file_keywords.get(*key) {
-            return parse_todo_spec(val);
-        }
+    let specs: Vec<&str> = ["TODO", "SEQ_TODO", "TYP_TODO"]
+        .iter()
+        .filter_map(|key| file_keywords.get(*key).map(String::as_str))
+        .collect();
+    if specs.is_empty() {
+        TodoKeywords::default()
+    } else {
+        TodoKeywords::from_specs(specs)
     }
-    TodoKeywords::default()
 }
 
 /// Priority range configuration from `#+PRIORITIES:`.

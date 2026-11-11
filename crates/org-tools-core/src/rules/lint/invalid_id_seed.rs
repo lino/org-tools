@@ -9,9 +9,10 @@
 //! - RFC 9562 Section 5.5 (UUIDv5): <https://www.rfc-editor.org/rfc/rfc9562.html#section-5.5>
 
 use crate::diagnostic::{Diagnostic, Severity};
+use crate::document::OrgDocument;
 use crate::property::{uuid_v5, DeterministicIdConfig, DEFAULT_ROOT_NAMESPACE};
 use crate::rules::format::regions::{is_protected, protected_regions};
-use crate::rules::heading::parse_heading;
+use crate::rules::heading::parse_heading_with_keywords;
 use crate::rules::{LintContext, LintRule};
 
 /// Detects empty `:ID_SEED:` properties, missing `:ID:`s, or `:ID:` != UUIDv5(`:ID_SEED:`) mismatches (`E010`).
@@ -50,6 +51,8 @@ impl LintRule for InvalidIdSeed {
 
     /// Inspects level-0 and heading drawers carrying `:ID_SEED:` for RFC 9562 UUIDv5 parity.
     fn check(&self, ctx: &LintContext) -> Vec<Diagnostic> {
+        let doc = OrgDocument::from_source_with_config(ctx.source, ctx.config);
+        let kw_refs = doc.todo_keywords.all();
         let namespace = resolve_namespace();
         let protected = protected_regions(&ctx.source.content);
         let mut diagnostics = Vec::new();
@@ -63,6 +66,7 @@ impl LintRule for InvalidIdSeed {
                     ctx,
                     raw,
                     offset,
+                    &kw_refs,
                     &namespace,
                     &mut active_drawer,
                     &mut diagnostics,
@@ -100,13 +104,14 @@ fn step_drawer_line(
     ctx: &LintContext,
     raw: &str,
     offset: usize,
+    kw_refs: &[&str],
     namespace: &uuid::Uuid,
     active_drawer: &mut Option<DrawerSeedState>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let trimmed = raw.trim();
     if let Some(ref mut state) = active_drawer {
-        if parse_heading(raw).is_some() {
+        if parse_heading_with_keywords(raw, kw_refs).is_some() {
             *active_drawer = None;
             return;
         }

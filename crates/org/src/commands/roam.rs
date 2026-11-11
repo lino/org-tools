@@ -7,10 +7,11 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use org_tools_core::cache::RoamWorkspace;
+use org_tools_core::config::Config;
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
 use org_tools_core::roam::{RoamBacklink, RoamLink, RoamNode, RoamOutgoingLink};
 
@@ -42,6 +43,19 @@ pub(crate) enum RoamGraphFormat {
     Dot,
 }
 
+/// Shared scan-root and vault-selection arguments for `org roam` subcommands.
+#[derive(Args, Debug, Clone)]
+pub(crate) struct RoamScopeArgs {
+    /// Optional Org files or directories to scan.
+    pub(crate) paths: Vec<PathBuf>,
+    /// Optional workspace root directory to scan.
+    #[arg(long)]
+    pub(crate) workspace: Option<PathBuf>,
+    /// Repeatable named `[roam.directories]` vault or directory path selector.
+    #[arg(long = "roam-dir")]
+    pub(crate) roam_dir: Vec<String>,
+}
+
 /// Subcommands under `org roam`.
 #[derive(Subcommand)]
 pub(crate) enum RoamCommand {
@@ -49,11 +63,9 @@ pub(crate) enum RoamCommand {
     Node {
         /// Node query (`id:<uuid>`, `:ID:`, title, or `:ROAM_ALIASES:` token).
         query: String,
-        /// Optional Org files or directories to scan.
-        paths: Vec<PathBuf>,
-        /// Optional workspace root directory to scan.
-        #[arg(long)]
-        workspace: Option<PathBuf>,
+        /// Scan-root and vault-selection arguments.
+        #[command(flatten)]
+        scope: RoamScopeArgs,
         /// Output format (`human` or `json`).
         #[arg(long, value_enum, default_value = "human")]
         format: RoamOutputFormat,
@@ -62,11 +74,9 @@ pub(crate) enum RoamCommand {
     Backlinks {
         /// Target node (`id:<uuid>`, `:ID:`, title, alias, or `OrgLocator`).
         target: String,
-        /// Optional Org files or directories to scan.
-        paths: Vec<PathBuf>,
-        /// Optional workspace root directory to scan.
-        #[arg(long)]
-        workspace: Option<PathBuf>,
+        /// Scan-root and vault-selection arguments.
+        #[command(flatten)]
+        scope: RoamScopeArgs,
         /// Output format (`human` or `json`).
         #[arg(long, value_enum, default_value = "human")]
         format: RoamOutputFormat,
@@ -75,22 +85,18 @@ pub(crate) enum RoamCommand {
     Links {
         /// Source node (`id:<uuid>`, `:ID:`, title, alias, or `OrgLocator`).
         source: String,
-        /// Optional Org files or directories to scan.
-        paths: Vec<PathBuf>,
-        /// Optional workspace root directory to scan.
-        #[arg(long)]
-        workspace: Option<PathBuf>,
+        /// Scan-root and vault-selection arguments.
+        #[command(flatten)]
+        scope: RoamScopeArgs,
         /// Output format (`human` or `json`).
         #[arg(long, value_enum, default_value = "human")]
         format: RoamOutputFormat,
     },
     /// Export the workspace `org-roam` v2 node and link graph.
     Graph {
-        /// Optional Org files or directories to scan.
-        paths: Vec<PathBuf>,
-        /// Optional workspace root directory to scan.
-        #[arg(long)]
-        workspace: Option<PathBuf>,
+        /// Scan-root and vault-selection arguments.
+        #[command(flatten)]
+        scope: RoamScopeArgs,
         /// Graph output format (`json`, `mermaid`, or `dot`).
         #[arg(long, value_enum, default_value = "json")]
         format: RoamGraphFormat,
@@ -202,13 +208,33 @@ fn resolve_scan_roots(paths: &[PathBuf], workspace: Option<&Path>) -> Result<Vec
     Ok(roots)
 }
 
-/// Opens a synchronized [`RoamWorkspace`] for `paths` and `workspace`.
-fn open_roam_backend(
-    paths: &[PathBuf],
-    workspace: Option<&Path>,
-    no_cache: bool,
-) -> Result<RoamWorkspace, String> {
-    let roots = resolve_scan_roots(paths, workspace)?;
+/// Opens a synchronized [`RoamWorkspace`] for `scope` and `no_cache`.
+fn open_roam_backend(scope: &RoamScopeArgs, no_cache: bool) -> Result<RoamWorkspace, String> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cfg = Config::load_for_dir(scope.workspace.as_deref().unwrap_or(&cwd)).unwrap_or_default();
+
+    if !scope.roam_dir.is_empty() {
+        let mut named = Vec::with_capacity(scope.roam_dir.len());
+        for selector in &scope.roam_dir {
+            let Some((opt_name, path)) = cfg.resolve_roam_dir(selector) else {
+                return Err(format!("unknown roam directory: {selector}"));
+            };
+            if !path.exists() {
+                return Err(format!("roam directory not found: {}", path.display()));
+            }
+            named.push((opt_name.unwrap_or_else(|| selector.clone()), path));
+        }
+        return RoamWorkspace::open_named(&named, no_cache);
+    }
+
+    if scope.paths.is_empty() && scope.workspace.is_none() {
+        let configured = cfg.roam_directories();
+        if !configured.is_empty() {
+            return RoamWorkspace::open_named(&configured, no_cache);
+        }
+    }
+
+    let roots = resolve_scan_roots(&scope.paths, scope.workspace.as_deref())?;
     RoamWorkspace::open(&roots, no_cache)
 }
 
@@ -240,14 +266,12 @@ fn emit_text(text: &str) {
 /// Executes `org roam node`.
 fn handle_node(
     query: String,
-    paths: &[PathBuf],
-    workspace: Option<&Path>,
+    scope: &RoamScopeArgs,
     format: RoamOutputFormat,
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let res = open_roam_backend(paths, workspace, no_cache)
-        .and_then(|b| Ok((b.resolve(&query)?, b.counts())));
+    let res = open_roam_backend(scope, no_cache).and_then(|b| Ok((b.resolve(&query)?, b.counts())));
     let (nodes, counts) = match res {
         Ok(v) => v,
         Err(err) => {
@@ -281,13 +305,12 @@ fn handle_node(
 /// Executes `org roam backlinks`.
 fn handle_backlinks(
     target: String,
-    paths: &[PathBuf],
-    workspace: Option<&Path>,
+    scope: &RoamScopeArgs,
     format: RoamOutputFormat,
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let res = open_roam_backend(paths, workspace, no_cache).and_then(|b| {
+    let res = open_roam_backend(scope, no_cache).and_then(|b| {
         let ns = b.resolve(&target)?;
         let bl = b.backlinks(&ns)?;
         Ok((ns, bl, b.counts()))
@@ -330,13 +353,12 @@ fn handle_backlinks(
 /// Executes `org roam links`.
 fn handle_links(
     source: String,
-    paths: &[PathBuf],
-    workspace: Option<&Path>,
+    scope: &RoamScopeArgs,
     format: RoamOutputFormat,
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let res = open_roam_backend(paths, workspace, no_cache).and_then(|b| {
+    let res = open_roam_backend(scope, no_cache).and_then(|b| {
         let ns = b.resolve(&source)?;
         let out = b.outgoing(&ns)?;
         Ok((ns, out, b.counts()))
@@ -377,15 +399,10 @@ fn handle_links(
 }
 
 /// Executes `org roam graph`.
-fn handle_graph(
-    paths: &[PathBuf],
-    workspace: Option<&Path>,
-    format: RoamGraphFormat,
-    no_cache: bool,
-) -> i32 {
+fn handle_graph(scope: &RoamScopeArgs, format: RoamGraphFormat, no_cache: bool) -> i32 {
     let started = Instant::now();
     let (index, counts) =
-        match open_roam_backend(paths, workspace, no_cache).and_then(RoamWorkspace::into_graph) {
+        match open_roam_backend(scope, no_cache).and_then(RoamWorkspace::into_graph) {
             Ok(v) => v,
             Err(err) => {
                 eprintln!("org: {err}");
@@ -410,27 +427,20 @@ pub(crate) fn run_roam(command: RoamCommand, no_cache: bool) -> i32 {
     match command {
         RoamCommand::Node {
             query,
-            paths,
-            workspace,
+            scope,
             format,
-        } => handle_node(query, &paths, workspace.as_deref(), format, no_cache),
+        } => handle_node(query, &scope, format, no_cache),
         RoamCommand::Backlinks {
             target,
-            paths,
-            workspace,
+            scope,
             format,
-        } => handle_backlinks(target, &paths, workspace.as_deref(), format, no_cache),
+        } => handle_backlinks(target, &scope, format, no_cache),
         RoamCommand::Links {
             source,
-            paths,
-            workspace,
+            scope,
             format,
-        } => handle_links(source, &paths, workspace.as_deref(), format, no_cache),
-        RoamCommand::Graph {
-            paths,
-            workspace,
-            format,
-        } => handle_graph(&paths, workspace.as_deref(), format, no_cache),
+        } => handle_links(source, &scope, format, no_cache),
+        RoamCommand::Graph { scope, format } => handle_graph(&scope, format, no_cache),
     }
 }
 

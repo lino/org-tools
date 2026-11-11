@@ -43,6 +43,7 @@ fn row_to_roam_node(row: &Row<'_>, display_root: &Path) -> rusqlite::Result<Roam
         olp: decode_str_vec(row.get(9)?),
         aliases: decode_str_vec(row.get(10)?),
         refs: decode_str_vec(row.get(11)?),
+        roam_dir: None,
     })
 }
 

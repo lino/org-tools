@@ -56,6 +56,9 @@ pub struct RoamNode {
     pub aliases: Vec<String>,
     /// External references parsed from `:ROAM_REFS:` (including `:ROAM_REFS+:` continuations).
     pub refs: Vec<String>,
+    /// Optional vault name or directory identifier when opened across federated `org-roam` roots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roam_dir: Option<String>,
 }
 
 /// A directed `[[id:...]]` link extracted from unprotected Org prose.
@@ -280,6 +283,7 @@ fn build_file_node(doc: &OrgDocument) -> Option<RoamNode> {
         olp: Vec::new(),
         aliases,
         refs,
+        roam_dir: None,
     })
 }
 
@@ -310,6 +314,7 @@ fn build_heading_node(doc: &OrgDocument, entry_idx: usize) -> Option<RoamNode> {
         olp: parent_outline_path(doc, entry_idx),
         aliases,
         refs,
+        roam_dir: None,
     })
 }
 

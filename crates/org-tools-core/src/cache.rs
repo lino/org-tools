@@ -8,6 +8,7 @@
 //! for `< 5 ms` warm `org roam`, `edna`, and BM25 `body:"..."` queries without
 //! reading or writing Emacs's `org-roam.db`.
 
+mod federated;
 mod fts;
 mod payload;
 mod roam;
@@ -18,7 +19,6 @@ mod sync;
 mod tests;
 mod walk;
 
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -27,9 +27,10 @@ use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 
 use crate::export_md::normalize_workspace_path;
-use crate::files::{collect_org_files, join_slash_rel};
+use crate::files::join_slash_rel;
 use crate::roam::{RoamBacklink, RoamIndex, RoamNode, RoamOutgoingLink};
 
+pub use federated::{FederatedVault, RoamWorkspace};
 pub use fts::{
     build_fts5_match_expr, count_phrase_occurrences, extract_entry_bodies,
     load_cached_fts_candidate_docs, load_docs_with_bodies, matches_body_phrase,
@@ -42,8 +43,8 @@ use roam::{
     query_outgoing_links_cached, resolve_nodes_cached,
 };
 use schema::{
-    adjust_roam_telemetry_counts, build_cache_status, configure_connection, list_table_names,
-    open_in_memory_configured, query_table_counts, sidecar_path,
+    build_cache_status, configure_connection, list_table_names, open_in_memory_configured,
+    query_table_counts, sidecar_path,
 };
 use sync::{
     apply_full_rebuild, collect_and_parse_all, invalidate_cached_paths, sync_discovered_files,
@@ -108,28 +109,13 @@ pub struct FtsHit {
 /// Handle to an open SQLite WAL + FTS5 cache for a workspace root.
 pub struct WorkspaceCache {
     /// Open SQLite database connection.
-    conn: Connection,
+    pub(crate) conn: Connection,
     /// Normalized workspace root directory.
     workspace_root: PathBuf,
     /// Path to the `.cache/org-cache.db` file.
     db_path: PathBuf,
     /// Relative paths re-parsed during the most recent `open_and_sync` call.
-    missed_rels: Vec<String>,
-}
-
-/// Unified `org-roam` v2 query backend backed either by [`WorkspaceCache`] or a direct [`RoamIndex`].
-pub enum RoamWorkspace {
-    /// Incremental SQLite + FTS5 cache bound to a single workspace directory.
-    Cached {
-        /// Open synchronized SQLite cache handle.
-        cache: Box<WorkspaceCache>,
-        /// Display root path supplied by the caller.
-        display_root: PathBuf,
-        /// Scan counters `(files_scanned, cache_hits, cache_misses)`.
-        counts: (usize, usize, usize),
-    },
-    /// Uncached in-memory [`RoamIndex`] built directly from `.org` files.
-    Direct(RoamIndex),
+    pub(crate) missed_rels: Vec<String>,
 }
 
 impl WorkspaceCache {
@@ -357,93 +343,5 @@ impl WorkspaceCache {
     /// Resolves relative file paths containing `:BLOCKER:` `ids(...)` targets referenced by `rel_paths`.
     pub fn blocker_target_rel_paths(&self, rel_paths: &[String]) -> Result<Vec<String>, String> {
         query_blocker_target_paths(&self.conn, rel_paths)
-    }
-}
-
-impl RoamWorkspace {
-    /// Opens a synchronized [`WorkspaceCache`] on a single directory root, or builds a [`RoamIndex`].
-    pub fn open(roots: &[PathBuf], no_cache: bool) -> Result<Self, String> {
-        if !no_cache && roots.len() == 1 && roots[0].is_dir() {
-            let display_root = roots[0].clone();
-            let (cache, t) = WorkspaceCache::open_and_sync(&display_root)?;
-            let counts = adjust_roam_telemetry_counts(
-                &cache.conn,
-                t.files_scanned,
-                t.cache_hits,
-                t.cache_misses,
-                &cache.missed_rels,
-            )?;
-            return Ok(Self::Cached {
-                cache: Box::new(cache),
-                display_root,
-                counts,
-            });
-        }
-        let raw_files = collect_org_files(roots);
-        let mut seen = HashSet::with_capacity(raw_files.len());
-        let mut unique_files = Vec::with_capacity(raw_files.len());
-        for file in raw_files {
-            if seen.insert(normalize_workspace_path(&file)) {
-                unique_files.push(file);
-            }
-        }
-        Ok(Self::Direct(RoamIndex::from_files(&unique_files)?))
-    }
-
-    /// Returns `(files_scanned, cache_hits, cache_misses)` for telemetry output.
-    pub fn counts(&self) -> (usize, usize, usize) {
-        match self {
-            Self::Cached { counts, .. } => *counts,
-            Self::Direct(idx) => (idx.files_scanned, 0, idx.files_scanned),
-        }
-    }
-
-    /// Resolves `query` into matching [`RoamNode`] values.
-    pub fn resolve(&self, query: &str) -> Result<Vec<RoamNode>, String> {
-        match self {
-            Self::Cached {
-                cache,
-                display_root,
-                ..
-            } => cache.resolve_roam_nodes(display_root, query, true),
-            Self::Direct(idx) => Ok(idx.resolve_nodes(query, true)),
-        }
-    }
-
-    /// Fetches incoming [`RoamBacklink`] edges for `targets`.
-    pub fn backlinks(&self, targets: &[RoamNode]) -> Result<Vec<RoamBacklink>, String> {
-        match self {
-            Self::Cached {
-                cache,
-                display_root,
-                ..
-            } => cache.roam_backlinks_for(display_root, targets),
-            Self::Direct(idx) => Ok(idx.backlinks_for(targets)),
-        }
-    }
-
-    /// Fetches outgoing [`RoamOutgoingLink`] edges for `sources`.
-    pub fn outgoing(&self, sources: &[RoamNode]) -> Result<Vec<RoamOutgoingLink>, String> {
-        match self {
-            Self::Cached {
-                cache,
-                display_root,
-                ..
-            } => cache.roam_outgoing_links_for(display_root, sources),
-            Self::Direct(idx) => Ok(idx.outgoing_links_for(sources)),
-        }
-    }
-
-    /// Consumes the workspace backend into a full [`RoamIndex`] and its scan counters.
-    pub fn into_graph(self) -> Result<(RoamIndex, (usize, usize, usize)), String> {
-        let counts = self.counts();
-        match self {
-            Self::Cached {
-                cache,
-                display_root,
-                ..
-            } => Ok((cache.load_roam_graph(&display_root, counts.0)?, counts)),
-            Self::Direct(idx) => Ok((idx, counts)),
-        }
     }
 }

@@ -16,7 +16,7 @@ use crate::document::OrgDocument;
 use crate::export_md::normalize_workspace_path;
 use crate::roam::doc_contains_id_ci;
 use crate::rules::format::regions::{is_protected, protected_regions};
-use crate::rules::heading::parse_heading;
+use crate::rules::heading::parse_heading_with_keywords;
 use crate::rules::{LintContext, LintRule};
 
 /// Detects duplicate `:ID:` values across level-0 file drawers, headings, and workspace files (`E009`).
@@ -139,6 +139,8 @@ fn parse_id_property_value(trimmed: &str) -> Option<&str> {
 
 /// Collects all `:ID:` property declarations inside unprotected `:PROPERTIES:` drawers.
 fn collect_drawer_ids(ctx: &LintContext) -> Vec<LocatedId> {
+    let doc = OrgDocument::from_source_with_config(ctx.source, ctx.config);
+    let kw_refs = doc.todo_keywords.all();
     let protected = protected_regions(&ctx.source.content);
     let mut in_drawer = false;
     let mut offset = 0;
@@ -148,7 +150,9 @@ fn collect_drawer_ids(ctx: &LintContext) -> Vec<LocatedId> {
         let raw = line.strip_suffix('\r').unwrap_or(line);
         if !is_protected(line_idx, &protected) {
             let trimmed = raw.trim();
-            if in_drawer && (trimmed.eq_ignore_ascii_case(":END:") || parse_heading(raw).is_some())
+            if in_drawer
+                && (trimmed.eq_ignore_ascii_case(":END:")
+                    || parse_heading_with_keywords(raw, &kw_refs).is_some())
             {
                 in_drawer = false;
             } else if !in_drawer && trimmed.eq_ignore_ascii_case(":PROPERTIES:") {

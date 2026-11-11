@@ -9,7 +9,8 @@
 //! Priority must be a single uppercase letter A-Z.
 
 use crate::diagnostic::{Diagnostic, Severity};
-use crate::rules::heading::parse_heading;
+use crate::document::OrgDocument;
+use crate::rules::heading::parse_heading_with_keywords;
 use crate::rules::{LintContext, LintRule};
 
 /// Checks that priority cookies on headings use uppercase letters.
@@ -36,15 +37,17 @@ impl LintRule for PriorityValidity {
     }
 
     fn check(&self, ctx: &LintContext) -> Vec<Diagnostic> {
+        let doc = OrgDocument::from_source_with_config(ctx.source, ctx.config);
+        let kw_refs = doc.todo_keywords.all();
+        let has_custom_range = doc.file_keywords.contains_key("PRIORITIES");
         let mut diagnostics = Vec::new();
         let mut offset = 0;
 
         for line in ctx.source.content.split('\n') {
             let raw = line.strip_suffix('\r').unwrap_or(line);
 
-            if let Some(parts) = parse_heading(raw) {
+            if let Some(parts) = parse_heading_with_keywords(raw, &kw_refs) {
                 if let Some(ch) = parts.priority {
-                    // Priority was parsed — check if it's lowercase.
                     if ch.is_ascii_lowercase() {
                         let (line_num, _) = ctx.source.line_col(offset);
                         diagnostics.push(Diagnostic {
@@ -58,6 +61,21 @@ impl LintRule for PriorityValidity {
                                 "priority [#{}] should be uppercase [#{}]",
                                 ch,
                                 ch.to_ascii_uppercase()
+                            ),
+                            fix: None,
+                        });
+                    } else if has_custom_range && !doc.priority_range.is_valid(ch) {
+                        let (line_num, _) = ctx.source.line_col(offset);
+                        diagnostics.push(Diagnostic {
+                            file: ctx.source.path.clone(),
+                            line: line_num,
+                            column: 1,
+                            severity: Severity::Warning,
+                            rule_id: self.id(),
+                            rule: self.name(),
+                            message: format!(
+                                "priority [#{ch}] is outside allowed range [#{}]..=[#{}]",
+                                doc.priority_range.highest, doc.priority_range.lowest
                             ),
                             fix: None,
                         });

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=1860 reason="Cohesive OrgDocument and OrgEntry single-pass parser with comprehensive behavioural unit test suite"
+// fritz: allow-file-length=1930 reason="Cohesive OrgDocument and OrgEntry single-pass parser with comprehensive behavioural unit test suite"
 
 //! Lightweight heading tree model for org-mode documents.
 //!
@@ -150,11 +150,21 @@ pub struct ClockEntry {
 impl OrgDocument {
     /// Build a document from a [`SourceFile`] using single-pass line-based parsing.
     pub fn from_source(source: &SourceFile) -> Self {
+        Self::parse_source(source, None)
+    }
+
+    /// Build a document from a [`SourceFile`] with an explicit fallback [`crate::config::Config`].
+    pub fn from_source_with_config(source: &SourceFile, config: &crate::config::Config) -> Self {
+        Self::parse_source(source, Some(config))
+    }
+
+    /// Parses `source` into an [`OrgDocument`], applying optional `config_override` TODO fallbacks.
+    fn parse_source(source: &SourceFile, config_override: Option<&crate::config::Config>) -> Self {
         let lines: Vec<&str> = source.content.split('\n').collect();
         let protected = protected_regions(&source.content);
         let mut preamble = PreambleAccumulator::default();
         let mut i = scan_preamble_section(&lines, &protected, &mut preamble);
-        let built = preamble.take_and_finalize(&source.path);
+        let built = preamble.take_and_finalize(&source.path, config_override);
 
         let scan_ctx = EntryScanContext {
             source,
@@ -335,6 +345,10 @@ struct PreambleAccumulator {
     file_keywords: HashMap<String, String>,
     /// Additive `#+TAGS:` values in document order.
     tags_lines: Vec<String>,
+    /// Additive `#+TODO:`, `#+SEQ_TODO:`, and `#+TYP_TODO:` values in document order.
+    todo_lines: Vec<String>,
+    /// Additive `#+SETUPFILE:` values in document order.
+    setupfile_lines: Vec<String>,
     /// Additive `#+PROPERTY:` values in document order.
     property_lines: Vec<String>,
     /// Additive `#+LINK:` prefix → URL template mappings.
@@ -449,6 +463,14 @@ impl PreambleAccumulator {
     fn record_keyword(&mut self, key: String, val: String) {
         match key.as_str() {
             "TAGS" => self.tags_lines.push(val.clone()),
+            "TODO" | "SEQ_TODO" | "TYP_TODO" => {
+                self.todo_lines.push(val.clone());
+                if let Some(prev) = self.file_keywords.get_mut(&key) {
+                    *prev = join_property_values(prev, &val);
+                    return;
+                }
+            }
+            "SETUPFILE" => self.setupfile_lines.push(val.clone()),
             "PROPERTY" => self.property_lines.push(val.clone()),
             "CONSTANTS" => parse_constants_into(&val, &mut self.table_constants, true),
             "LINK" => parse_link_abbreviation_into(&val, &mut self.link_abbreviations, true),
@@ -464,11 +486,15 @@ impl PreambleAccumulator {
     }
 
     /// Consumes accumulated preamble lines, merges `#+SETUPFILE:`, and derives document settings.
-    fn take_and_finalize(&mut self, source_path: &Path) -> FinalizedPreamble {
+    fn take_and_finalize(
+        &mut self,
+        source_path: &Path,
+        config_override: Option<&crate::config::Config>,
+    ) -> FinalizedPreamble {
         let mut taken = std::mem::take(self);
         merge_setupfile_settings(source_path, &mut taken);
 
-        let todo_keywords = todo_keywords_from_file(&taken.file_keywords);
+        let todo_keywords = resolve_effective_todo_keywords(&taken, source_path, config_override);
         let priority_range = priority_range_from_file(&taken.file_keywords);
         let filetags = parse_filetags(taken.file_keywords.get("FILETAGS"));
         let default_properties = parse_default_properties(&taken.property_lines);
@@ -487,6 +513,35 @@ impl PreambleAccumulator {
             table_constants: taken.table_constants,
         }
     }
+}
+
+/// Resolves effective [`TodoKeywords`] from additive in-file lines, `#+SETUPFILE:`, or `[todo]` config.
+fn resolve_effective_todo_keywords(
+    taken: &PreambleAccumulator,
+    source_path: &Path,
+    config_override: Option<&crate::config::Config>,
+) -> TodoKeywords {
+    if !taken.todo_lines.is_empty() {
+        return TodoKeywords::from_specs(&taken.todo_lines);
+    }
+    if taken.file_keywords.contains_key("TODO")
+        || taken.file_keywords.contains_key("SEQ_TODO")
+        || taken.file_keywords.contains_key("TYP_TODO")
+    {
+        return todo_keywords_from_file(&taken.file_keywords);
+    }
+    if let Some(cfg_kw) = config_override.and_then(|c| c.todo.to_todo_keywords()) {
+        return cfg_kw;
+    }
+    if let Some(dir_kw) = source_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty() && p.is_dir())
+        .and_then(|d| crate::config::Config::load_for_dir(d).ok())
+        .and_then(|c| c.todo.to_todo_keywords())
+    {
+        return dir_kw;
+    }
+    TodoKeywords::default()
 }
 
 /// Returns `true` if `line` is a Worg-compliant org comment line (`#` followed by space, tab, or EOL).
@@ -730,35 +785,52 @@ fn read_local_setupfile(source_path: &Path, setupfile_val: &str) -> Option<Strin
     std::fs::read_to_string(base_dir.join(path_str)).ok()
 }
 
-/// Loads preamble settings from a local `#+SETUPFILE:` as defaults beneath the main file.
+/// Loads preamble settings from local `#+SETUPFILE:` directives as defaults beneath the main file.
 fn merge_setupfile_settings(source_path: &Path, preamble: &mut PreambleAccumulator) {
-    let Some(setup_val) = preamble.file_keywords.get("SETUPFILE").cloned() else {
-        return;
-    };
-    let Some(content) = read_local_setupfile(source_path, &setup_val) else {
+    let setupfiles: Vec<String> = if !preamble.setupfile_lines.is_empty() {
+        preamble.setupfile_lines.clone()
+    } else if let Some(single) = preamble.file_keywords.get("SETUPFILE") {
+        vec![single.clone()]
+    } else {
         return;
     };
 
     let mut setup_properties = Vec::new();
-    for line in content.split('\n') {
-        let raw = line.strip_suffix('\r').unwrap_or(line);
-        if parse_heading(raw).is_some() {
-            break;
-        }
-        let Some((key, val)) = parse_keyword_line(raw) else {
+    let mut setup_todos = Vec::new();
+    for setup_val in setupfiles {
+        let Some(content) = read_local_setupfile(source_path, &setup_val) else {
             continue;
         };
-        match key.as_str() {
-            "TAGS" => preamble.tags_lines.push(val),
-            "PROPERTY" => setup_properties.push(val),
-            "LINK" => parse_link_abbreviation_into(&val, &mut preamble.link_abbreviations, false),
-            "CONSTANTS" => parse_constants_into(&val, &mut preamble.table_constants, false),
-            _ => {
-                preamble.file_keywords.entry(key).or_insert(val);
+        for line in content.split('\n') {
+            let raw = line.strip_suffix('\r').unwrap_or(line);
+            if parse_heading(raw).is_some() {
+                break;
+            }
+            let Some((key, val)) = parse_keyword_line(raw) else {
+                continue;
+            };
+            match key.as_str() {
+                "TAGS" => preamble.tags_lines.push(val),
+                "TODO" | "SEQ_TODO" | "TYP_TODO" => {
+                    setup_todos.push(val.clone());
+                    preamble.file_keywords.entry(key).or_insert(val);
+                }
+                "PROPERTY" => setup_properties.push(val),
+                "LINK" => {
+                    parse_link_abbreviation_into(&val, &mut preamble.link_abbreviations, false)
+                }
+                "CONSTANTS" => parse_constants_into(&val, &mut preamble.table_constants, false),
+                _ => {
+                    preamble.file_keywords.entry(key).or_insert(val);
+                }
             }
         }
     }
 
+    if !setup_todos.is_empty() {
+        setup_todos.append(&mut preamble.todo_lines);
+        preamble.todo_lines = setup_todos;
+    }
     if !setup_properties.is_empty() {
         setup_properties.append(&mut preamble.property_lines);
         preamble.property_lines = setup_properties;
@@ -1519,23 +1591,24 @@ mod tests {
         assert_eq!(doc.filetags, vec!["shared"]);
     }
 
-    /// Verifies main-file keywords overriding non-additive `#+SETUPFILE:` defaults.
+    /// Verifies `#+SETUPFILE:` merges `#+TODO:` additively while main-file `#+PRIORITIES:` overrides.
     #[test]
     fn setupfile_main_file_overrides() {
         let dir = tempfile::tempdir().unwrap();
         let setup_path = dir.path().join("setup.org");
-        std::fs::write(&setup_path, "#+TODO: OPEN | CLOSED\n").unwrap();
+        std::fs::write(&setup_path, "#+TODO: OPEN | CLOSED\n#+PRIORITIES: A E C\n").unwrap();
 
         let main_path = dir.path().join("main.org");
         let main_content = format!(
-            "#+SETUPFILE: {}\n#+TODO: DRAFT | PUBLISHED\n* DRAFT Task\n",
+            "#+SETUPFILE: {}\n#+TODO: DRAFT | PUBLISHED\n#+PRIORITIES: A D B\n* DRAFT Task\n",
             setup_path.display()
         );
         let source = SourceFile::new(main_path, main_content);
         let doc = OrgDocument::from_source(&source);
 
-        assert_eq!(doc.todo_keywords.todo, vec!["DRAFT"]);
-        assert_eq!(doc.todo_keywords.done, vec!["PUBLISHED"]);
+        assert_eq!(doc.todo_keywords.todo, vec!["OPEN", "DRAFT"]);
+        assert_eq!(doc.todo_keywords.done, vec!["CLOSED", "PUBLISHED"]);
+        assert_eq!(doc.priority_range.lowest, 'D');
     }
 
     /// Verifies additive `#+TAGS:` merging across `#+SETUPFILE:` and the main file.

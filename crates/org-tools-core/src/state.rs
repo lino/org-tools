@@ -222,6 +222,7 @@ fn build_repeater_entry_fixes(
     lines: &[&str],
     idx: usize,
     parts: &HeadingParts<'_>,
+    new_state: &str,
     today: (u16, u8, u8),
 ) -> Option<Vec<Fix>> {
     let head_idx = doc.entries[idx].heading_line - 1;
@@ -234,11 +235,7 @@ fn build_repeater_entry_fixes(
     if !(title_adv || plan_adv || !body_fixes.is_empty()) {
         return None;
     }
-    let reset = doc
-        .todo_keywords
-        .todo
-        .first()
-        .map_or("TODO", String::as_str);
+    let reset = doc.todo_keywords.first_todo_for(parts.keyword, new_state);
     let new_head = build_heading_with_state(parts, reset, &new_title);
     let mut fixes = Vec::new();
     if new_head != lines[head_idx] {
@@ -299,7 +296,9 @@ fn build_entry_outcome(
     let newly_done = !was_done && is_new_done;
 
     if options.advance_repeaters && newly_done {
-        if let Some(rep) = build_repeater_entry_fixes(source, doc, lines, idx, &parts, today) {
+        if let Some(rep) =
+            build_repeater_entry_fixes(source, doc, lines, idx, &parts, new_state, today)
+        {
             return Some(EntryOutcome::Repeated(rep));
         }
     }

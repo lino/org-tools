@@ -166,6 +166,9 @@ org archive ~/org/
 org lsp --workspace ~/org/
 
 # Shell completions, Unix manpages, and embedded JSON schemas
+eval "$(org --completions zsh)"
+org --completions fish | source
+eval "$(org --completions bash)"
 org --completions bash > /etc/bash_completion.d/org
 man 1 org
 man 5 org-tools.toml

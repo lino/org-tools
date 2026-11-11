@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=490 reason="Comprehensive Zensical documentation craft and LSP guide contract tests"
+// fritz: allow-file-length=530 reason="Comprehensive Zensical documentation craft and LSP/completion guide contract tests"
 
 //! Automated documentation craft, Zensical navigation, `arc42`, and readability verification suite (`ORGFMT-WP-30`).
 
@@ -391,6 +391,44 @@ fn lsp_cookbook_metrics_runbook_and_glossary_meet_contract() {
     ] {
         assert!(glossary.contains(term), "glossary missing `{term}`");
     }
+}
+
+/// Verifies shell completion documentation across power-user, installation, reference, usage.org, and README.org (`ORGFMT-WP-37`).
+#[test]
+fn shell_completion_docs_cover_bash_zsh_fish_and_dynamic_domains() {
+    let power_user = read_repo_file("docs/user/power-user-and-scripting.md");
+    for token in [
+        "eval \"$(org --completions zsh)\"",
+        "org --completions fish | source",
+        "eval \"$(org --completions bash)\"",
+        "roam-node",
+        "todo-state",
+        "date-spec",
+    ] {
+        assert!(
+            power_user.contains(token),
+            "power-user-and-scripting.md missing `{token}`"
+        );
+    }
+
+    let install = read_repo_file("docs/operations/installation.md");
+    for token in [
+        "eval \"$(org --completions zsh)\"",
+        "org --completions fish | source",
+        "eval \"$(org --completions bash)\"",
+    ] {
+        assert!(install.contains(token), "installation.md missing `{token}`");
+    }
+
+    let reference = read_repo_file("docs/user/reference.md");
+    assert!(reference.contains("org complete"));
+
+    let usage_org = read_repo_file("docs/user/usage.org");
+    assert!(usage_org.contains("eval \"$(org --completions zsh)\""));
+    assert!(usage_org.contains("org --completions fish | source"));
+
+    let readme = read_repo_file("README.org");
+    assert!(readme.contains("eval \"$(org --completions zsh)\""));
 }
 
 /// Verifies `docs/developer/architecture.md` and `docs/technical/architecture.org` contain 12 `arc42` sections and 4 Mermaid views.

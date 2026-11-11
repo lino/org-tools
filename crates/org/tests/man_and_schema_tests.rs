@@ -155,7 +155,13 @@ fn slice1_man_org_1_contains_required_roff_sections_exit_codes_and_env_vars() {
     for env_var in REQUIRED_ENV_VARS {
         assert!(org1.contains(env_var), "man/org.1 missing `{env_var}`");
     }
-    for token in ["lsp", "--roam-dir", "ORG_LSP_TELEMETRY_DIR"] {
+    for token in [
+        "lsp",
+        "--roam-dir",
+        "ORG_LSP_TELEMETRY_DIR",
+        "eval \"$(org --completions zsh)\"",
+        "org --completions fish | source",
+    ] {
         assert!(org1.contains(token), "man/org.1 missing `{token}`");
     }
     for code in ["0", "1", "2", "3"] {

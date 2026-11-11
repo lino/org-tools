@@ -12,6 +12,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 - How to chain `org` subcommands over standard input (`stdin`) and standard output (`stdout`) using `OrgLocator` addresses.
 - How to branch reliably in shell scripts using the canonical `0..3` exit-code contract.
 - How to override workspace paths, configuration files, colors, and cache locations with environment variables.
+- How to enable workspace-aware dynamic shell completions (`bash`, `zsh`, `fish`) powered by `.cache/org-cache.db`.
 
 Interactive terminal commands are only half the story when managing thousands of tasks and notes.
 `org` follows strict Unix stream discipline (`stdout` for data, `stderr` for diagnostics) so scripts never parse human log noise.
@@ -60,6 +61,17 @@ You can compose multi-step task migrations and CI gates using standard POSIX pip
 1. Inspect execution telemetry (`duration_us`, `files_scanned`, `cache_hits`, `cache_misses`) from `--format json` mutation envelopes.
    ```sh
    org update add-cookie --recursive --format json ~/org/ | jq '.telemetry'
+   ```
+1. Enable workspace-aware dynamic tab completions in `zsh`, `fish`, or `bash` to complete `OrgLocator` targets, `roam-node` titles, `todo-state` keywords, and `date-spec` shifts.
+   ```sh
+   # Zsh (~/.zshrc)
+   eval "$(org --completions zsh)"
+
+   # Fish (~/.config/fish/config.fish)
+   org --completions fish | source
+
+   # Bash (~/.bashrc)
+   eval "$(org --completions bash)"
    ```
 
 ## Expected Outcome

@@ -92,9 +92,15 @@ mise install
 mise run install
 ```
 
-6. Generate `bash`, `zsh`, and `fish` completions into XDG Base Directory Specification (`XDG`) user paths.
+6. Generate `bash`, `zsh`, and `fish` completions into XDG Base Directory Specification (`XDG`) user paths or source them in your shell profile.
 
 ```sh
+# Option A: One-line interactive shell setup
+eval "$(org --completions zsh)"
+org --completions fish | source
+eval "$(org --completions bash)"
+
+# Option B: Persist completion files in XDG user directories
 mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
 org --completions bash > "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/org"
 

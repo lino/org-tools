@@ -36,7 +36,7 @@ See the [Glossary](../glossary.md) for definitions of all domain terms and acron
 | `org schema [--list\|<NAME>]`    | List or print embedded JSON Schema Draft 2020-12 contracts (`--output <PATH>`).                              |
 | `--config <PATH>`                | Load `.org-tools.toml` from an explicit path instead of searching ancestor directories.                      |
 | `--no-cache`                     | Bypass `.cache/org-cache.db` and parse `.org` files directly from disk.                                      |
-| `--completions <SHELL>`          | Generate shell completion scripts for `bash`, `zsh`, `fish`, `elvish`, or `powershell`.                      |
+| `--completions <SHELL>`          | Generate shell completion scripts (`bash`, `zsh`, `fish`) wired to dynamic `org complete` SQLite queries.    |
 
 ## Exit Codes (`0..3`)
 

@@ -1314,15 +1314,27 @@ Where =<SHELL>= is one of =bash=, =zsh=, =fish=, =elvish=, or =powershell=.
 
 ** Installation
 
+Activate workspace-aware dynamic completions (locators, =org-roam= nodes, TODO
+states, tags, properties, relative dates, and query predicates) in your shell
+profile or save them to user completion directories:
+
 *** Bash
 
 #+begin_src sh
+# One-line setup in ~/.bashrc:
+eval "$(org --completions bash)"
+
+# Or write to XDG completion directory:
 org --completions bash > ~/.local/share/bash-completion/completions/org
 #+end_src
 
 *** Zsh
 
 #+begin_src sh
+# One-line setup in ~/.zshrc:
+eval "$(org --completions zsh)"
+
+# Or write to ~/.zfunc/_org:
 org --completions zsh > ~/.zfunc/_org
 # Make sure ~/.zfunc is in your fpath (add to .zshrc if needed):
 # fpath=(~/.zfunc $fpath)
@@ -1332,6 +1344,10 @@ org --completions zsh > ~/.zfunc/_org
 *** Fish
 
 #+begin_src sh
+# One-line setup in ~/.config/fish/config.fish:
+org --completions fish | source
+
+# Or write to ~/.config/fish/completions/org.fish:
 org --completions fish > ~/.config/fish/completions/org.fish
 #+end_src
 

@@ -9,7 +9,7 @@ use std::io::{IsTerminal, Read as _};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::edna::run_file_trigger_cascade;
@@ -39,7 +39,7 @@ pub(crate) struct SetStateArgs {
     #[arg(long)]
     pub(crate) query: Option<String>,
     /// Optional workspace directory for cross-file org-edna :TRIGGER: resolution.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
     /// Don't add/remove CLOSED: timestamp on state transitions.
     #[arg(long)]

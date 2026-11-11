@@ -60,6 +60,26 @@ pub(crate) struct FileTouch {
     pub(crate) canon_key: String,
 }
 
+/// Extracted heading outline row ready for `headings` insertion.
+pub(crate) struct HeadingOutlineRecord {
+    /// Zero-based entry index in `doc.entries`.
+    pub(crate) entry_idx: i64,
+    /// One-based heading line number.
+    pub(crate) heading_line: i64,
+    /// Heading star level (`>= 1`).
+    pub(crate) level: i64,
+    /// Optional TODO keyword on the heading.
+    pub(crate) todo_keyword: Option<String>,
+    /// Clean heading title.
+    pub(crate) title: String,
+    /// Optional `:CUSTOM_ID:` value.
+    pub(crate) custom_id: Option<String>,
+    /// JSON array of heading tags.
+    pub(crate) tags_json: String,
+    /// JSON array of uppercase property drawer keys on the heading.
+    pub(crate) prop_keys_json: String,
+}
+
 /// Parsed rows extracted from one `.org` file for transactional SQLite upsert.
 pub(crate) struct ParsedFilePayload {
     /// File metadata key.
@@ -70,10 +90,20 @@ pub(crate) struct ParsedFilePayload {
     pub(crate) content_hash: String,
     /// Whether an older row existed in `files` and must be replaced.
     pub(crate) existed: bool,
+    /// JSON array of active file TODO keywords.
+    pub(crate) todo_active_json: String,
+    /// JSON array of done file TODO keywords.
+    pub(crate) todo_done_json: String,
+    /// JSON array of file-level `#+FILETAGS:`.
+    pub(crate) filetags_json: String,
+    /// JSON array of uppercase level-0 `:PROPERTIES:` keys.
+    pub(crate) file_prop_keys_json: String,
     /// Non-excluded roam nodes in this file.
     pub(crate) nodes: Vec<RoamNode>,
-    /// `:ROAM_EXCLUDE: t` `(id, title, line, level)` tuples retained for `org-edna` `ids(...)`.
-    pub(crate) excluded_ids: Vec<(String, String, i64, i64)>,
+    /// `:ROAM_EXCLUDE: t` `(id, title, line, level, todo_keyword)` tuples retained for `ids(...)` and completion.
+    pub(crate) excluded_ids: Vec<(String, String, i64, i64, Option<String>)>,
+    /// Heading outline and `:CUSTOM_ID:` rows in this file.
+    pub(crate) headings: Vec<HeadingOutlineRecord>,
     /// Outgoing `[[id:...]]` links in this file.
     pub(crate) links: Vec<RoamLink>,
     /// `org-edna` `:BLOCKER:` and `:TRIGGER:` edges in this file.
@@ -109,15 +139,15 @@ fn push_edna_prop_edges(
     }
 }
 
-/// Extracts `:ROAM_EXCLUDE: t` `:ID:` tuples `(id, title, line, level)` from `doc`.
-fn extract_excluded_ids(doc: &OrgDocument) -> Vec<(String, String, i64, i64)> {
+/// Extracts `:ROAM_EXCLUDE: t` `:ID:` tuples `(id, title, line, level, todo_keyword)` from `doc`.
+fn extract_excluded_ids(doc: &OrgDocument) -> Vec<(String, String, i64, i64, Option<String>)> {
     let mut out = Vec::new();
     if is_roam_excluded(&doc.file_properties) {
         if let Some(id) = lookup_prop_ci(&doc.file_properties, "ID")
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            out.push((id.to_string(), doc.file_title_or_stem(), 1, 0));
+            out.push((id.to_string(), doc.file_title_or_stem(), 1, 0, None));
         }
     }
     for e in &doc.entries {
@@ -131,11 +161,41 @@ fn extract_excluded_ids(doc: &OrgDocument) -> Vec<(String, String, i64, i64)> {
                     e.title.clone(),
                     e.heading_line as i64,
                     e.level as i64,
+                    e.keyword.clone(),
                 ));
             }
         }
     }
     out
+}
+
+/// Extracts [`HeadingOutlineRecord`] rows for all headings in `doc`.
+fn extract_heading_outlines(doc: &OrgDocument) -> Vec<HeadingOutlineRecord> {
+    doc.entries
+        .iter()
+        .enumerate()
+        .map(|(idx, e)| {
+            let custom_id = lookup_prop_ci(&e.properties, "CUSTOM_ID")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let prop_keys: Vec<String> = e
+                .properties
+                .keys()
+                .map(|k| k.to_ascii_uppercase())
+                .collect();
+            HeadingOutlineRecord {
+                entry_idx: idx as i64,
+                heading_line: e.heading_line as i64,
+                level: e.level as i64,
+                todo_keyword: e.keyword.clone(),
+                title: e.title.clone(),
+                custom_id,
+                tags_json: json_slice_or_empty(&e.tags).into_owned(),
+                prop_keys_json: json_slice_or_empty(&prop_keys).into_owned(),
+            }
+        })
+        .collect()
 }
 
 /// Extracts all level-0 and heading `edna_edges` records from `doc`.
@@ -184,6 +244,7 @@ pub(crate) fn build_file_payload(
     let doc = OrgDocument::from_source(&source);
     let nodes = extract_roam_nodes(&doc);
     let excluded_ids = extract_excluded_ids(&doc);
+    let headings = extract_heading_outlines(&doc);
     let links = extract_roam_links(&source, &doc);
     let edna_edges = extract_doc_edna_edges(&doc);
     let bodies = extract_entry_bodies(&source.content, &doc);
@@ -199,15 +260,24 @@ pub(crate) fn build_file_payload(
             body,
         })
         .collect();
-
+    let file_props: Vec<String> = doc
+        .file_properties
+        .keys()
+        .map(|k| k.to_ascii_uppercase())
+        .collect();
     let canon_key = compute_canon_key(workspace_root, &disk);
     ParsedFilePayload {
         disk,
         canon_key,
         content_hash,
         existed,
+        todo_active_json: json_slice_or_empty(&doc.todo_keywords.todo).into_owned(),
+        todo_done_json: json_slice_or_empty(&doc.todo_keywords.done).into_owned(),
+        filetags_json: json_slice_or_empty(&doc.filetags).into_owned(),
+        file_prop_keys_json: json_slice_or_empty(&file_props).into_owned(),
         nodes,
         excluded_ids,
+        headings,
         links,
         edna_edges,
         fts_rows,
@@ -238,10 +308,12 @@ fn insert_nodes_in_tx(
         .prepare_cached(sql)
         .map_err(|e| format!("nodes prepare failed: {e}"))?;
     for n in &p.nodes {
-        let tags_j = json_slice_or_empty(&n.tags);
-        let olp_j = json_slice_or_empty(&n.olp);
-        let aliases_j = json_slice_or_empty(&n.aliases);
-        let refs_j = json_slice_or_empty(&n.refs);
+        let (t, o, a, r) = (
+            json_slice_or_empty(&n.tags),
+            json_slice_or_empty(&n.olp),
+            json_slice_or_empty(&n.aliases),
+            json_slice_or_empty(&n.refs),
+        );
         stmt.execute(params![
             n.id,
             rel,
@@ -251,25 +323,56 @@ fn insert_nodes_in_tx(
             n.level as i64,
             n.todo_keyword,
             n.priority,
-            tags_j.as_ref(),
-            olp_j.as_ref(),
-            aliases_j.as_ref(),
-            refs_j.as_ref(),
+            t.as_ref(),
+            o.as_ref(),
+            a.as_ref(),
+            r.as_ref(),
             0i64
         ])
         .map_err(|e| format!("nodes insert failed for {rel}: {e}"))?;
     }
     let none = Option::<String>::None;
-    for (id, title, line, level) in &p.excluded_ids {
+    for (id, title, line, level, kw) in &p.excluded_ids {
         stmt.execute(params![
-            id, rel, &none, title, line, level, &none, &none, "[]", "[]", "[]", "[]", 1i64
+            id, rel, &none, title, line, level, kw, &none, "[]", "[]", "[]", "[]", 1i64
         ])
         .map_err(|e| format!("excluded node insert failed for {rel}: {e}"))?;
     }
     Ok(())
 }
 
-/// Inserts a single [`ParsedFilePayload`] across all five workspace cache tables inside `tx`.
+/// Inserts [`HeadingOutlineRecord`] rows for `rel` inside `tx`.
+fn insert_headings_in_tx(
+    tx: &Transaction<'_>,
+    rel: &str,
+    headings: &[HeadingOutlineRecord],
+) -> Result<(), String> {
+    if headings.is_empty() {
+        return Ok(());
+    }
+    let sql = "INSERT INTO headings (rel_path, entry_idx, heading_line, level, todo_keyword, title, custom_id, tags_json, prop_keys_json)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
+    let mut s = tx
+        .prepare_cached(sql)
+        .map_err(|e| format!("headings prepare failed: {e}"))?;
+    for h in headings {
+        s.execute(params![
+            rel,
+            h.entry_idx,
+            h.heading_line,
+            h.level,
+            h.todo_keyword,
+            h.title,
+            h.custom_id,
+            h.tags_json,
+            h.prop_keys_json
+        ])
+        .map_err(|e| format!("headings insert failed for {rel}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Inserts a single [`ParsedFilePayload`] across all workspace cache tables inside `tx`.
 fn write_payload_in_tx(tx: &Transaction<'_>, p: &ParsedFilePayload) -> Result<(), String> {
     let rel = p.disk.rel_path.as_str();
     if p.existed {
@@ -281,22 +384,19 @@ fn write_payload_in_tx(tx: &Transaction<'_>, p: &ParsedFilePayload) -> Result<()
             .map_err(|e| format!("files delete failed for {rel}: {e}"))?;
     }
     tx.prepare_cached(
-        "INSERT INTO files (rel_path, mtime_ns, byte_len, content_hash, is_symlink, canon_key, is_roam_dup)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+        "INSERT INTO files (rel_path, mtime_ns, byte_len, content_hash, is_symlink, canon_key, is_roam_dup, todo_active_json, todo_done_json, filetags_json, file_prop_keys_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9, ?10)",
     )
     .and_then(|mut s| {
         s.execute(params![
-            rel,
-            p.disk.mtime_ns,
-            p.disk.byte_len,
-            p.content_hash,
-            i64::from(p.disk.is_symlink),
-            p.canon_key
+            rel, p.disk.mtime_ns, p.disk.byte_len, p.content_hash, i64::from(p.disk.is_symlink),
+            p.canon_key, p.todo_active_json, p.todo_done_json, p.filetags_json, p.file_prop_keys_json
         ])
     })
     .map_err(|e| format!("files insert failed for {rel}: {e}"))?;
 
     insert_nodes_in_tx(tx, rel, p)?;
+    insert_headings_in_tx(tx, rel, &p.headings)?;
     if !p.links.is_empty() {
         let mut s = tx
             .prepare_cached("INSERT INTO links (rel_path, source_id, target_id, description, line, context) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
@@ -407,20 +507,9 @@ pub(crate) fn commit_batch(
                 .map_err(|e| format!("files delete failed for {rel}: {e}"))?;
         }
         for t in touches {
-            tx.prepare_cached(
-                "UPDATE files SET mtime_ns = ?2, byte_len = ?3, is_symlink = ?4, canon_key = ?5
-                 WHERE rel_path = ?1",
-            )
-            .and_then(|mut s| {
-                s.execute(params![
-                    t.rel_path,
-                    t.mtime_ns,
-                    t.byte_len,
-                    i64::from(t.is_symlink),
-                    t.canon_key
-                ])
-            })
-            .map_err(|e| format!("metadata touch failed for {}: {e}", t.rel_path))?;
+            tx.prepare_cached("UPDATE files SET mtime_ns = ?2, byte_len = ?3, is_symlink = ?4, canon_key = ?5 WHERE rel_path = ?1")
+                .and_then(|mut s| s.execute(params![t.rel_path, t.mtime_ns, t.byte_len, i64::from(t.is_symlink), t.canon_key]))
+                .map_err(|e| format!("metadata touch failed for {}: {e}", t.rel_path))?;
         }
         for payload in upserts {
             write_payload_in_tx(&tx, payload)?;

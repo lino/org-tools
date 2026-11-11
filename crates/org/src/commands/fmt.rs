@@ -6,7 +6,7 @@
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::{collect_org_files, write_file_atomic};
@@ -23,6 +23,7 @@ pub(crate) enum FmtCommand {
     /// Lint org files and report diagnostics.
     Check {
         /// Files or directories to check.
+        #[arg(value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Output format.
@@ -36,6 +37,7 @@ pub(crate) enum FmtCommand {
     /// Format org files.
     Format {
         /// Files or directories to format.
+        #[arg(value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Check mode: exit 1 if changes needed, don't modify files.

@@ -6,12 +6,26 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::{Args, ValueEnum};
+use clap::builder::{PossibleValue, PossibleValuesParser};
+use clap::{Args, ValueEnum, ValueHint};
 use serde::Serialize;
 
 use crate::{EXIT_ERROR, EXIT_OK};
 
 // region CLI Arguments & Types
+
+/// Returns the [`PossibleValuesParser`] registering canonical schema names and their hidden CLI aliases.
+fn schema_name_parser() -> PossibleValuesParser {
+    PossibleValuesParser::from(
+        SCHEMA_REGISTRY
+            .iter()
+            .map(|entry| {
+                PossibleValue::new(entry.name)
+                    .aliases(entry.aliases.iter().copied().filter(|&a| a != entry.name))
+            })
+            .collect::<Vec<_>>(),
+    )
+}
 
 /// Output format for `org schema --list`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -27,7 +41,11 @@ pub(crate) enum SchemaListFormat {
 #[derive(Debug, Clone, Args)]
 pub(crate) struct SchemaCommandArgs {
     /// Schema name (`fmt`, `query`, `agenda`, `columns`, `show`, `update`, `clock-status`, `clock-report`, `jscalendar`, `roam`, `fleeting`, `blocked`, `stuck`, `deps`).
-    #[arg(value_name = "NAME", required_unless_present = "list")]
+    #[arg(
+        value_name = "NAME",
+        required_unless_present = "list",
+        value_parser = schema_name_parser()
+    )]
     pub(crate) schema_name: Option<String>,
 
     /// List all registered JSON Schema Draft 2020-12 artifacts and exit.
@@ -39,7 +57,7 @@ pub(crate) struct SchemaCommandArgs {
     pub(crate) format: SchemaListFormat,
 
     /// Write the selected JSON Schema or catalog output to a file path instead of stdout.
-    #[arg(short = 'o', long = "output", value_name = "PATH")]
+    #[arg(short = 'o', long = "output", value_name = "PATH", value_hint = ValueHint::FilePath)]
     pub(crate) output: Option<PathBuf>,
 }
 

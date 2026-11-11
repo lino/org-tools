@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use clap::{Subcommand, ValueEnum};
+use clap::{Subcommand, ValueEnum, ValueHint};
 
 use org_tools_core::files::{canonicalize_clean, collect_org_files};
 use org_tools_core::locator::OrgLocator;
@@ -32,7 +32,7 @@ pub(crate) enum ClockCommand {
     /// Show clock time report.
     Report {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Start date (YYYY-MM-DD).
@@ -58,7 +58,7 @@ pub(crate) enum ClockCommand {
     /// Show running clocks.
     Status {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Output format.
@@ -71,7 +71,7 @@ pub(crate) enum ClockCommand {
         locator: String,
 
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Explicit start timestamp (`YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM`, or `[YYYY-MM-DD Day HH:MM]`).
@@ -93,7 +93,7 @@ pub(crate) enum ClockCommand {
     /// Close an active running clock and record its elapsed duration.
     Out {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Optional locator targeting a specific entry with a running clock.

@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::edna::{
@@ -49,7 +49,7 @@ pub(crate) struct DepAddArgs {
     pub(crate) trigger_state: String,
 
     /// Optional workspace root directory for cross-file resolution and cycle checks.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 
     /// Preview dependency mutations without writing files.
@@ -71,7 +71,7 @@ pub(crate) struct DepRemoveArgs {
     pub(crate) blocked: String,
 
     /// Optional workspace root directory for cross-file locator resolution.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 
     /// Preview dependency removal without writing files.

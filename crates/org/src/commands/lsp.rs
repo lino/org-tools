@@ -13,7 +13,7 @@ use std::io::{self, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueHint};
 use serde_json::{json, Value};
 
 use org_tools_core::cache::WorkspaceCache;
@@ -35,10 +35,10 @@ use crate::{EXIT_ERROR, EXIT_OK};
 #[derive(Debug, Clone, Args)]
 pub(crate) struct LspArgs {
     /// Workspace root directory to index and serve over LSP stdio.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
     /// Explicit org-roam directory if different from workspace root.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) roam_dir: Option<PathBuf>,
 }
 

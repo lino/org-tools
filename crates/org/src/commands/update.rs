@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueHint};
 
 use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::document::OrgDocument;
@@ -86,7 +86,7 @@ pub(crate) enum UpdateCommand {
     /// Update statistic cookies ([/] and [%]) on headings.
     AddCookie {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Insert cookies on headings that don't have one yet.
@@ -104,7 +104,7 @@ pub(crate) enum UpdateCommand {
     /// Evaluate #+TBLFM: table formulas and fill in results.
     Calc {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Print what would be changed without writing files.

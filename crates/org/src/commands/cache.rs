@@ -7,7 +7,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum, ValueHint};
 use serde::Serialize;
 
 use org_tools_core::cache::{CacheStatus, CacheTelemetry, WorkspaceCache};
@@ -33,10 +33,11 @@ pub(crate) enum CacheOutputFormat {
 #[derive(Debug, Clone, Args)]
 pub(crate) struct CacheArgs {
     /// Optional directory path to inspect, rebuild, or clear.
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub(crate) path: Option<PathBuf>,
 
     /// Explicit workspace root directory override.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 
     /// Output format (`human` or `json`).

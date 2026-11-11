@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use clap::{Args, ValueEnum};
+use clap::{Args, ValueEnum, ValueHint};
 use serde::Serialize;
 
 use org_tools_core::document::{ChecklistItem, ChecklistSummary};
@@ -40,7 +40,7 @@ pub(crate) struct ShowArgs {
     pub(crate) locator: String,
 
     /// Workspace directory to scan when resolving `id:` locators and cross-node links.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 
     /// Output format (`org`, `json`, or `md`).

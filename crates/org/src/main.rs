@@ -12,7 +12,7 @@ mod query;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueHint};
 use clap_complete::Shell;
 
 use org_tools_core::config::Config;
@@ -21,6 +21,7 @@ use org_tools_core::runner::Runner;
 use commands::archive::{run_archive, ArchiveArgs};
 use commands::cache::{run_cache, CacheCommand};
 use commands::clock::{run_clock, ClockCommand};
+use commands::complete::{emit_completions, run_complete, CompleteArgs};
 use commands::export::{run_export, ExportCommand};
 use commands::fmt::{run_fmt, FmtCommand};
 use commands::lsp::{run_lsp, LspArgs};
@@ -75,7 +76,7 @@ enum OrgCommand {
         command: FmtCommand,
 
         /// Path to config file.
-        #[arg(long, global = true)]
+        #[arg(long, global = true, value_hint = ValueHint::FilePath)]
         config: Option<PathBuf>,
     },
     /// Query org entries.
@@ -126,6 +127,9 @@ enum OrgCommand {
     Archive(ArchiveArgs),
     /// Print the JSON schema for a given output type.
     Schema(SchemaArgs),
+    /// Internal dynamic workspace-aware shell completion query command.
+    #[command(hide = true)]
+    Complete(CompleteArgs),
 }
 
 /// Parses an explicit `.org-tools.toml` file or exits with [`EXIT_ERROR`].
@@ -176,6 +180,7 @@ fn dispatch_agent_command(command: OrgCommand, no_cache: bool) -> i32 {
         OrgCommand::Lsp(args) => run_lsp(args, no_cache),
         OrgCommand::Archive(args) => run_archive(args),
         OrgCommand::Schema(args) => run_schema(&args.name),
+        OrgCommand::Complete(args) => run_complete(args),
         _ => unreachable!("non-agent commands handled in dispatch_command"),
     }
 }
@@ -200,8 +205,7 @@ fn main() {
     let cli = Cli::parse();
 
     if let Some(shell) = cli.completions {
-        let mut cmd = Cli::command();
-        clap_complete::generate(shell, &mut cmd, "org", &mut std::io::stdout());
+        emit_completions(shell, Cli::command());
         process::exit(EXIT_OK);
     }
 

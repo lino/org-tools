@@ -17,7 +17,7 @@ use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueHint};
 use serde_json::{json, Map, Value};
 
 use org_tools_core::cache::WorkspaceCache;
@@ -51,7 +51,7 @@ use crate::{EXIT_ERROR, EXIT_OK};
 #[derive(Debug, Clone, Args)]
 pub(crate) struct McpArgs {
     /// Workspace root directory to index and serve over MCP `stdio`.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 }
 

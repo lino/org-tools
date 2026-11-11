@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::{canonicalize_clean, collect_org_files, write_file_atomic};
@@ -34,11 +34,11 @@ pub(crate) struct RefileArgs {
     pub(crate) to: String,
 
     /// Files or directories to scan when resolving locators.
-    #[arg(default_value = ".")]
+    #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
     pub(crate) paths: Vec<PathBuf>,
 
     /// Optional workspace root directory override.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 
     /// Refile the subtree as a top-level (`*`) heading at the end of the target file.

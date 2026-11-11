@@ -7,7 +7,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum, ValueHint};
 use serde::Serialize;
 
 use org_tools_core::cache::RoamWorkspace;
@@ -47,9 +47,10 @@ pub(crate) enum RoamGraphFormat {
 #[derive(Args, Debug, Clone)]
 pub(crate) struct RoamScopeArgs {
     /// Optional Org files or directories to scan.
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub(crate) paths: Vec<PathBuf>,
     /// Optional workspace root directory to scan.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
     /// Repeatable named `[roam.directories]` vault or directory path selector.
     #[arg(long = "roam-dir")]

@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::{
@@ -25,11 +25,11 @@ pub(crate) enum ExportCommand {
     /// Export to iCalendar (.ics) format.
     Ical {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Output file (default: stdout).
-        #[arg(long, short)]
+        #[arg(long, short, value_hint = ValueHint::FilePath)]
         output: Option<PathBuf>,
 
         /// Start date filter (YYYY-MM-DD).
@@ -47,11 +47,11 @@ pub(crate) enum ExportCommand {
     /// Export to JSCalendar (JSON) format.
     Jscal {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Output file (default: stdout).
-        #[arg(long, short)]
+        #[arg(long, short, value_hint = ValueHint::FilePath)]
         output: Option<PathBuf>,
 
         /// Start date filter (YYYY-MM-DD).
@@ -69,15 +69,15 @@ pub(crate) enum ExportCommand {
     /// Export Org documents to Zensical-ready GitHub Flavored Markdown (.md).
     Md {
         /// Files or directories to export.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
 
         /// Output file (single input file) or output directory (multiple files / directory).
-        #[arg(long, short)]
+        #[arg(long, short, value_hint = ValueHint::AnyPath)]
         output: Option<PathBuf>,
 
         /// Workspace root directory used to resolve cross-node `[[id:...]]` links.
-        #[arg(long)]
+        #[arg(long, value_hint = ValueHint::DirPath)]
         workspace: Option<PathBuf>,
 
         /// Expand `#+INCLUDE:` directives before rendering Markdown.

@@ -9,7 +9,7 @@ pub(crate) mod query_agenda;
 
 use std::path::{Path, PathBuf};
 
-use clap::{Subcommand, ValueEnum};
+use clap::{Subcommand, ValueEnum, ValueHint};
 
 use org_tools_core::cache::{
     load_cached_fts_candidate_docs, load_docs_with_bodies, WorkspaceCache,
@@ -56,7 +56,7 @@ pub(crate) enum QueryCommand {
         /// Query expression (e.g., "todo:TODO tags:work").
         query: String,
         /// Files or directories to search.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
@@ -70,7 +70,7 @@ pub(crate) enum QueryCommand {
     /// Show blocked entries with dependency details.
     Blocked {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
@@ -82,7 +82,7 @@ pub(crate) enum QueryCommand {
     /// GTD next actions: actionable tasks grouped by context.
     Next {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Filter to a specific @context tag.
         #[arg(long)]
@@ -97,7 +97,7 @@ pub(crate) enum QueryCommand {
     /// GTD inbox: entries with TODO keywords but no tags and no planning dates.
     Inbox {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
@@ -109,7 +109,7 @@ pub(crate) enum QueryCommand {
     /// GTD waiting-for: entries in a waiting state.
     Waiting {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
@@ -121,7 +121,7 @@ pub(crate) enum QueryCommand {
     /// GTD stuck projects: projects with no actionable children.
     Stuck {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value = "human")]
@@ -133,7 +133,7 @@ pub(crate) enum QueryCommand {
     /// Show org-edna dependency graph.
     Deps {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Output format.
         #[arg(long, value_enum, default_value = "mermaid")]
@@ -145,7 +145,7 @@ pub(crate) enum QueryCommand {
     /// Render a tabular #+COLUMNS: / :COLUMNS: property view with parent rollups.
     Columns {
         /// Files or directories to scan.
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
         paths: Vec<PathBuf>,
         /// Optional locator scoping the column view to a specific subtree.
         #[arg(long)]

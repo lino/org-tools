@@ -8,7 +8,7 @@ use std::io::{IsTerminal, Read as _};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::planning::{set_planning_timestamp, PlanningKind};
@@ -46,7 +46,7 @@ pub(crate) struct PlanningArgs {
     pub(crate) query: Option<String>,
 
     /// Optional workspace directory for locator resolution and warm cache invalidation.
-    #[arg(long)]
+    #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
 
     /// Preview planning mutations without writing files.

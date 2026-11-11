@@ -8,7 +8,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::{Args, ValueEnum};
+use clap::{Args, ValueEnum, ValueHint};
 
 use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::config::Config;
@@ -57,7 +57,7 @@ pub(crate) enum AgendaOutputFormat {
 #[derive(Debug, Clone, Args)]
 pub(crate) struct AgendaArgs {
     /// Files or directories to scan.
-    #[arg(default_value = ".")]
+    #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
     pub(crate) paths: Vec<PathBuf>,
 
     /// Inclusive start date in `YYYY-MM-DD` format (defaults to local today).
@@ -81,7 +81,7 @@ pub(crate) struct AgendaArgs {
     pub(crate) format: AgendaOutputFormat,
 
     /// Optional output file path written atomically (defaults to stdout).
-    #[arg(long, short)]
+    #[arg(long, short, value_hint = ValueHint::FilePath)]
     pub(crate) output: Option<PathBuf>,
 }
 

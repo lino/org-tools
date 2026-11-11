@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use clap::Args;
+use clap::{Args, ValueHint};
 
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::{collect_org_files, write_file_atomic};
@@ -20,7 +20,7 @@ use crate::{EXIT_ERROR, EXIT_OK};
 #[derive(Args)]
 pub(crate) struct ArchiveArgs {
     /// Files or directories to scan.
-    #[arg(default_value = ".")]
+    #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
     pub(crate) paths: Vec<PathBuf>,
 
     /// Archive target (file::heading). Overrides #+ARCHIVE: setting.

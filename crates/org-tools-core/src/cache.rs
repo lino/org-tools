@@ -44,7 +44,8 @@ use roam::{
 };
 use schema::{
     build_cache_status, configure_connection, list_table_names, open_in_memory_configured,
-    query_table_counts, sidecar_path,
+    query_completion_headings, query_completion_ids, query_completion_todos,
+    query_distinct_json_tokens, query_table_counts, sidecar_path,
 };
 use sync::{
     apply_full_rebuild, collect_and_parse_all, invalidate_cached_paths, sync_discovered_files,
@@ -104,6 +105,46 @@ pub struct FtsHit {
     pub heading_line: usize,
     /// Positive BM25 relevance score (higher is more relevant).
     pub score: f64,
+}
+
+/// Cached `:ID:` node or entry record returned by [`WorkspaceCache::complete_ids`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedIdCandidate {
+    /// Node or entry `:ID:` string.
+    pub id: String,
+    /// Optional `:ID_SEED:` URN string.
+    pub id_seed: Option<String>,
+    /// Node or heading title.
+    pub title: String,
+    /// Workspace-relative `/` file path.
+    pub rel_path: String,
+    /// One-based line number (`1` for level-0 file nodes, heading line for entries).
+    pub line: usize,
+    /// Heading level (`0` for file nodes, `>= 1` for headings).
+    pub level: usize,
+    /// Optional TODO keyword on the heading.
+    pub todo_keyword: Option<String>,
+    /// Parsed `:ROAM_ALIASES:` list.
+    pub aliases: Vec<String>,
+    /// Whether the node carries `:ROAM_EXCLUDE: t`.
+    pub roam_excluded: bool,
+}
+
+/// Cached heading outline record returned by [`WorkspaceCache::complete_headings`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedHeadingCandidate {
+    /// Workspace-relative `/` file path.
+    pub rel_path: String,
+    /// One-based heading line number.
+    pub heading_line: usize,
+    /// Heading star level (`>= 1`).
+    pub level: usize,
+    /// Optional TODO keyword on the heading.
+    pub todo_keyword: Option<String>,
+    /// Clean heading title.
+    pub title: String,
+    /// Optional `:CUSTOM_ID:` property value.
+    pub custom_id: Option<String>,
 }
 
 /// Handle to an open SQLite WAL + FTS5 cache for a workspace root.
@@ -343,5 +384,42 @@ impl WorkspaceCache {
     /// Resolves relative file paths containing `:BLOCKER:` `ids(...)` targets referenced by `rel_paths`.
     pub fn blocker_target_rel_paths(&self, rel_paths: &[String]) -> Result<Vec<String>, String> {
         query_blocker_target_paths(&self.conn, rel_paths)
+    }
+
+    /// Queries `:ID:` completion candidates (including `:ROAM_EXCLUDE: t` entries) matching `query`.
+    pub fn complete_ids(&self, query: &str) -> Result<Vec<CachedIdCandidate>, String> {
+        query_completion_ids(&self.conn, query)
+    }
+
+    /// Queries heading outline and `:CUSTOM_ID:` candidates matching `query`.
+    pub fn complete_headings(&self, query: &str) -> Result<Vec<CachedHeadingCandidate>, String> {
+        query_completion_headings(&self.conn, query)
+    }
+
+    /// Queries distinct workspace `:tags:` and `#+FILETAGS:` matching case-insensitive `prefix`.
+    pub fn complete_tags(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let sql = "
+            SELECT filetags_json FROM files WHERE is_roam_dup = 0 AND filetags_json != '[]'
+            UNION ALL
+            SELECT h.tags_json FROM headings h JOIN files f ON f.rel_path = h.rel_path
+            WHERE f.is_roam_dup = 0 AND h.tags_json != '[]'
+        ";
+        query_distinct_json_tokens(&self.conn, sql, prefix, false)
+    }
+
+    /// Queries distinct uppercase property drawer keys matching case-insensitive `prefix`.
+    pub fn complete_property_keys(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let sql = "
+            SELECT file_prop_keys_json FROM files WHERE is_roam_dup = 0 AND file_prop_keys_json != '[]'
+            UNION ALL
+            SELECT h.prop_keys_json FROM headings h JOIN files f ON f.rel_path = h.rel_path
+            WHERE f.is_roam_dup = 0 AND h.prop_keys_json != '[]'
+        ";
+        query_distinct_json_tokens(&self.conn, sql, prefix, true)
+    }
+
+    /// Queries distinct `(active, done)` TODO keywords across all cached workspace files.
+    pub fn complete_todo_keywords(&self) -> Result<(Vec<String>, Vec<String>), String> {
+        query_completion_todos(&self.conn)
     }
 }

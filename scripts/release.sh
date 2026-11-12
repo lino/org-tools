@@ -277,7 +277,7 @@ execute_live_release() {
 
   git add "$ROOT_MANIFEST_REL_PATH" Cargo.lock "$CLI_MANIFEST_REL_PATH"
   git commit -m "chore: bump version to ${next_ver}"
-  git tag "v${next_ver}"
+  git tag -a "v${next_ver}" -m "Release v${next_ver}"
   git push "$GIT_REMOTE" "$GIT_BRANCH"
   git push "$GIT_REMOTE" "v${next_ver}"
   echo "Released v${next_ver} — GitHub Actions will build packages and run the crates.io gate."

@@ -13,6 +13,7 @@ use org_tools_core::document::OrgDocument;
 use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::source::SourceFile;
 
+use super::update::invalidate_warm_workspace_caches;
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{EXIT_ERROR, EXIT_OK};
 
@@ -179,6 +180,15 @@ pub(crate) fn run_archive(args: ArchiveArgs) -> i32 {
         process_archive_file(file, &args, &mut mutation);
     }
     mutation.finish(started, files.len());
+
+    if !args.dry_run && mutation.files_modified > 0 {
+        let modified: Vec<PathBuf> = mutation
+            .details
+            .iter()
+            .map(|d| PathBuf::from(&d.file))
+            .collect();
+        invalidate_warm_workspace_caches(None, &modified);
+    }
 
     if args.format == MutationOutputFormat::Json {
         output_mutation(&mutation, MutationOutputFormat::Json);

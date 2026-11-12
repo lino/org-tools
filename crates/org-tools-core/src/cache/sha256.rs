@@ -3,6 +3,8 @@
 
 //! Pure-Rust FIPS 180-4 SHA-256 hex digest helper for file content hashing.
 
+#![allow(dead_code)]
+
 /// Initial 256-bit hash state defined by NIST FIPS 180-4 Section 5.3.3.
 const INITIAL_STATE: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,

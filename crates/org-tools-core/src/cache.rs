@@ -8,6 +8,7 @@
 //! for `< 5 ms` warm `org roam`, `edna`, and BM25 `body:"..."` queries without
 //! reading or writing Emacs's `org-roam.db`.
 
+mod blake3;
 mod federated;
 mod fts;
 mod payload;
@@ -49,6 +50,7 @@ use schema::{
 };
 use sync::{
     apply_full_rebuild, collect_and_parse_all, invalidate_cached_paths, sync_discovered_files,
+    sync_specific_paths,
 };
 use walk::discover_org_files;
 
@@ -316,6 +318,21 @@ impl WorkspaceCache {
     /// Marks `paths` stale in `files` so the next `refresh()` re-hashes them regardless of `mtime`.
     pub fn invalidate_paths(&mut self, paths: &[PathBuf]) -> Result<(), String> {
         invalidate_cached_paths(&self.conn, &self.workspace_root, paths)
+    }
+
+    /// Incrementally updates `.cache/org-cache.db` for `written_paths` without walking the workspace.
+    pub fn sync_written_files(
+        workspace_root: &Path,
+        written_paths: &[PathBuf],
+    ) -> Result<bool, String> {
+        let norm_root = normalize_workspace_path(workspace_root);
+        let db_path = Self::resolve_db_path(&norm_root);
+        if !db_path.is_file() {
+            return Ok(false);
+        }
+        let mut cache = Self::open_rw_normalized(norm_root, db_path, false)?;
+        sync_specific_paths(&mut cache.conn, &cache.workspace_root, written_paths)?;
+        Ok(true)
     }
 
     /// Returns the workspace root directory bound to this cache handle.

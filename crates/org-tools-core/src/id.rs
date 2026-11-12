@@ -47,6 +47,11 @@ pub enum IdGenerator {
     Command(String),
 }
 
+/// Mints a random lowercase RFC 9562 UUIDv4 string.
+pub fn mint_random_uuid_v4() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 impl IdGenerator {
     /// Generate an ID for the given entry.
     pub fn generate(&self, info: &EntryInfo) -> Result<String, String> {

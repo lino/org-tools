@@ -3,12 +3,15 @@
 
 //! `org fmt` subcommand definitions and check/format execution handlers.
 
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use clap::{Subcommand, ValueHint};
 
+use org_tools_core::cache::WorkspaceCache;
 use org_tools_core::document::OrgDocument;
+use org_tools_core::export_md::normalize_workspace_path;
 use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
 use org_tools_core::runner::Runner;
@@ -62,9 +65,51 @@ pub(crate) fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
     }
 }
 
+/// Finds any ancestor directory of `file` containing `.cache/org-cache.db`.
+fn find_ancestor_with_cache(file: &Path) -> Option<PathBuf> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if WorkspaceCache::resolve_db_path(&cwd).is_file() {
+        return Some(normalize_workspace_path(&cwd));
+    }
+    let norm_file = normalize_workspace_path(file);
+    for ancestor in norm_file.ancestors().skip(1) {
+        if ancestor.as_os_str().is_empty() {
+            break;
+        }
+        if WorkspaceCache::resolve_db_path(ancestor).is_file() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
+}
+
+/// Synchronizes written files with any active ancestor `.cache/org-cache.db`.
+fn sync_fmt_written_files(files: &[PathBuf]) {
+    let mut roots = HashSet::new();
+    for file in files {
+        if let Some(r) = find_ancestor_with_cache(file) {
+            roots.insert(r);
+        }
+    }
+    for root in roots {
+        let _ = WorkspaceCache::sync_written_files(&root, files);
+    }
+}
+
 /// Parses all readable Org files in `files` into [`OrgDocument`]s for cross-file lints.
 fn parse_workspace_docs(files: &[PathBuf]) -> Vec<OrgDocument> {
-    files
+    let mut all_files = files.to_vec();
+    if let Some(first) = files.first() {
+        if let Some(ws) = find_ancestor_with_cache(first) {
+            let _ = WorkspaceCache::open_and_sync(&ws);
+            for f in collect_org_files(&[ws]) {
+                if !all_files.contains(&f) {
+                    all_files.push(f);
+                }
+            }
+        }
+    }
+    all_files
         .iter()
         .filter_map(|path| SourceFile::from_path(path).ok())
         .map(|src| OrgDocument::from_source(&src))
@@ -138,6 +183,7 @@ fn run_check_fix_files(files: &[PathBuf], format: OutputFormat, runner: &Runner)
         has_issues |= issues;
         has_io_error |= io_err;
     }
+    sync_fmt_written_files(files);
     if has_io_error {
         EXIT_ERROR
     } else if has_issues {
@@ -267,12 +313,19 @@ fn run_format(paths: &[PathBuf], check: bool, stdout: bool, runner: &Runner) -> 
     let mut has_changes = false;
     let mut has_lint_issues = false;
     let mut has_io_error = false;
+    let mut written = Vec::new();
     for file in &files {
         let (changed, lint, io_err) =
             format_single_file(file, check, stdout, runner, &workspace_docs);
         has_changes |= changed;
         has_lint_issues |= lint;
         has_io_error |= io_err;
+        if changed && !check && !stdout {
+            written.push(file.clone());
+        }
+    }
+    if !written.is_empty() {
+        sync_fmt_written_files(&written);
     }
     if has_io_error {
         EXIT_ERROR

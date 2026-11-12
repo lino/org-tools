@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Incremental `(mtime_ns, byte_len, sha256)` cursor diffing and SQLite synchronization.
+//! Incremental `(mtime_ns, byte_len, blake3)` cursor diffing and SQLite synchronization.
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -11,9 +11,9 @@ use std::time::Instant;
 
 use rusqlite::{params, Connection};
 
+use crate::cache::blake3::blake3_hex;
 use crate::cache::payload::{build_file_payload, commit_batch, FileTouch, ParsedFilePayload};
 use crate::cache::schema::clear_all_rows;
-use crate::cache::sha256::sha256_hex;
 use crate::cache::walk::{compute_canon_key, discover_org_files, DiskOrgFile};
 use crate::cache::CacheTelemetry;
 use crate::export_md::normalize_workspace_path;
@@ -152,7 +152,7 @@ fn load_stored_hashes(
     Ok(map)
 }
 
-/// Reads `df` bytes from `workspace_root` and computes its lowercase SHA-256 hex digest.
+/// Reads `df` bytes from `workspace_root` and computes its lowercase BLAKE3 hex digest.
 fn read_and_hash_disk_file(
     workspace_root: &Path,
     df: &DiskOrgFile,
@@ -160,7 +160,7 @@ fn read_and_hash_disk_file(
     let disk_path = join_slash_rel(workspace_root, &df.rel_path);
     let bytes =
         fs::read(&disk_path).map_err(|e| format!("error reading {}: {e}", disk_path.display()))?;
-    let hash = sha256_hex(&bytes);
+    let hash = blake3_hex(&bytes);
     Ok((bytes, hash))
 }
 
@@ -336,5 +336,54 @@ pub(crate) fn invalidate_cached_paths(
         stmt.execute(params![rel, canon])
             .map_err(|e| format!("failed to invalidate {}: {e}", path.display()))?;
     }
+    Ok(())
+}
+
+/// Incrementally updates SQLite rows for `paths` without rescanning the whole workspace.
+pub(crate) fn sync_specific_paths(
+    conn: &mut Connection,
+    workspace_root: &Path,
+    paths: &[PathBuf],
+) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut deleted = Vec::new();
+    let mut upserts = Vec::new();
+    let mut check_stmt = conn
+        .prepare_cached("SELECT 1 FROM files WHERE rel_path = ?1")
+        .map_err(|e| format!("failed to prepare file lookup: {e}"))?;
+
+    for path in paths {
+        let Some(rel_path) = slash_rel_under_workspace(workspace_root, path) else {
+            continue;
+        };
+        let disk_path = join_slash_rel(workspace_root, &rel_path);
+        let Ok(meta) = fs::symlink_metadata(&disk_path) else {
+            deleted.push(rel_path);
+            continue;
+        };
+
+        let is_symlink = meta.file_type().is_symlink();
+        let byte_len = meta.len() as i64;
+        let mtime_ns = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0);
+
+        let df = DiskOrgFile {
+            rel_path: rel_path.clone(),
+            mtime_ns,
+            byte_len,
+            is_symlink,
+        };
+        let (bytes, hash) = read_and_hash_disk_file(workspace_root, &df)?;
+        let existed = check_stmt.exists(params![&rel_path]).unwrap_or(false);
+        upserts.push(build_file_payload(workspace_root, df, bytes, hash, existed));
+    }
+    drop(check_stmt);
+    commit_batch(conn, &deleted, &[], &upserts)?;
     Ok(())
 }

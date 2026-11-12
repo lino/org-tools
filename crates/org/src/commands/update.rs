@@ -203,6 +203,7 @@ pub(crate) fn invalidate_warm_workspace_caches(
     }
     for ws_root in candidate_roots {
         if WorkspaceCache::resolve_db_path(&ws_root).is_file() {
+            let _ = WorkspaceCache::sync_written_files(&ws_root, modified_paths);
             if let Ok((mut cache, _)) = WorkspaceCache::open_and_sync(&ws_root) {
                 let _ = cache.invalidate_paths(modified_paths);
             }

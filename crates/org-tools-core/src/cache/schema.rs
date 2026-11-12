@@ -13,13 +13,14 @@ use rusqlite::Connection;
 use crate::cache::{CacheStatus, CacheTelemetry, CachedHeadingCandidate, CachedIdCandidate};
 
 /// Current schema version stored in SQLite `PRAGMA user_version`.
-pub(crate) const SCHEMA_USER_VERSION: i64 = 4;
+pub(crate) const SCHEMA_USER_VERSION: i64 = 5;
 
 /// Per-connection session pragmas applied on every open handle.
 const SESSION_PRAGMAS_SQL: &str = "
     PRAGMA foreign_keys = ON;
     PRAGMA synchronous = NORMAL;
     PRAGMA temp_store = MEMORY;
+    PRAGMA busy_timeout = 5000;
 ";
 
 /// Schema DDL creating all workspace cache tables and indexes.
@@ -103,7 +104,7 @@ const SCHEMA_DDL_SQL: &str = "
         body,
         tokenize = 'unicode61 remove_diacritics 0'
     );
-    PRAGMA user_version = 4;
+    PRAGMA user_version = 5;
     COMMIT;
 ";
 
@@ -132,15 +133,11 @@ pub(crate) fn configure_connection(conn: &Connection, force_ddl: bool) -> Result
         .map_err(|e| format!("failed to read SQLite user_version: {e}"))?;
 
     if version != 0 && version != SCHEMA_USER_VERSION {
-        conn.execute_batch(
-            "DROP TABLE IF EXISTS entries_fts;
-             DROP TABLE IF EXISTS headings;
-             DROP TABLE IF EXISTS nodes;
-             DROP TABLE IF EXISTS links;
-             DROP TABLE IF EXISTS edna_edges;
-             DROP TABLE IF EXISTS files;",
-        )
-        .map_err(|e| format!("failed to reset outdated workspace SQLite schema: {e}"))?;
+        let drop_sql = "DROP TABLE IF EXISTS entries_fts; DROP TABLE IF EXISTS headings; \
+             DROP TABLE IF EXISTS nodes; DROP TABLE IF EXISTS links; \
+             DROP TABLE IF EXISTS edna_edges; DROP TABLE IF EXISTS files;";
+        conn.execute_batch(drop_sql)
+            .map_err(|e| format!("failed to reset outdated workspace SQLite schema: {e}"))?;
     }
     if force_ddl || version != SCHEMA_USER_VERSION {
         conn.execute_batch(SCHEMA_DDL_SQL)

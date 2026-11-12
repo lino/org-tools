@@ -3,21 +3,31 @@
 
 //! `org update add-id` arguments, target resolution, and deterministic UUIDv5 / UUIDv4 minting.
 
-use std::collections::HashMap;
+mod file_drawer;
+mod opts;
+mod record;
+mod sync_cache;
+
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::Args;
-
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 use org_tools_core::id::{self, IdGenerator};
 use org_tools_core::locator::OrgLocator;
-use org_tools_core::property::{self, DeterministicIdConfig, DeterministicIdOptions};
+use org_tools_core::property::{self, DeterministicIdOptions};
 use org_tools_core::source::SourceFile;
 
+use self::file_drawer::apply_file_level_id;
+use self::opts::{build_deterministic_opts, build_id_generator, resolve_target_identity};
+pub(crate) use self::record::{
+    collect_heading_results, filter_max_level, AddIdOutput, AddIdRecord,
+};
+use self::sync_cache::sync_written_targets;
 use super::update::{resolve_single_target, FileEntryTargets};
-use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
+use super::{MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{EXIT_ERROR, EXIT_OK};
 
 // region CLI Types
@@ -28,6 +38,22 @@ pub(crate) struct AddIdArgs {
     /// Targets: file paths, directory paths, or org locator strings.
     pub(crate) targets: Vec<String>,
 
+    /// Target the level-0 file :PROPERTIES: drawer.
+    #[arg(long)]
+    pub(crate) file: bool,
+
+    /// Target headings within the specified files.
+    #[arg(long)]
+    pub(crate) headings: bool,
+
+    /// Maximum heading level to receive an ID when targeting headings.
+    #[arg(long)]
+    pub(crate) max_level: Option<usize>,
+
+    /// Explicit target locator string.
+    #[arg(long)]
+    pub(crate) locator: Option<String>,
+
     /// Include descendant entries when targeting via locator.
     #[arg(long, short)]
     pub(crate) recursive: bool,
@@ -37,16 +63,24 @@ pub(crate) struct AddIdArgs {
     pub(crate) dry_run: bool,
 
     /// Generate IDs from a template with {placeholders}.
-    #[arg(long, conflicts_with_all = ["id_command", "deterministic"])]
+    #[arg(long, conflicts_with_all = ["id_command", "deterministic", "uuidv5_seed"])]
     pub(crate) id_format: Option<String>,
 
     /// Pipe entry metadata (JSON) to a command that outputs the ID.
-    #[arg(long, conflicts_with_all = ["id_format", "deterministic"])]
+    #[arg(long, conflicts_with_all = ["id_format", "deterministic", "uuidv5_seed"])]
     pub(crate) id_command: Option<String>,
 
     /// Mint deterministic RFC 9562 UUIDv5 `:ID:` and `:ID_SEED:` properties.
     #[arg(long)]
     pub(crate) deterministic: bool,
+
+    /// Deterministic seed URN for RFC 9562 UUIDv5 generation.
+    #[arg(long)]
+    pub(crate) uuidv5_seed: Option<String>,
+
+    /// Write `:ID_SEED: <URN>` alongside deterministic `:ID:` properties.
+    #[arg(long)]
+    pub(crate) write_seed: bool,
 
     /// Root namespace UUID override for deterministic UUIDv5 minting.
     #[arg(long)]
@@ -138,72 +172,9 @@ fn resolve_add_id_targets(targets: &[String], recursive: bool) -> Result<FileEnt
 
 // endregion
 
-// region ID Minting & File Mutation
+// region File Processing
 
-/// Builds per-entry [`MutationDetail`] records by comparing pre/post `:ID:` properties.
-fn collect_added_id_details(
-    file: &Path,
-    before: &OrgDocument,
-    after_content: &str,
-) -> Vec<MutationDetail> {
-    let after_source = SourceFile::new(file, after_content.to_string());
-    let after_doc = OrgDocument::from_source(&after_source);
-    let file_str = file.display().to_string();
-
-    after_doc
-        .entries
-        .iter()
-        .enumerate()
-        .filter(|(idx, entry)| {
-            entry.properties.contains_key("ID")
-                && before
-                    .entries
-                    .get(*idx)
-                    .is_some_and(|prev| !prev.properties.contains_key("ID"))
-        })
-        .map(|(_, entry)| MutationDetail {
-            file: file_str.clone(),
-            line: entry.heading_line,
-            action: "added-id".to_string(),
-            detail: entry.properties.get("ID").cloned(),
-        })
-        .collect()
-}
-
-/// Applies either deterministic UUIDv5 or classic `:ID:` minting to one document.
-fn apply_file_add_ids(
-    source: &SourceFile,
-    doc: &OrgDocument,
-    indices: Option<&[usize]>,
-    generator: &IdGenerator,
-    det_opts: Option<&DeterministicIdOptions>,
-) -> Result<Option<(String, Vec<MutationDetail>)>, String> {
-    if let Some(opts) = det_opts {
-        let Some(res) = property::add_deterministic_ids(source, doc, indices, opts)? else {
-            return Ok(None);
-        };
-        let file_str = source.path.display().to_string();
-        let details = res
-            .entries
-            .into_iter()
-            .map(|entry| MutationDetail {
-                file: file_str.clone(),
-                line: entry.line,
-                action: "added-id".to_string(),
-                detail: Some(format!("{} ({})", entry.id, entry.seed)),
-            })
-            .collect();
-        return Ok(Some((res.content, details)));
-    }
-
-    let Some(res) = id::add_ids(source, doc, indices, generator)? else {
-        return Ok(None);
-    };
-    let details = collect_added_id_details(&source.path, doc, &res.content);
-    Ok(Some((res.content, details)))
-}
-
-/// Prints the human-mode per-file summary for `org update add-id`.
+/// Prints human-mode per-file summary for `org update add-id`.
 fn emit_add_id_file_human(file: &Path, count: usize, dry_run: bool) {
     let suffix = if count == 1 { "" } else { "s" };
     if dry_run {
@@ -213,93 +184,168 @@ fn emit_add_id_file_human(file: &Path, count: usize, dry_run: bool) {
     }
 }
 
-/// Processes `add-id` mutations for a single target file and updates `mutation`.
-fn process_add_id_file(
+/// Applies file-level `:ID:` insertion when `--file` is configured or file has no headings.
+#[allow(clippy::too_many_arguments)]
+fn process_file_level(
     file: &Path,
-    indices: Option<&[usize]>,
+    source: &SourceFile,
+    doc: &OrgDocument,
+    current_content: &mut String,
+    args: &AddIdArgs,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AddIdRecord>,
+    mutation: &mut MutationResult,
+) -> bool {
+    let do_file = args.file || (args.locator.is_some() && doc.entries.is_empty());
+    if !do_file {
+        return false;
+    }
+    let Ok((id, seed)) = resolve_target_identity(args, seen) else {
+        return false;
+    };
+    let (new_c, rec) = apply_file_level_id(source, doc, &id, seed.as_deref());
+    let mut modified = false;
+    if rec.created {
+        modified = true;
+        mutation.details.push(MutationDetail {
+            file: file.display().to_string(),
+            line: rec.line,
+            action: "added-id".to_string(),
+            detail: Some(rec.id.clone()),
+        });
+    }
+    *current_content = new_c;
+    records.push(rec);
+    modified
+}
+
+/// Applies heading `:ID:` insertion across filtered heading indices.
+#[allow(clippy::too_many_arguments)]
+fn process_heading_level(
+    file: &Path,
+    doc: &OrgDocument,
+    raw_indices: Option<&[usize]>,
+    current_content: &mut String,
     args: &AddIdArgs,
     generator: &IdGenerator,
     det_opts: Option<&DeterministicIdOptions>,
-    mutation: &mut MutationResult,
-) {
-    let source = match SourceFile::from_path(file) {
-        Ok(s) => s,
-        Err(e) => {
-            let msg = format!("error reading {}: {e}", file.display());
-            eprintln!("org: {msg}");
-            mutation.errors.push(msg);
-            return;
-        }
-    };
-    let doc = OrgDocument::from_source(&source);
-    let applied = match apply_file_add_ids(&source, &doc, indices, generator, det_opts) {
-        Ok(Some(pair)) => pair,
-        Ok(None) => return,
-        Err(e) => {
-            let msg = format!("error processing {}: {e}", file.display());
-            eprintln!("org: {msg}");
-            mutation.errors.push(msg);
-            return;
-        }
-    };
-
-    let (new_content, details) = applied;
-    let added_count = details.len();
-    if !args.dry_run {
-        if let Err(e) = org_tools_core::files::write_file_atomic(file, &new_content) {
-            let msg = format!("error writing {}: {e}", file.display());
-            eprintln!("org: {msg}");
-            mutation.errors.push(msg);
-            return;
-        }
+    records: &mut Vec<AddIdRecord>,
+    details: &mut Vec<MutationDetail>,
+) -> bool {
+    let do_headings = args.headings || (!args.file && args.locator.is_none());
+    if !do_headings || doc.entries.is_empty() {
+        return false;
     }
+    let all_indices: Vec<usize> = (0..doc.entries.len()).collect();
+    let target_indices = raw_indices.unwrap_or(&all_indices);
+    let filtered = filter_max_level(doc, target_indices, args.max_level);
 
-    mutation.files_modified += 1;
-    mutation.entries_affected += added_count;
-    mutation.details.extend(details);
-    if args.format == MutationOutputFormat::Human {
-        emit_add_id_file_human(file, added_count, args.dry_run);
-    }
-}
-
-/// Selects the classic [`IdGenerator`] configured on [`AddIdArgs`].
-fn build_id_generator(args: &AddIdArgs) -> IdGenerator {
-    if let Some(ref tpl) = args.id_format {
-        IdGenerator::Template(tpl.clone())
-    } else if let Some(ref cmd) = args.id_command {
-        IdGenerator::Command(cmd.clone())
+    let cur_source = SourceFile::new(file, current_content.clone());
+    let cur_doc = OrgDocument::from_source(&cur_source);
+    let heading_res = if let Some(opts) = det_opts {
+        property::add_deterministic_ids(&cur_source, &cur_doc, Some(&filtered), opts)
+            .ok()
+            .flatten()
+            .map(|r| r.content)
     } else {
-        IdGenerator::Uuid
+        id::add_ids(&cur_source, &cur_doc, Some(&filtered), generator)
+            .ok()
+            .flatten()
+            .map(|r| r.content)
+    };
+
+    if let Some(new_heading_c) = heading_res {
+        collect_heading_results(file, &cur_doc, &new_heading_c, records, details);
+        *current_content = new_heading_c;
+        return true;
     }
+    false
 }
 
-/// Resolves optional [`DeterministicIdOptions`] from [`AddIdArgs`].
-fn build_deterministic_opts(args: &AddIdArgs) -> Result<Option<DeterministicIdOptions>, i32> {
-    if !args.deterministic {
-        return Ok(None);
+/// Processes file-level and heading `add-id` mutations for a single file.
+#[allow(clippy::too_many_arguments)]
+fn process_file(
+    file: &Path,
+    raw_indices: Option<&[usize]>,
+    args: &AddIdArgs,
+    generator: &IdGenerator,
+    det_opts: Option<&DeterministicIdOptions>,
+    seen: &mut HashSet<String>,
+    records: &mut Vec<AddIdRecord>,
+    mutation: &mut MutationResult,
+) -> Option<PathBuf> {
+    let source = SourceFile::from_path(file).ok()?;
+    let doc = OrgDocument::from_source(&source);
+    let mut current_content = source.content.clone();
+    let initial_details = mutation.details.len();
+
+    let f_mod = process_file_level(
+        file,
+        &source,
+        &doc,
+        &mut current_content,
+        args,
+        seen,
+        records,
+        mutation,
+    );
+    let h_mod = process_heading_level(
+        file,
+        &doc,
+        raw_indices,
+        &mut current_content,
+        args,
+        generator,
+        det_opts,
+        records,
+        &mut mutation.details,
+    );
+    let modified = f_mod || h_mod;
+    let file_affected = mutation.details.len() - initial_details;
+    mutation.entries_affected += file_affected;
+
+    if file_affected > 0 && args.format == MutationOutputFormat::Human {
+        emit_add_id_file_human(file, file_affected, args.dry_run);
     }
-    let cfg = DeterministicIdConfig::resolve(args.namespace.as_deref(), args.urn_prefix.as_deref())
-        .map_err(|e| {
-            eprintln!("org: {e}");
-            EXIT_ERROR
-        })?;
-    Ok(Some(DeterministicIdOptions {
-        config: cfg,
-        explicit_seed: args.seed.clone(),
-        scope: args.scope.clone(),
-        kind: args.kind.clone(),
-        author: args.author.clone(),
-    }))
+
+    if modified {
+        if !args.dry_run {
+            let _ = org_tools_core::files::write_file_atomic(file, &current_content);
+        }
+        mutation.files_modified += 1;
+        return Some(file.to_path_buf());
+    }
+    None
 }
 
 // endregion
 
-// region Entrypoint
+// region Output Rendering & Entrypoint
+
+/// Renders JSON output for `org update add-id`.
+fn emit_json_output(mutation: MutationResult, cache_synced: bool, records: Vec<AddIdRecord>) {
+    let out = AddIdOutput {
+        command: "add-id".to_string(),
+        files_modified: mutation.files_modified,
+        entries_affected: mutation.entries_affected,
+        dry_run: mutation.dry_run,
+        details: mutation.details,
+        errors: mutation.errors,
+        telemetry: mutation.telemetry,
+        cache_synced,
+        records,
+    };
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+}
 
 /// Runs `org update add-id`.
 pub(crate) fn run_add_id(args: AddIdArgs) -> i32 {
     let started = Instant::now();
-    if args.targets.is_empty() {
+    let mut targets = args.targets.clone();
+    if let Some(ref loc) = args.locator {
+        targets.push(loc.clone());
+    }
+    if targets.is_empty() {
         eprintln!("org: no targets specified");
         return EXIT_ERROR;
     }
@@ -309,30 +355,50 @@ pub(crate) fn run_add_id(args: AddIdArgs) -> i32 {
         Err(code) => return code,
     };
     let generator = build_id_generator(&args);
-    let file_list = match resolve_add_id_targets(&args.targets, args.recursive) {
+    let file_list = match resolve_add_id_targets(&targets, args.recursive) {
         Ok(list) => list,
         Err(code) => return code,
     };
 
     let mut mutation = MutationResult::new("add-id", args.dry_run);
+    let mut records = Vec::new();
+    let mut seen_ids = HashSet::new();
+    let mut modified_paths = Vec::new();
+
     for (file, indices) in &file_list {
-        process_add_id_file(
+        if let Some(modified) = process_file(
             file,
             indices.as_deref(),
             &args,
             &generator,
             det_opts.as_ref(),
+            &mut seen_ids,
+            &mut records,
             &mut mutation,
-        );
+        ) {
+            modified_paths.push(modified);
+        }
     }
     mutation.finish(started, file_list.len());
 
+    let cache_synced = if !args.dry_run && !modified_paths.is_empty() {
+        sync_written_targets(&modified_paths)
+    } else {
+        false
+    };
+
+    for r in &mut records {
+        r.cache_synced = cache_synced;
+    }
+
+    let has_errors = !mutation.errors.is_empty();
     if args.format == MutationOutputFormat::Json {
-        output_mutation(&mutation, MutationOutputFormat::Json);
+        emit_json_output(mutation, cache_synced, records);
     } else if mutation.entries_affected == 0 && !args.dry_run && mutation.errors.is_empty() {
         println!("All entries already have IDs");
     }
-    if !mutation.errors.is_empty() {
+
+    if has_errors {
         return EXIT_ERROR;
     }
     EXIT_OK

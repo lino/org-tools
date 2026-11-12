@@ -103,8 +103,15 @@ pub fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
 
+    let normalized;
+    let bytes = if content.contains('\r') {
+        normalized = content.replace("\r\n", "\n").replace('\r', "\n");
+        normalized.as_bytes()
+    } else {
+        content.as_bytes()
+    };
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-    temp.write_all(content.as_bytes())?;
+    temp.write_all(bytes)?;
     temp.as_file().sync_all()?;
 
     if let Ok(metadata) = std::fs::metadata(&target) {

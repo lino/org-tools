@@ -18,8 +18,13 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
-    /// Creates a new source file from a path and content string.
+    /// Creates a new source file from a path and content string, normalizing CRLF/CR to LF.
     pub fn new(path: impl Into<PathBuf>, content: String) -> Self {
+        let content = if content.contains('\r') {
+            content.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            content
+        };
         let line_starts = Self::compute_line_starts(&content);
         Self {
             path: path.into(),

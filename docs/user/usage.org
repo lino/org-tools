@@ -539,6 +539,38 @@ Every heading in an org file can be addressed by an OrgLocator string:
 
 The =::= separator mirrors org-mode's own link syntax.
 
+* GTD Action Navigator (=org next=)
+
+Answer "what should I work on next?" across one or more =org-roam= vaults.
+Filters by context, owning project, effort, energy level, priority, and planning
+status without requiring an Emacs session.
+
+#+begin_src sh
+org next [OPTIONS] [PATHS...]
+#+end_src
+
+| Option                    | Description                                                    |
+|---------------------------+----------------------------------------------------------------|
+| =--roam-dir <DIR>=        | Named =[roam.directories]= vault or directory path selector    |
+| =--project <PROJECT>, -p= | Filter by owning GTD project title, =:ID:=, or alias           |
+| =--context <CONTEXT>, -c= | Filter by =@context= tag or =:CONTEXT:= property               |
+| =--max-effort <DURATION>= | Maximum estimated effort (e.g. =1:00=, =45m=, or minutes)      |
+| =--min-effort <DURATION>= | Minimum estimated effort                                       |
+| =--energy <LEVEL>, -e=    | Filter by =:ENERGY:= level (=low=, =medium=, =high=)           |
+| =--workmode <MODE>, -w=   | Filter by =:WORKMODE:= (=deep=, =shallow=, =any=)              |
+| =--priority <PRIORITY>=   | Priority cookie filter (=A=, =B=, =C=, or =>=B=)               |
+| =--pick=                  | Recommend the single highest-ranked next action                |
+| =--format <FORMAT>=       | Output format (=human=, =json=, or =locator=)                  |
+| =--group-by <DIM>=        | Grouping dimension (=context=, =project=, =vault=, =priority=) |
+
+#+begin_src sh
+# Pick the highest-priority action for the office taking at most 1 hour
+org next --roam-dir work --context @office --max-effort 1:00 --pick
+
+# Output actionable locators for a specific project
+org next --project "Q3 Infrastructure" --format locator
+#+end_src
+
 * Update (=org update=)
 
 ** =org update add-id=
@@ -550,21 +582,43 @@ directories, or OrgLocator strings.
 org update add-id [OPTIONS] <TARGETS>...
 #+end_src
 
-| Option               | Description                                                 |
-|----------------------+-------------------------------------------------------------|
-| =--recursive, -r=    | Include descendant entries when targeting via locator       |
-| =--dry-run=          | Print what would be changed without writing files           |
-| =--format human=     | Human-readable output (default)                             |
-| =--format json=      | JSON output (see =schemas/org-mutation-output.schema.json=) |
-| =--id-format <TMPL>= | Generate IDs from a template with ={placeholders}=          |
-| =--id-command <CMD>= | Pipe entry metadata (JSON) to a command that outputs the ID |
-| =--deterministic=    | Mint deterministic RFC 9562 UUIDv5 =:ID:= and =:ID_SEED:=   |
-| =--namespace <UUID>= | Root namespace UUID override for deterministic minting      |
-| =--urn-prefix <PRE>= | URN prefix override for deterministic seed derivation       |
-| =--seed <URN>=       | Explicit deterministic seed URN override                    |
-| =--scope <SLUG>=     | Scope slug for deterministic seed derivation                |
-| =--kind <KIND>=      | Artifact kind for deterministic seed derivation             |
-| =--author <HANDLE>=  | Optional author handle for deterministic seed derivation    |
+| Option                 | Description                                                 |
+|------------------------+-------------------------------------------------------------|
+| =--file=               | Target level-0 file =:PROPERTIES:= drawer                   |
+| =--headings=           | Target outline headings within target files                 |
+| =--max-level <N>=      | Maximum heading outline level to receive an =:ID:=          |
+| =--locator <LOCATOR>=  | Explicit target =OrgLocator= string                         |
+| =--recursive, -r=      | Include descendant entries when targeting via locator       |
+| =--dry-run=            | Print what would be changed without writing files           |
+| =--format human=       | Human-readable output (default)                             |
+| =--format json=        | JSON output (see =schemas/org-mutation-output.schema.json=) |
+| =--id-format <TMPL>=   | Generate IDs from a template with ={placeholders}=          |
+| =--id-command <CMD>=   | Pipe entry metadata (JSON) to a command that outputs the ID |
+| =--deterministic=      | Mint deterministic RFC 9562 UUIDv5 =:ID:= and =:ID_SEED:=   |
+| =--uuidv5-seed <SEED>= | Explicit seed URN for deterministic UUIDv5 generation       |
+| =--write-seed=         | Write =:ID_SEED:= property alongside deterministic =:ID:=   |
+| =--namespace <UUID>=   | Root namespace UUID override for deterministic minting      |
+| =--urn-prefix <PRE>=   | URN prefix override for deterministic seed derivation       |
+| =--seed <URN>=         | Explicit deterministic seed URN override                    |
+| =--scope <SLUG>=       | Scope slug for deterministic seed derivation                |
+| =--kind <KIND>=        | Artifact kind for deterministic seed derivation             |
+| =--author <HANDLE>=    | Optional author handle for deterministic seed derivation    |
+
+** =org update link=
+
+Insert an idempotent outbound link to another entry or file node.
+
+#+begin_src sh
+org update link [OPTIONS] --to <TO> <LOCATOR>
+#+end_src
+
+| Option              | Description                                       |
+|---------------------+---------------------------------------------------|
+| =--to <TO>=         | Target destination ID or locator string           |
+| =--section <NAME>=  | Section heading to insert under (e.g. "See Also") |
+| =--label <LABEL>=   | Link label or description override                |
+| =--workspace <DIR>= | Workspace root directory for locator resolution   |
+| =--dry-run=         | Preview link insertion without modifying files    |
 
 The =--id-format= template supports these placeholders: ={uuid}=, ={uuid_short}=,
 ={file_stem}=, ={title_slug}=, ={level}=, ={index}=, ={ts}=.
@@ -1019,21 +1073,29 @@ org export md --workspace ~/org/ --output build/docs ~/org/specs/
 * Roam (=org roam=)
 
 Inspect =org-roam= v2 file and heading nodes, incoming backlinks, outgoing
-=[[id:...]]= links, and workspace graphs without requiring Emacs.
+=[[id:...]]= links, templates, and workspace graphs without requiring Emacs.
 
 #+begin_src sh
 org roam node [OPTIONS] <QUERY> [PATHS...]
 org roam backlinks [OPTIONS] <TARGET> [PATHS...]
 org roam links [OPTIONS] <SOURCE> [PATHS...]
 org roam graph [OPTIONS] [PATHS...]
+org roam capture [OPTIONS] [TITLE]
+org roam gtd inbox [OPTIONS] <TITLE>
+org roam gtd project [OPTIONS] <TITLE>
+org roam sync-agenda-tags [OPTIONS] [PATHS...]
 #+end_src
 
-| Subcommand  | Options                                                      | Description                                       |
-|-------------+--------------------------------------------------------------+---------------------------------------------------|
-| =node=      | =--workspace <DIR>=, =--format human\vert{}json=             | Resolve node by =id:<uuid>=, =:ID:=, title, alias |
-| =backlinks= | =--workspace <DIR>=, =--format human\vert{}json=             | List incoming =id:<uuid>= backlinks to =<TARGET>= |
-| =links=     | =--workspace <DIR>=, =--format human\vert{}json=             | List outgoing =id:<uuid>= links from =<SOURCE>=   |
-| =graph=     | =--workspace <DIR>=, =--format json\vert{}mermaid\vert{}dot= | Export workspace =org-roam= node and link graph   |
+| Subcommand         | Options                                                      | Description                                       |
+|--------------------+--------------------------------------------------------------+---------------------------------------------------|
+| =node=             | =--workspace <DIR>=, =--format human\vert{}json=             | Resolve node by =id:<uuid>=, =:ID:=, title, alias |
+| =backlinks=        | =--workspace <DIR>=, =--format human\vert{}json=             | List incoming =id:<uuid>= backlinks to =<TARGET>= |
+| =links=            | =--workspace <DIR>=, =--format human\vert{}json=             | List outgoing =id:<uuid>= links from =<SOURCE>=   |
+| =graph=            | =--workspace <DIR>=, =--format json\vert{}mermaid\vert{}dot= | Export workspace =org-roam= node and link graph   |
+| =capture=          | =--template <T>=, =--type <TYPE>=, =--list-templates=        | Capture a permanent note via template             |
+| =gtd inbox=        | =--roam-dir <DIR>=, =--context <C>=, =--effort <E>=          | Append unclarified task to =inbox.org=            |
+| =gtd project=      | =--roam-dir <DIR>=, =--slug <SLUG>=                          | Scaffold a new GTD project node                   |
+| =sync-agenda-tags= | =--roam-dir <DIR>=, =--dry-run=                              | Sync =:agenda:= filetags for files with TODOs     |
 
 #+begin_src sh
 # Resolve a node by title or :ROAM_ALIASES: token
@@ -1044,6 +1106,44 @@ org roam backlinks id:550e8400-e29b-41d4-a716-446655440000 --format json ~/org/
 
 # Render a Mermaid graph of workspace roam links
 org roam graph --format mermaid ~/org/
+
+# Capture a new concept note with Folgezettel parent linking
+org roam capture "Atomic Note Structure" --parent "Slip-Box" --type concept
+#+end_src
+
+* Fleeting Notes (=org fleeting=)
+
+Manage a Luhmann-style fleeting note queue. Quickly capture ephemeral thoughts,
+inspect pending queues, and reform them into permanent Zettelkasten concept notes
+or actionable GTD inbox tasks.
+
+#+begin_src sh
+org fleeting capture [OPTIONS] <TEXT>
+org fleeting list [OPTIONS] [PATHS...]
+org fleeting to-zettel [OPTIONS] <TARGET>
+org fleeting to-task [OPTIONS] <TARGET>
+org fleeting discard [OPTIONS] <TARGET>
+org fleeting process [OPTIONS]
+#+end_src
+
+| Subcommand  | Options                                              | Description                                      |
+|-------------+------------------------------------------------------+--------------------------------------------------|
+| =capture=   | =--medium <M>=, =--location <L>=, =--roam-dir <DIR>= | Capture raw fleeting thought with source context |
+| =list=      | =--status <unrefined\vert{}reformed\vert{}all>=      | List fleeting notes by lifecycle status          |
+| =to-zettel= | =--title <T>=, =--parent <P>=, =--slug <S>=          | Reform a fleeting note into a permanent Zettel   |
+| =to-task=   | =--context <C>=, =--effort <E>=, =--roam-dir <DIR>=  | Convert a fleeting note into an actionable task  |
+| =discard=   | =--roam-dir <DIR>=                                   | Retire or remove an unneeded fleeting note       |
+| =process=   | =--roam-dir <DIR>=                                   | Interactively review and process pending queue   |
+
+#+begin_src sh
+# Capture a fleeting quote from a book
+org fleeting capture "Notes are thinking tools" --medium "Smart Notes" --location "p. 15"
+
+# List unrefined fleeting notes
+org fleeting list --status unrefined
+
+# Convert fleeting note #1 to a permanent concept note
+org fleeting to-zettel 1 --title "Notes as Thinking Tools" --parent "Zettelkasten"
 #+end_src
 
 * Show (=org show=)
@@ -1161,18 +1261,24 @@ Every =tools/call= response returns standard MCP =CallToolResult= (=content=,
 =structuredContent=, =isError=) with structured =telemetry= (=duration_us=,
 =files_scanned=, =cache_hits=, =cache_misses=):
 
-| Tool                  | Required Args      | Optional Args                                                              | Purpose                                                      |
-|-----------------------+--------------------+----------------------------------------------------------------------------+--------------------------------------------------------------|
-| =org_roam_node=       | =query=            | =workspace=                                                                | Resolve =org-roam= v2 nodes by ID, title, or alias           |
-| =org_roam_backlinks=  | =target=           | =workspace=                                                                | List incoming =id:<uuid>= backlinks to a target node         |
-| =org_roam_search=     | =query=            | =limit=, =workspace=                                                       | Run structured query or FTS5 BM25 =body:= search             |
-| =org_query_next=      | /(none)/           | =context=, =limit=, =workspace=                                            | List actionable GTD next actions (with optional =@context=)  |
-| =org_query_blocked=   | /(none)/           | =limit=, =workspace=                                                       | List org-edna =:BLOCKER:= blocked tasks and blocking entries |
-| =org_query_agenda=    | /(none)/           | =path=, =from=, =days=, =warning_days=, =composite=, =format=, =workspace= | Project multi-day agenda timeline and optional GTD sections  |
-| =org_show=            | =locator=          | =format=, =no_children=, =max_chars=, =workspace=                          | Extract bounded single-node slice (=json=, =org=, or =md=)   |
-| =org_update_state=    | =locator=, =state= | =dry_run=, =workspace=                                                     | Transition TODO state with =:TRIGGER:= cascades & cache sync |
-| =org_update_planning= | =kind=             | =locator=, =targets=, =value=, =clear=, =dry_run=, =workspace=             | Set, shift, or clear =SCHEDULED= / =DEADLINE= & sync cache   |
-| =org_fmt_file=        | =path=             | =check_only=, =workspace=                                                  | Check or format a workspace =.org= file & refresh warm cache |
+| Tool                     | Required Args      | Optional Args                                                              | Purpose                                                       |
+|--------------------------+--------------------+----------------------------------------------------------------------------+---------------------------------------------------------------|
+| =org_roam_node=          | =query=            | =workspace=                                                                | Resolve =org-roam= v2 nodes by ID, title, or alias            |
+| =org_roam_backlinks=     | =target=           | =workspace=                                                                | List incoming =id:<uuid>= backlinks to a target node          |
+| =org_roam_search=        | =query=            | =limit=, =workspace=                                                       | Run structured query or FTS5 BM25 =body:= search              |
+| =org_roam_capture=       | =title=            | =type=, =template=, =body=, =parent=, =roam_dir=, =workspace=              | Capture a structured note via template into an org-roam vault |
+| =org_fleeting_list=      | /(none)/           | =status=, =roam_dir=, =workspace=                                          | List pending or refined Luhmann fleeting notes                |
+| =org_fleeting_transform= | =target=, =action= | =title=, =parent=, =context=, =effort=, =roam_dir=, =workspace=            | Reform a fleeting note into a Zettel or GTD task              |
+| =org_query_next=         | /(none)/           | =context=, =limit=, =roam_dir=, =workspace=                                | List actionable GTD next actions (with optional =@context=)   |
+| =org_query_blocked=      | /(none)/           | =limit=, =workspace=                                                       | List org-edna =:BLOCKER:= blocked tasks and blocking entries  |
+| =org_query_agenda=       | /(none)/           | =path=, =from=, =days=, =warning_days=, =composite=, =format=, =workspace= | Project multi-day agenda timeline and optional GTD sections   |
+| =org_show=               | =locator=          | =format=, =no_children=, =max_chars=, =workspace=                          | Extract bounded single-node slice (=json=, =org=, or =md=)    |
+| =org_update_state=       | =locator=, =state= | =dry_run=, =workspace=                                                     | Transition TODO state with =:TRIGGER:= cascades & cache sync  |
+| =org_update_planning=    | =kind=             | =locator=, =targets=, =value=, =clear=, =dry_run=, =workspace=             | Set, shift, or clear =SCHEDULED= / =DEADLINE= & sync cache    |
+| =org_clock_in=           | =locator=          | =start_time=, =dry_run=, =workspace=                                       | Start an active clock inside the target entry logbook         |
+| =org_clock_out=          | /(none)/           | =stop_time=, =locator=, =dry_run=, =workspace=                             | Clock out of running entries and record duration delta        |
+| =org_refile=             | =source=, =target= | =as_sibling=, =copy=, =dry_run=, =workspace=                               | Move or copy a heading subtree to a destination outline       |
+| =org_fmt_file=           | =path=             | =check_only=, =workspace=                                                  | Check or format a workspace =.org= file & refresh warm cache  |
 
 * Language Server Protocol (=org lsp=)
 

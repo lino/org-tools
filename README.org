@@ -96,12 +96,33 @@ When an entry has an =:ID:= property, that is always preferred.
 - *Calendar export* (=org export ical=, =org export jscal=): RFC 5545 iCalendar
   and RFC 8984 JSCalendar with date range and tag filtering
 
+** GTD Navigator & Action Inbox (=org next=, =org roam gtd=)
+
+- *Action navigator* (=org next=): find immediate unblocked next actions
+  filtered by context, effort, energy, workmode, and project across vaults
+- *GTD captures* (=org roam gtd inbox=, =org roam gtd project=): capture raw
+  inbox tasks and scaffold project outlines without Emacs
+- *Agenda synchronization* (=org roam sync-agenda-tags=): synchronize =:agenda:=
+  filetags across vaults containing active TODO tasks
+
+** Zettelkasten & Fleeting Notes (=org fleeting=, =org roam=)
+
+- *Luhmann fleeting queue* (=org fleeting=): capture thoughts with source medium
+  and location, list pending queues, reform into permanent concept notes,
+  convert to tasks, discard, or interactively process
+- *Atomic note capture* (=org roam capture=): create permanent notes via
+  templates with automatic Folgezettel parent links and slug naming
+- *Backlinks & graphs* (=org roam node=, =backlinks=, =links=, =graph=): query
+  incoming links and export knowledge graph structures in Mermaid or JSON
+
 ** MCP Server & Workspace Cache (=org mcp=, =org cache=)
 
-- Built-in zero-Emacs JSON-RPC 2.0 =stdio= server exposing 10 workspace-confined tools:
-  =org_roam_node=, =org_roam_backlinks=, =org_roam_search=, =org_query_next=,
+- Built-in zero-Emacs JSON-RPC 2.0 =stdio= server exposing 16 workspace-confined tools:
+  =org_roam_node=, =org_roam_backlinks=, =org_roam_search=, =org_roam_capture=,
+  =org_fleeting_list=, =org_fleeting_transform=, =org_query_next=,
   =org_query_blocked=, =org_query_agenda=, =org_show=, =org_update_state=,
-  =org_update_planning=, and =org_fmt_file=
+  =org_update_planning=, =org_clock_in=, =org_clock_out=, =org_refile=, and
+  =org_fmt_file=
 - Incremental SQLite WAL + FTS5 cache (=.cache/org-cache.db=) with warm telemetry
 
 ** Language Server Protocol (=org lsp=)
@@ -132,6 +153,13 @@ org fmt format file.org
 
 # Query entries
 org query search 'todo:TODO tags:work' ~/org/
+
+# Find immediate next action
+org next --context @office --max-effort 1:00 --pick
+
+# Capture fleeting thought and create permanent concept note
+org fleeting capture "Atomic concept notes link by ID" --medium "Smart Notes"
+org roam capture "Knowledge Architecture" --parent "Slip-Box"
 
 # Agenda view and Zensical Markdown export
 org query agenda ~/org/

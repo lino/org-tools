@@ -33,10 +33,15 @@ This documentation site is organized into three role-specific manuals, a goal-or
 
 - **Format and Lint (`org fmt`)**: Auto-fix 9 formatting rules (`F001..F009`) and check 38 lint rules (`E*`, `W*`, `I*`) while preserving literal blocks.
 - **Query and Agenda (`org query`)**: Search headings, project multi-day timelines with `org-habit` graphs, and evaluate `#+COLUMNS:` rollups.
-- **GTD Views (`org query next|inbox|waiting|blocked|stuck`)**: Inspect actionable tasks, inbox captures, delegated items, and `org-edna` blockers.
-- **Zettelkasten and Fleeting Notes (`org roam`, `org show`, `org refile`)**: Manage `org-roam` v2 nodes, backlinks, templates, and subtree refiling.
-- **Safe Mutations (`org update`, `org clock`, `org archive`)**: Transition TODO states, mint Deterministic RFC 9562 UUIDv5 IDs, calculate `#+TBLFM:`, and track clocks.
-- **Built-In MCP Server (`org mcp`)**: Expose confined read and write workspace tools over JSON Remote Procedure Call 2.0 (`JSON-RPC`) `stdio`.
+- **GTD Action Navigation (`org next`, `org roam gtd`)**: Pick immediate next actions across multi-vault directories and capture unclarified inbox items.
+- **Zettelkasten and Fleeting Notes (`org fleeting`, `org roam`, `org show`)**: Process Luhmann fleeting queues, capture concept notes, and inspect backlinks.
+- **Safe Mutations (`org update`, `org refile`, `org clock`, `org archive`)**: Transition TODO states, mint deterministic UUIDv5 IDs, and track effort clocks.
+- **Built-In MCP & LSP Servers (`org mcp`, `org lsp`)**: Expose 16 confined MCP tools and a Language Server Protocol server over `stdio`.
+
+??? info "Deep Dive: Single Pure-Rust Executable Topology"
+`org` combines formatting, querying, knowledge graphs, and editor protocols into a single native binary.
+The tool requires zero external database servers, background processes, or runtime interpreters.
+All operations run against local `.org` files and an incremental SQLite cache located at `.cache/org-cache.db`.
 
 ## Quick Navigation by Goal
 

@@ -28,11 +28,17 @@ Every deployment mode executes the same pure-Rust `org` binary against local `.o
 | Rootless Docker / Podman    | `ghcr.io/lino/org-tools:latest`   | Runs with `--network none`, `--cap-drop=ALL`, and bind-mounted `/workspace` (`--no-cache` for `:ro`). |
 | GitHub Actions & CI Runners | Pull request & release pipelines  | Executes `org fmt`, `org query`, and `scripts/verify-release-packages.sh` with Prometheus telemetry.  |
 
+??? info "Deep Dive: Rootless Container Isolation and SQLite WAL Safety"
+The official container image contains no shell utilities or package managers.
+Executing with `--network none` and `--cap-drop=ALL` prevents network access and privilege escalation.
+When mounting workspaces read-only, pass `--no-cache` to avoid Write-Ahead Logging failures.
+The binary parses files directly from memory without creating disk lock files.
+
 ## Operator Runbooks
 
 - [Multi-Platform Installation & Verification](installation.md): Install via Homebrew Cask, `.deb`, `.rpm`, Winget, Scoop, tarballs, or Cargo, and verify `man 1 org` / `man 5 org-tools.toml`.
 - [Container & MCP Server Runtime Operations](docker-and-mcp-runtime.md): Confine `org mcp` with `--workspace` and `--roam-dir`, manage SQLite WAL permissions, and run zero-network containers.
-- [GoReleaser v2 Release & Homebrew Tap Runbook](release-and-tap.md): Build six cross-platform targets, package manpages and completions, verify SHA-256 digests, and update `lino/homebrew-tap`.
-- [Prometheus Metrics, Telemetry & Troubleshooting](metrics-and-troubleshooting.md): Scrape `orgfmt_release_*` Prometheus metrics, query W3C trace-correlated JSON Lines (`JSONL`) logs, and triage alerts.
+- [Release & Homebrew Tap Runbook](release-and-tap.md): Build six cross-platform targets, package manpages and completions, verify SHA-256 digests, and update `lino/homebrew-tap`.
+- [Prometheus Metrics & Troubleshooting](metrics-and-troubleshooting.md): Scrape `orgfmt_release_*` Prometheus metrics, query W3C trace-correlated JSON Lines (`JSONL`) logs, and triage alerts.
 
 See the [Glossary and Abbreviations](../glossary.md) for definitions of all operational and protocol terms.

@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::path::Path;
+#[cfg(unix)]
 use std::process::Command as ProcessCommand;
 use std::time::Instant;
 
@@ -503,6 +504,27 @@ fn slice2_warm_cache_completion_meets_latency_budget() {
 
 // region Slice 3: Dynamic Shell Completion Adapters (`bash`, `zsh`, `fish`)
 
+/// Runs a Unix shell syntax check (`-n` / `--no-execute`) when the target shell binary is operational.
+#[cfg(unix)]
+fn assert_shell_syntax_if_installed(shell: &str, check_flag: &str, script_path: &Path) {
+    let available = ProcessCommand::new(shell)
+        .arg("--version")
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if available {
+        let status = ProcessCommand::new(shell)
+            .arg(check_flag)
+            .arg(script_path)
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "{shell} {check_flag} syntax check failed on {}",
+            script_path.display()
+        );
+    }
+}
+
 /// Verifies `org --completions bash|zsh|fish` embed dynamic `org complete` dispatchers and pass shell syntax checks.
 #[test]
 fn slice3_shell_completion_scripts_embed_dynamic_hooks_for_bash_zsh_and_fish() {
@@ -533,48 +555,19 @@ fn slice3_shell_completion_scripts_embed_dynamic_hooks_for_bash_zsh_and_fish() {
         );
     }
 
-    let tmp = TempDir::new().unwrap();
-    let bash_file = tmp.path().join("org.bash");
-    let zsh_file = tmp.path().join("_org");
-    let fish_file = tmp.path().join("org.fish");
-    write_file(&bash_file, &bash_script);
-    write_file(&zsh_file, &zsh_script);
-    write_file(&fish_file, &fish_script);
+    #[cfg(unix)]
+    {
+        let tmp = TempDir::new().unwrap();
+        let bash_file = tmp.path().join("org.bash");
+        let zsh_file = tmp.path().join("_org");
+        let fish_file = tmp.path().join("org.fish");
+        write_file(&bash_file, &bash_script);
+        write_file(&zsh_file, &zsh_script);
+        write_file(&fish_file, &fish_script);
 
-    if ProcessCommand::new("bash")
-        .arg("--version")
-        .output()
-        .is_ok()
-    {
-        let status = ProcessCommand::new("bash")
-            .arg("-n")
-            .arg(&bash_file)
-            .status()
-            .unwrap();
-        assert!(status.success(), "bash -n syntax check failed on org.bash");
-    }
-    if ProcessCommand::new("zsh").arg("--version").output().is_ok() {
-        let status = ProcessCommand::new("zsh")
-            .arg("-n")
-            .arg(&zsh_file)
-            .status()
-            .unwrap();
-        assert!(status.success(), "zsh -n syntax check failed on _org");
-    }
-    if ProcessCommand::new("fish")
-        .arg("--version")
-        .output()
-        .is_ok()
-    {
-        let status = ProcessCommand::new("fish")
-            .arg("--no-execute")
-            .arg(&fish_file)
-            .status()
-            .unwrap();
-        assert!(
-            status.success(),
-            "fish --no-execute syntax check failed on org.fish"
-        );
+        assert_shell_syntax_if_installed("bash", "-n", &bash_file);
+        assert_shell_syntax_if_installed("zsh", "-n", &zsh_file);
+        assert_shell_syntax_if_installed("fish", "--no-execute", &fish_file);
     }
 }
 

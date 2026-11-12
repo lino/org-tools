@@ -8,6 +8,7 @@ pub(crate) mod cache;
 pub(crate) mod clock;
 pub(crate) mod complete;
 pub(crate) mod export;
+pub(crate) mod fleeting;
 pub(crate) mod fmt;
 pub(crate) mod lsp;
 pub(crate) mod mcp;

@@ -23,6 +23,7 @@ use commands::cache::{run_cache, CacheCommand};
 use commands::clock::{run_clock, ClockCommand};
 use commands::complete::{emit_completions, run_complete, CompleteArgs};
 use commands::export::{run_export, ExportCommand};
+use commands::fleeting::{run_fleeting, FleetingCommand};
 use commands::fmt::{run_fmt, FmtCommand};
 use commands::lsp::{run_lsp, LspArgs};
 use commands::mcp::{run_mcp, McpArgs};
@@ -105,6 +106,12 @@ enum OrgCommand {
         /// Export subcommand.
         #[command(subcommand)]
         command: ExportCommand,
+    },
+    /// Luhmann fleeting note queue and transformation workflows.
+    Fleeting {
+        /// Fleeting subcommand.
+        #[command(subcommand)]
+        command: FleetingCommand,
     },
     /// Inspect org-roam v2 nodes, backlinks, outgoing links, and workspace graphs.
     Roam {
@@ -200,6 +207,7 @@ fn dispatch_command(command: OrgCommand, no_cache: bool) -> i32 {
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),
+        OrgCommand::Fleeting { command } => run_fleeting(command, no_cache),
         other => dispatch_agent_command(other, no_cache),
     }
 }

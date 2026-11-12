@@ -31,6 +31,8 @@ pub mod entry;
 pub mod export_md;
 /// Recursive `.org` file discovery respecting `.gitignore`.
 pub mod files;
+/// Luhmann fleeting note queue and transformation workflows (`org fleeting`).
+pub mod fleeting;
 /// Non-overlapping span auto-fix application engine.
 pub mod formatter;
 /// `org-roam` v2 GTD workflow, `:agenda:` filetag sync, project resolution, and `stdin` piping.

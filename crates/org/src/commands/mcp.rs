@@ -10,6 +10,7 @@ mod tools_clock;
 mod tools_lifecycle;
 mod tools_planning;
 mod tools_read;
+mod tools_roam_workflow;
 mod tools_show;
 mod tools_write;
 
@@ -30,15 +31,16 @@ use self::schema::{
     build_tools_list_result, jsonrpc_err, jsonrpc_ok, optional_str, reject_unknown_keys,
     ALL_TOOL_NAMES, DEFAULT_PROTOCOL_VERSION, ERR_INVALID_PARAMS, ERR_INVALID_REQUEST,
     ERR_METHOD_NOT_FOUND, ERR_PARSE_ERROR, SERVER_NAME, TOOL_CLOCK_IN, TOOL_CLOCK_OUT,
-    TOOL_FMT_FILE, TOOL_QUERY_AGENDA, TOOL_QUERY_BLOCKED, TOOL_QUERY_NEXT, TOOL_REFILE,
-    TOOL_ROAM_BACKLINKS, TOOL_ROAM_NODE, TOOL_ROAM_SEARCH, TOOL_SHOW, TOOL_UPDATE_PLANNING,
-    TOOL_UPDATE_STATE,
+    TOOL_FLEETING_LIST, TOOL_FLEETING_TRANSFORM, TOOL_FMT_FILE, TOOL_QUERY_AGENDA,
+    TOOL_QUERY_BLOCKED, TOOL_QUERY_NEXT, TOOL_REFILE, TOOL_ROAM_BACKLINKS, TOOL_ROAM_CAPTURE,
+    TOOL_ROAM_NODE, TOOL_ROAM_SEARCH, TOOL_SHOW, TOOL_UPDATE_PLANNING, TOOL_UPDATE_STATE,
 };
 use self::tools_clock::{exec_clock_in, exec_clock_out};
 use self::tools_lifecycle::exec_refile;
 use self::tools_planning::{exec_query_agenda, exec_update_planning};
-use self::tools_read::{
-    exec_query_blocked, exec_query_next, exec_roam_backlinks, exec_roam_node, exec_roam_search,
+use self::tools_read::{exec_query_blocked, exec_roam_backlinks, exec_roam_node, exec_roam_search};
+use self::tools_roam_workflow::{
+    exec_fleeting_list, exec_fleeting_transform, exec_query_next, exec_roam_capture,
 };
 use self::tools_show::exec_show;
 use self::tools_write::{exec_fmt_file, exec_update_state};
@@ -240,8 +242,7 @@ fn handle_initialize(id: Value, params: Option<&Value>) -> Value {
 /// Validates optional `params` for parameterless MCP methods (`ping`, `tools/list`).
 fn ensure_optional_object_params(params: Option<&Value>) -> Result<(), &'static str> {
     match params {
-        None => Ok(()),
-        Some(v) if v.is_null() || v.is_object() => Ok(()),
+        None | Some(Value::Null | Value::Object(_)) => Ok(()),
         Some(_) => Err("Invalid params: 'params' must be an object"),
     }
 }
@@ -261,6 +262,7 @@ fn try_dispatch_read_tool(
         TOOL_QUERY_BLOCKED => Some(exec_query_blocked(session, args, started)),
         TOOL_QUERY_AGENDA => Some(exec_query_agenda(session, args, started)),
         TOOL_SHOW => Some(exec_show(session, args, started)),
+        TOOL_FLEETING_LIST => Some(exec_fleeting_list(session, args, started)),
         _ => None,
     }
 }
@@ -278,6 +280,8 @@ fn dispatch_named_tool(session: &mut McpSession, name: &str, args: &Map<String, 
         TOOL_REFILE => exec_refile(session, args, started),
         TOOL_CLOCK_IN => exec_clock_in(session, args, started),
         TOOL_CLOCK_OUT => exec_clock_out(session, args, started),
+        TOOL_ROAM_CAPTURE => exec_roam_capture(session, args, started),
+        TOOL_FLEETING_TRANSFORM => exec_fleeting_transform(session, args, started),
         _ => unreachable!("tool name pre-validated against ALL_TOOL_NAMES"),
     }
 }
@@ -426,21 +430,13 @@ fn serve_stdio_loop(session: &mut McpSession) -> i32 {
 
 /// Runs the `org mcp` JSON-RPC 2.0 server over `stdin`/`stdout` until `stdin` reaches EOF.
 pub(crate) fn run_mcp(args: McpArgs, no_cache: bool) -> i32 {
-    let workspace = match resolve_startup_workspace(args.workspace.as_deref()) {
-        Ok(ws) => ws,
-        Err(err) => {
-            eprintln!("org: {err}");
-            return EXIT_ERROR;
-        }
-    };
-    let mut session = match McpSession::new(workspace, no_cache) {
-        Ok(s) => s,
-        Err(err) => {
-            eprintln!("org: {err}");
-            return EXIT_ERROR;
-        }
-    };
-    serve_stdio_loop(&mut session)
+    let ws =
+        resolve_startup_workspace(args.workspace.as_deref()).map_err(|e| eprintln!("org: {e}"));
+    let session = ws.and_then(|w| McpSession::new(w, no_cache).map_err(|e| eprintln!("org: {e}")));
+    match session {
+        Ok(mut s) => serve_stdio_loop(&mut s),
+        Err(_) => EXIT_ERROR,
+    }
 }
 
 // endregion

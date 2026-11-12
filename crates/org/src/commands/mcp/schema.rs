@@ -5,6 +5,12 @@
 
 use serde_json::{json, Map, Value};
 
+#[path = "schema/roam.rs"]
+mod roam;
+
+pub(super) use self::roam::{
+    optional_str_or_array, TOOL_FLEETING_LIST, TOOL_FLEETING_TRANSFORM, TOOL_ROAM_CAPTURE,
+};
 pub(super) use super::tools_clock::{TOOL_CLOCK_IN, TOOL_CLOCK_OUT};
 use crate::commands::MutationTelemetry;
 
@@ -61,7 +67,7 @@ pub(super) const TOOL_FMT_FILE: &str = "org_fmt_file";
 /// MCP tool name atomically refiling an Org subtree across files or under a new heading.
 pub(super) const TOOL_REFILE: &str = "org_refile";
 
-/// Ordered registry of all 13 supported MCP tool names.
+/// Ordered registry of all 16 supported MCP tool names.
 pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_ROAM_NODE,
     TOOL_ROAM_BACKLINKS,
@@ -76,6 +82,9 @@ pub(super) const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_REFILE,
     TOOL_CLOCK_IN,
     TOOL_CLOCK_OUT,
+    TOOL_ROAM_CAPTURE,
+    TOOL_FLEETING_LIST,
+    TOOL_FLEETING_TRANSFORM,
 ];
 
 // endregion
@@ -135,16 +144,7 @@ fn roam_and_query_descriptors() -> Vec<Value> {
             }),
             &["query"],
         ),
-        tool_descriptor(
-            TOOL_QUERY_NEXT,
-            "List actionable (unblocked TODO) entries with optional @context tag filtering.",
-            json!({
-                "context": { "type": "string", "description": "Optional @context tag filter (e.g. @code)." },
-                "limit": limit_prop,
-                "workspace": ws_prop
-            }),
-            &[],
-        ),
+        self::roam::query_next_descriptor(),
     ]
 }
 
@@ -232,13 +232,14 @@ fn write_tool_descriptors() -> Vec<Value> {
     ]
 }
 
-/// Constructs the complete `tools/list` result object for all 13 MCP tools.
+/// Constructs the complete `tools/list` result object for all 16 MCP tools.
 pub(super) fn build_tools_list_result() -> Value {
     let mut tools = roam_and_query_descriptors();
     tools.extend(agenda_and_show_descriptors());
     tools.extend(write_tool_descriptors());
     tools.push(super::tools_lifecycle::refile_tool_descriptor());
     tools.extend(super::tools_clock::clock_tool_descriptors());
+    tools.extend(self::roam::roam_workflow_descriptors());
     json!({ "tools": tools })
 }
 

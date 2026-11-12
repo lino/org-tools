@@ -1,4 +1,7 @@
-# org-tools configuration
+# Copyright (C) 2026 org-tools contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# org-tools configuration example.
 # Copy to .org-tools.toml to use.
 # Defaults match Emacs org-mode behavior.
 
@@ -7,12 +10,10 @@
 trailing_whitespace = true
 
 # Collapse consecutive blank lines (default: false, matching Emacs).
-# Set to true for opinionated formatting.
 blank_lines = false
 max_consecutive_blank_lines = 1
 
 # Enforce blank lines before headings (default: false, matching Emacs).
-# Set to true for opinionated formatting.
 heading_blank_lines = false
 heading_blank_lines_before = 1
 
@@ -26,3 +27,46 @@ property_drawer_align = true
 # Disable rules by name or ID. Examples:
 # disabled_rules = ["W001", "heading-level-gap"]
 disabled_rules = []
+
+[agenda]
+# Lead-time warning window in days for deadlines without explicit -Nd warning suffix (default: 14).
+deadline_warning_days = 14
+
+[todo]
+# Fallback active (incomplete) and completed (done) TODO state keywords.
+active = ["TODO", "NEXT", "WAITING"]
+done = ["DONE", "CANCELLED"]
+
+# Additive TODO state sequences with pipe separator.
+sequences = ["TODO NEXT WAITING | DONE CANCELLED"]
+
+[roam]
+# Default target vault name among configured roam directories.
+default_directory = "work"
+
+# Relative subdirectories for GTD, Zettelkasten, fleeting, and daily notes.
+gtd_subdir = "gtd"
+zettel_subdir = "zettel"
+fleeting_subdir = "fleeting"
+daily_subdir = "daily"
+
+# Whether captures append an audit log to today's daily journal note.
+log_to_daily = false
+
+[roam.directories]
+# Multi-directory org-roam v2 vault roots.
+work = "~/org/work"
+personal = "~/org/personal"
+
+[capture.templates.inbox]
+# Quick task filed into GTD inbox.
+description = "Quick inbox task"
+target_file = "gtd/inbox.org"
+target_heading = "Tasks"
+template = "* TODO %?\n:PROPERTIES:\n:CREATED: %U\n:END:\n"
+
+[capture.templates.zettel]
+# Permanent Zettelkasten concept note.
+description = "Permanent concept note"
+target_file = "zettel/%<%Y%m%d%H%M%S>-${slug}.org"
+template = ":PROPERTIES:\n:ID: ${id}\n:TYPE: zettel\n:END:\n#+title: ${title}\n#+filetags: :zettel:\n\n* Core Concept\n\n%?\n"

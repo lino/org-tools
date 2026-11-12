@@ -182,41 +182,6 @@ const JSCALENDAR_SCHEMA: &str = r#"{
 }
 "#;
 
-/// Embedded JSON Schema Draft 2020-12 contract for fleeting note capture JSON output.
-const FLEETING_SCHEMA: &str = r#"{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://org-tools.dev/schemas/org-fleeting-output.schema.json",
-  "title": "org fleeting capture JSON output",
-  "description": "Schema for the JSON output of fleeting note capture and inbox filing commands.",
-  "type": "object",
-  "required": ["file", "line", "locator", "title"],
-  "properties": {
-    "file": {
-      "type": "string",
-      "description": "Path to the target Org file where the note was captured."
-    },
-    "line": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "One-based line number of the captured heading."
-    },
-    "locator": {
-      "type": "string",
-      "description": "Canonical OrgLocator addressing the captured note."
-    },
-    "id": {
-      "type": ["string", "null"],
-      "description": "Optional deterministic RFC 9562 UUIDv5 :ID: assigned to the note."
-    },
-    "title": {
-      "type": "string",
-      "description": "Heading title of the captured note."
-    }
-  },
-  "additionalProperties": false
-}
-"#;
-
 /// Static catalog of all registered JSON Schema Draft 2020-12 contracts.
 const SCHEMA_REGISTRY: &[SchemaEntry] = &[
     SchemaEntry {
@@ -304,8 +269,8 @@ const SCHEMA_REGISTRY: &[SchemaEntry] = &[
         aliases: &["fleeting", "capture", "org-fleeting-output"],
         id: "https://org-tools.dev/schemas/org-fleeting-output.schema.json",
         path: "schemas/org-fleeting-output.schema.json",
-        description: "Schema for the JSON output of fleeting note capture and inbox filing commands.",
-        body: FLEETING_SCHEMA,
+        description: "Schema for the JSON output of 'org fleeting list' and fleeting note capture commands.",
+        body: include_str!("../../schemas/org-fleeting-output.schema.json"),
     },
     SchemaEntry {
         name: "blocked",

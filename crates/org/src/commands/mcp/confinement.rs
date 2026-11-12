@@ -60,6 +60,30 @@ pub(crate) fn canonical_workspace_root(norm_ws: &Path) -> Result<PathBuf, String
     })
 }
 
+/// Verifies that `candidate` directory is confined within `canon_ws` or matches a configured vault root.
+pub(crate) fn verify_confined_dir(
+    candidate: &Path,
+    canon_ws: &Path,
+    configured_vaults: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let canon = canonicalize_clean(candidate)
+        .map_err(|e| format!("cannot canonicalize directory {}: {e}", candidate.display()))?;
+    if canon.starts_with(canon_ws) {
+        return Ok(canon);
+    }
+    for vault in configured_vaults {
+        if let Ok(v_canon) = canonicalize_clean(vault) {
+            if canon.starts_with(&v_canon) {
+                return Ok(canon);
+            }
+        }
+    }
+    Err(format!(
+        "directory escapes workspace boundary: {}",
+        candidate.display()
+    ))
+}
+
 /// Verifies that existing `candidate` is an `.org` file whose canonical target stays under `canon_ws`.
 pub(crate) fn verify_existing_confined_org_file(
     candidate: &Path,
@@ -149,7 +173,7 @@ pub(super) fn confine_and_rewrite_locator(
 }
 
 /// Verifies a write/cascade target path (existing or newly created archive `.org` file) stays inside `canon_ws`.
-pub(super) fn verify_confined_mutation_target(
+pub(crate) fn verify_confined_mutation_target(
     path: &Path,
     canon_ws: &Path,
 ) -> Result<PathBuf, String> {
@@ -178,4 +202,36 @@ pub(super) fn verify_confined_mutation_target(
         ));
     }
     Ok(normalize_workspace_path(path))
+}
+
+/// Verifies that a mutation target path stays inside `canon_ws` OR any of `configured_vaults`.
+pub(crate) fn verify_confined_mutation_target_in_roots(
+    path: &Path,
+    canon_ws: &Path,
+    configured_vaults: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let label = path.display().to_string();
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err(format!(
+            "mutation target traversal outside workspace is not allowed: {label}"
+        ));
+    }
+    if !is_org_extension(path) {
+        return Err(format!(
+            "mutation target must be an .org file, got: {label}"
+        ));
+    }
+    if let Ok(res) = verify_confined_mutation_target(path, canon_ws) {
+        return Ok(res);
+    }
+    for vault in configured_vaults {
+        if let Ok(v_canon) = canonical_workspace_root(vault) {
+            if let Ok(res) = verify_confined_mutation_target(path, &v_canon) {
+                return Ok(res);
+            }
+        }
+    }
+    Err(format!(
+        "mutation target escapes workspace and vault boundaries: {label}"
+    ))
 }

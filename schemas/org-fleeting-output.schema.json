@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://org-tools.dev/schemas/org-fleeting-output.schema.json",
+  "title": "org fleeting JSON output",
+  "description": "Schema for the JSON output of 'org fleeting list' and fleeting note capture commands.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["count", "items"],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of matching fleeting notes found."
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fleeting_item" },
+          "description": "List of discovered Luhmann fleeting note items."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["file", "line", "locator", "title"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Path to the target Org file where the note was captured."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "One-based line number of the captured heading."
+        },
+        "locator": {
+          "type": "string",
+          "description": "Canonical OrgLocator addressing the captured note."
+        },
+        "id": {
+          "type": ["string", "null"],
+          "description": "Optional deterministic RFC 9562 UUIDv5 :ID: assigned to the note."
+        },
+        "title": {
+          "type": "string",
+          "description": "Heading title of the captured note."
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "$defs": {
+    "fleeting_item": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "status",
+        "kind",
+        "file",
+        "line",
+        "locator",
+        "captured_at",
+        "attached_medium",
+        "medium_location",
+        "attached_zettel",
+        "source_file",
+        "permanent_note",
+        "task_note"
+      ],
+      "properties": {
+        "id": {
+          "type": ["string", "null"],
+          "description": "Unique identifier from :ID: if present."
+        },
+        "title": {
+          "type": "string",
+          "description": "Note title or heading text."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["unrefined", "reformed", "converted-to-task", "discarded"],
+          "description": "Lifecycle refinement status."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["file", "heading"],
+          "description": "Note kind ('file' or 'heading')."
+        },
+        "file": {
+          "type": "string",
+          "description": "Filesystem path to the containing Org source file."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "One-based line number in the source file."
+        },
+        "locator": {
+          "type": "string",
+          "description": "Canonical locator (id:<uuid> or <file>::*<title> / <file>)."
+        },
+        "captured_at": {
+          "type": ["string", "null"],
+          "description": "Formatted capture timestamp string ([YYYY-MM-DD Day HH:MM])."
+        },
+        "attached_medium": {
+          "type": ["string", "null"],
+          "description": "Optional attached medium node link or citation string."
+        },
+        "medium_location": {
+          "type": ["string", "null"],
+          "description": "Optional source location (page, chapter, or section)."
+        },
+        "attached_zettel": {
+          "type": ["string", "null"],
+          "description": "Optional attached parent Zettel link or node query."
+        },
+        "source_file": {
+          "type": ["string", "null"],
+          "description": "Optional path to source code or document that sparked the thought."
+        },
+        "permanent_note": {
+          "type": ["string", "null"],
+          "description": "Optional link to permanent Zettel if reformed."
+        },
+        "task_note": {
+          "type": ["string", "null"],
+          "description": "Optional link to GTD task if converted."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

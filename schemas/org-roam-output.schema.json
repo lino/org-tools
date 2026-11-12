@@ -203,6 +203,10 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Parsed :ROAM_REFS: tokens."
+        },
+        "roam_dir": {
+          "type": ["string", "null"],
+          "description": "Optional configured roam directory name or path owning the node."
         }
       },
       "additionalProperties": false
@@ -242,6 +246,10 @@
         "context": {
           "type": "string",
           "description": "Trimmed source line containing the link."
+        },
+        "roam_dir": {
+          "type": ["string", "null"],
+          "description": "Optional configured roam directory name or path owning the link."
         }
       },
       "additionalProperties": false
@@ -286,6 +294,10 @@
         "context": {
           "type": "string",
           "description": "Trimmed source line containing the incoming link."
+        },
+        "roam_dir": {
+          "type": ["string", "null"],
+          "description": "Optional configured roam directory name or path owning the incoming link."
         }
       },
       "additionalProperties": false
@@ -340,6 +352,10 @@
         "context": {
           "type": "string",
           "description": "Trimmed source line containing the outgoing link."
+        },
+        "roam_dir": {
+          "type": ["string", "null"],
+          "description": "Optional configured roam directory name or path owning the outgoing link."
         }
       },
       "additionalProperties": false

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! End-to-end Red-to-Green `stdio` MCP server integration tests (`ORGFMT-WP-07`).
+//! End-to-end `stdio` MCP server integration tests.
 
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -19,21 +19,13 @@ use tempfile::TempDir;
 
 /// Forbidden machine-specific path prefix in repository configuration files.
 const FORBIDDEN_USER_PATH_PREFIX: &str = "/Users/";
-/// Expected 13 MCP tool names exposed by `org mcp`.
+/// Expected 16 MCP tool names exposed by `org mcp`.
+#[rustfmt::skip]
 const EXPECTED_TOOLS: &[&str] = &[
-    "org_roam_node",
-    "org_roam_backlinks",
-    "org_roam_search",
-    "org_query_next",
-    "org_query_blocked",
-    "org_query_agenda",
-    "org_show",
-    "org_update_state",
-    "org_update_planning",
-    "org_fmt_file",
-    "org_refile",
-    "org_clock_in",
-    "org_clock_out",
+    "org_roam_node", "org_roam_backlinks", "org_roam_search", "org_query_next",
+    "org_query_blocked", "org_query_agenda", "org_show", "org_update_state",
+    "org_update_planning", "org_fmt_file", "org_refile", "org_clock_in",
+    "org_clock_out", "org_roam_capture", "org_fleeting_list", "org_fleeting_transform",
 ];
 /// UUID for the hub specification file node in the synthetic workspace.
 const HUB_ID: &str = "10000000-0000-4000-8000-000000000101";
@@ -447,3 +439,6 @@ fn slice3_workspace_confinement_symlink_and_extension_guards() {
 }
 
 // endregion
+
+#[path = "mcp_tests/roam_workflow.rs"]
+mod roam_workflow;

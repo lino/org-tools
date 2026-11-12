@@ -15,9 +15,7 @@ use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 use org_tools_core::roam::{RoamBacklink, RoamNode};
 
-use super::schema::{
-    finish_tool_call, optional_positive_usize, optional_str, require_non_empty_str,
-};
+use super::schema::{finish_tool_call, optional_positive_usize, require_non_empty_str};
 use super::McpSession;
 use crate::commands::query::collect_predicate_matches;
 use crate::commands::{parse_org_files, MutationTelemetry};
@@ -251,68 +249,6 @@ pub(super) fn exec_roam_search(
         };
         let entries =
             fts_attempt.unwrap_or_else(|| eval_direct_search_entries(&display_ws, &pred, limit));
-        tel.duration_us = started.elapsed().as_micros() as u64;
-        Ok(json!({ "entries": entries, "count": entries.len(), "telemetry": tel }))
-    })())
-}
-
-/// Collects actionable entries matching optional `context` across `docs`.
-fn collect_actionable_json_entries(
-    docs: &[OrgDocument],
-    context: Option<&str>,
-    limit: Option<usize>,
-) -> Vec<Value> {
-    let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
-    let today = date::current_date();
-    let mut matches = Vec::new();
-    for doc in docs {
-        for (idx, entry) in doc.entries.iter().enumerate() {
-            let ctx_ok = context.is_none_or(|c| {
-                doc.inherited_tags(idx)
-                    .iter()
-                    .any(|t| t.eq_ignore_ascii_case(c))
-            });
-            if ctx_ok
-                && query::predicate::matches(
-                    &query::parser::Predicate::Actionable,
-                    entry,
-                    doc,
-                    &doc_refs,
-                    today,
-                )
-            {
-                matches.push(query::output::MatchedEntry {
-                    doc,
-                    entry_idx: idx,
-                });
-            }
-        }
-    }
-    if let Some(n) = limit {
-        matches.truncate(n);
-    }
-    serde_json::from_str(&query::output::render_json(&matches, &doc_refs)).unwrap_or_default()
-}
-
-/// Executes `org_query_next` (`Predicate::Actionable` + optional `@context` filter).
-pub(super) fn exec_query_next(
-    session: &mut McpSession,
-    args: &Map<String, Value>,
-    started: Instant,
-) -> Value {
-    finish_tool_call((|| {
-        let (display_ws, norm_ws, is_default) = session
-            .prepare_workspace(args, &["context", "limit", "workspace"])
-            .map_err(|e| (e, session.empty_telemetry(started)))?;
-        let context =
-            optional_str(args, "context").map_err(|e| (e, session.empty_telemetry(started)))?;
-        let limit = optional_positive_usize(args, "limit")
-            .map_err(|e| (e, session.empty_telemetry(started)))?;
-        let mut tel = session
-            .sync_telemetry(&norm_ws, is_default, started)
-            .map_err(|e| (e, session.empty_telemetry(started)))?;
-        let docs = parse_org_files(&collect_org_files(&[display_ws]));
-        let entries = collect_actionable_json_entries(&docs, context.as_deref(), limit);
         tel.duration_us = started.elapsed().as_micros() as u64;
         Ok(json!({ "entries": entries, "count": entries.len(), "telemetry": tel }))
     })())

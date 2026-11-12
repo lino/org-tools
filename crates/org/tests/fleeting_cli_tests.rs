@@ -12,9 +12,11 @@ use tempfile::TempDir;
 
 // region Test Fixture Helpers
 
-/// Creates an `assert_cmd::Command` targeting the `org` binary.
+/// Creates a hermetic `assert_cmd::Command` targeting the `org` binary.
 fn org_cmd() -> Command {
-    Command::cargo_bin("org").expect("org binary must compile")
+    let mut cmd = Command::cargo_bin("org").expect("org binary must compile");
+    cmd.env("XDG_CONFIG_HOME", "/nonexistent");
+    cmd
 }
 
 /// Writes `content` to `path`, creating parent directories as needed.
@@ -143,7 +145,7 @@ fn slice1_capture_editor_abort_on_empty_or_failure() {
     let fail_editor = write_editor_script(temp.path(), "fail_editor.sh", "exit 1");
     let out_fail = org_cmd()
         .current_dir(&ws)
-        .env("EDITOR", fail_editor.to_str().unwrap())
+        .env("VISUAL", fail_editor.to_str().unwrap())
         .args(["fleeting", "capture", "Test Note", "--edit"])
         .output()
         .expect("run failing capture editor");
@@ -153,7 +155,7 @@ fn slice1_capture_editor_abort_on_empty_or_failure() {
     let empty_editor = write_editor_script(temp.path(), "empty_editor.sh", "> \"$1\"");
     let out_empty = org_cmd()
         .current_dir(&ws)
-        .env("EDITOR", empty_editor.to_str().unwrap())
+        .env("VISUAL", empty_editor.to_str().unwrap())
         .args(["fleeting", "capture", "Test Note", "--edit"])
         .output()
         .expect("run empty capture editor");

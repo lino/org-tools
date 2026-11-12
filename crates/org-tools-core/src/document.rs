@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=1930 reason="Cohesive OrgDocument and OrgEntry single-pass parser with comprehensive behavioural unit test suite"
+// fritz: allow-file-length=2100 reason="Cohesive OrgDocument and OrgEntry single-pass parser with comprehensive behavioural unit test suite"
 
 //! Lightweight heading tree model for org-mode documents.
 //!
@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::entry::parse_checklist_item;
+use crate::entry::{parse_checklist_item, parse_description_list_item};
 pub use crate::entry::{CheckboxState, ChecklistItem, ChecklistSummary};
 use crate::locator::FILE_NODE_ENTRY_INDEX;
 use crate::rules::format::regions::{is_protected, protected_regions};
@@ -78,6 +78,8 @@ pub struct OrgDocument {
     pub id_index: HashMap<String, usize>,
     /// Index mapping heading `:CUSTOM_ID:` values to entry indices in [`Self::entries`].
     pub custom_id_index: HashMap<String, usize>,
+    /// Top-of-body `vulpea-meta` description-list metadata items (`- key :: value`).
+    pub vulpea_meta: HashMap<String, Vec<String>>,
 }
 
 /// A single heading entry in an org document.
@@ -103,6 +105,8 @@ pub struct OrgEntry {
     ///
     /// Spec: [§5.6 Checkboxes](https://orgmode.org/manual/Checkboxes.html)
     pub checklist: Vec<ChecklistItem>,
+    /// Top-of-body `vulpea-meta` description-list metadata items (`- key :: value`).
+    pub vulpea_meta: HashMap<String, Vec<String>>,
     /// Line number of the heading (1-based).
     pub heading_line: usize,
     /// Byte offset of the heading line start.
@@ -319,6 +323,50 @@ impl OrgDocument {
         }
         None
     }
+
+    /// Looks up a `vulpea-meta` metadata value by key (case-insensitively).
+    pub fn get_vulpea_meta(&self, key: &str) -> Option<&Vec<String>> {
+        self.vulpea_meta
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v)
+    }
+
+    /// Computes effective tags for an entry (or level-0 file node) per Org tag inheritance rules.
+    pub fn effective_tags(&self, entry_idx: usize) -> Vec<String> {
+        if entry_idx == FILE_NODE_ENTRY_INDEX {
+            return self.filetags.clone();
+        }
+        let Some(entry) = self.entries.get(entry_idx) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for tag in &self.filetags {
+            if !out.iter().any(|t: &String| t.eq_ignore_ascii_case(tag)) {
+                out.push(tag.clone());
+            }
+        }
+        let mut ancestor_indices = Vec::new();
+        let mut cur = entry.parent;
+        while let Some(pidx) = cur {
+            ancestor_indices.push(pidx);
+            cur = self.entries[pidx].parent;
+        }
+        ancestor_indices.reverse();
+        for pidx in ancestor_indices {
+            for tag in &self.entries[pidx].tags {
+                if !out.iter().any(|t: &String| t.eq_ignore_ascii_case(tag)) {
+                    out.push(tag.clone());
+                }
+            }
+        }
+        for tag in &entry.tags {
+            if !out.iter().any(|t: &String| t.eq_ignore_ascii_case(tag)) {
+                out.push(tag.clone());
+            }
+        }
+        out
+    }
 }
 
 impl OrgEntry {
@@ -327,6 +375,14 @@ impl OrgEntry {
     /// Counts only checklist items in this entry's own body section before child headings.
     pub fn checklist_summary(&self) -> ChecklistSummary {
         ChecklistSummary::from_items(&self.checklist)
+    }
+
+    /// Looks up a `vulpea-meta` metadata value by key (case-insensitively).
+    pub fn get_vulpea_meta(&self, key: &str) -> Option<&Vec<String>> {
+        self.vulpea_meta
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v)
     }
 }
 
@@ -355,6 +411,10 @@ struct PreambleAccumulator {
     link_abbreviations: HashMap<String, String>,
     /// Additive `#+CONSTANTS:` name → value mappings.
     table_constants: HashMap<String, String>,
+    /// Top-of-body `vulpea-meta` description-list metadata items.
+    vulpea_meta: HashMap<String, Vec<String>>,
+    /// Whether non-list prose has started in the preamble.
+    prose_started: bool,
 }
 
 /// Derived preamble configuration ready to populate [`OrgDocument`].
@@ -379,6 +439,8 @@ struct FinalizedPreamble {
     link_abbreviations: HashMap<String, String>,
     /// Effective `#+CONSTANTS:` table definitions.
     table_constants: HashMap<String, String>,
+    /// Top-of-body `vulpea-meta` metadata map.
+    vulpea_meta: HashMap<String, Vec<String>>,
 }
 
 impl FinalizedPreamble {
@@ -410,6 +472,7 @@ impl FinalizedPreamble {
             table_constants: self.table_constants,
             id_index,
             custom_id_index,
+            vulpea_meta: self.vulpea_meta,
         }
     }
 }
@@ -453,6 +516,15 @@ impl PreambleAccumulator {
                     self.file_properties_line = Some(index + 1);
                 }
                 return next_idx;
+            }
+        }
+
+        let trimmed = line.trim();
+        if !self.prose_started && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some((k, v)) = parse_description_list_item(line) {
+                self.vulpea_meta.entry(k).or_default().push(v);
+            } else {
+                self.prose_started = true;
             }
         }
 
@@ -511,6 +583,7 @@ impl PreambleAccumulator {
             tag_spec,
             link_abbreviations: taken.link_abbreviations,
             table_constants: taken.table_constants,
+            vulpea_meta: taken.vulpea_meta,
         }
     }
 }
@@ -897,6 +970,7 @@ fn parse_heading_entry(
         planning: Planning::default(),
         clocks: Vec::new(),
         checklist: Vec::new(),
+        vulpea_meta: HashMap::new(),
         heading_line: heading_idx + 1,
         heading_offset,
         content_end_line: ctx.lines.len() + 1,
@@ -996,10 +1070,12 @@ fn scan_entry_body(
     entry: &mut OrgEntry,
 ) -> usize {
     let mut i = start;
+    let mut prose_started = false;
 
     while i < lines.len() {
         if is_protected(i, protected) {
             i += 1;
+            prose_started = true;
             continue;
         }
 
@@ -1020,6 +1096,12 @@ fn scan_entry_body(
             }
         } else if let Some(item) = parse_checklist_item(line, i + 1) {
             entry.checklist.push(item);
+        } else if !prose_started && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some((k, v)) = parse_description_list_item(line) {
+                entry.vulpea_meta.entry(k).or_default().push(v);
+            } else {
+                prose_started = true;
+            }
         }
 
         i += 1;

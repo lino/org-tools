@@ -23,6 +23,8 @@ use org_tools_core::rules::timestamp::OrgTimestamp;
 
 use super::update::read_stdin_targets;
 use super::MutationTelemetry;
+use crate::query;
+use crate::query::output::QueryLinkJson;
 use crate::{EXIT_ERROR, EXIT_OK};
 
 /// Output format for `org show`.
@@ -65,6 +67,14 @@ pub(crate) struct ShowArgs {
     /// Expand `#+INCLUDE:` directives before rendering output.
     #[arg(long)]
     pub(crate) expand_includes: bool,
+
+    /// Optional fields to include in output.
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) include: Option<Vec<String>>,
+
+    /// Exclude property keys from canonical digest calculation.
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) exclude_properties: Option<Vec<String>>,
 }
 
 /// Planning timestamps serialized in `org show --format json`.
@@ -118,6 +128,27 @@ struct ShowJsonEnvelope {
     /// Optional bounded Markdown slice when `--include-markdown` is requested.
     #[serde(skip_serializing_if = "Option::is_none")]
     markdown: Option<String>,
+    /// File-level tags from #+FILETAGS: for file nodes or inherited filetags.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filetags: Option<Vec<String>>,
+    /// Inherited effective tags.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effective_tags: Option<Vec<String>>,
+    /// Top-of-body vulpea-meta description list items.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vulpea_meta: Option<HashMap<String, Vec<String>>>,
+    /// Outbound links detected in the node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    links: Option<Vec<QueryLinkJson>>,
+    /// Clean body text with drawers and planning stripped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<String>,
+    /// Canonical SHA-256 digest of the node/subtree.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digest: Option<String>,
+    /// Plain-list checklist items alias.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkboxes: Option<Vec<ChecklistItem>>,
     /// Execution duration and file-scan observability telemetry.
     telemetry: MutationTelemetry,
 }
@@ -201,6 +232,32 @@ fn build_json_envelope(
     let meta = extract_node_metadata(loaded);
     let checklist_summary = ChecklistSummary::from_items(&meta.checklist);
 
+    let empty_exclude: Vec<String> = Vec::new();
+    let ex_props = args.exclude_properties.as_ref().unwrap_or(&empty_exclude);
+    let digest = Some(query::rich::compute_canonical_digest(slice.raw, ex_props));
+    let is_file = loaded.resolved.is_file_node();
+    let body = Some(query::rich::extract_clean_body(slice.raw, is_file));
+    let links = Some(query::rich::extract_links(slice.raw, slice.start_line));
+    let checkboxes = Some(meta.checklist.clone());
+
+    let (filetags, effective_tags, vulpea_meta) = if is_file {
+        (
+            Some(loaded.doc.filetags.clone()),
+            Some(loaded.doc.filetags.clone()),
+            Some(loaded.doc.vulpea_meta.clone()),
+        )
+    } else {
+        (
+            Some(loaded.doc.filetags.clone()),
+            Some(loaded.doc.effective_tags(loaded.resolved.entry_index)),
+            Some(
+                loaded.doc.entries[loaded.resolved.entry_index]
+                    .vulpea_meta
+                    .clone(),
+            ),
+        )
+    };
+
     ShowJsonEnvelope {
         locator: meta.locator,
         file: loaded.doc.file.display().to_string(),
@@ -220,6 +277,13 @@ fn build_json_envelope(
         char_count,
         content,
         markdown,
+        filetags,
+        effective_tags,
+        vulpea_meta,
+        links,
+        body,
+        digest,
+        checkboxes,
         telemetry: MutationTelemetry {
             duration_us: started.elapsed().as_micros() as u64,
             files_scanned: loaded.files_scanned,

@@ -184,8 +184,9 @@ fn git_repo_follows_external_org_symlink_and_skips_broken_symlink() {
     let (cache, tel) = WorkspaceCache::open_and_sync(&repo).unwrap();
     assert_eq!(tel.files_scanned, 2);
     let hits = cache.search_fts_bm25(&["Shared".to_string()]).unwrap();
-    assert_eq!(hits.len(), 1);
+    assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].rel_path, "linked.org");
+    assert_eq!(hits[1].rel_path, "linked.org");
 }
 
 /// Verifies intra-workspace symlinks deduplicate `RoamWorkspace` (`1` node, `files_scanned: 1`) while keeping both files in FTS5.

@@ -11,8 +11,6 @@ use org_tools_core::locator::locator_for_entry;
 use org_tools_core::rules::timestamp::OrgTimestamp;
 use serde::Serialize;
 
-use super::{parser::Predicate, predicate};
-
 // region Public Types
 
 /// A matched entry paired with its enclosing [`OrgDocument`].
@@ -24,10 +22,28 @@ pub struct MatchedEntry<'a> {
 }
 
 impl MatchedEntry<'_> {
+    /// Returns `true` when this match points to a level-0 file node.
+    pub fn is_file_node(&self) -> bool {
+        self.entry_idx == org_tools_core::locator::FILE_NODE_ENTRY_INDEX
+    }
+
     /// Returns a reference to the matched [`OrgEntry`].
     pub fn entry(&self) -> &OrgEntry {
         &self.doc.entries[self.entry_idx]
     }
+}
+
+/// An outbound link emitted in rich query/show JSON payloads.
+#[derive(Debug, Clone, Serialize)]
+pub struct QueryLinkJson {
+    /// Link kind or scheme (e.g., "id", "file", "https").
+    pub kind: String,
+    /// Destination target.
+    pub target: String,
+    /// Optional link description text.
+    pub description: Option<String>,
+    /// 1-based line number of the link in the source file.
+    pub line: usize,
 }
 
 /// JSON output entry matching `schemas/org-query-output.schema.json`.
@@ -65,6 +81,33 @@ pub struct JsonEntry {
     pub checklist_summary: ChecklistSummary,
     /// Plain-list checklist items in this entry's own body.
     pub checklist: Vec<ChecklistItem>,
+    /// Optional file-level tags from #+FILETAGS:.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filetags: Option<Vec<String>>,
+    /// Optional effective inherited tags.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_tags: Option<Vec<String>>,
+    /// Optional top-of-body vulpea-meta description list items.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vulpea_meta: Option<HashMap<String, Vec<String>>>,
+    /// Optional FTS5 BM25 relevance score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank: Option<f64>,
+    /// Optional highlighted FTS5 snippet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+    /// Optional clean body text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// Optional outbound links.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<Vec<QueryLinkJson>>,
+    /// Optional subtree sha256 digest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+    /// Optional plain-list checklist items alias.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkboxes: Option<Vec<ChecklistItem>>,
     /// Optional configured `org-roam` vault name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub roam_dir: Option<String>,
@@ -74,22 +117,6 @@ pub struct JsonEntry {
     /// Optional resolved owning GTD project `:ID:`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
-}
-
-/// A project entry paired with child completion and actionability counts.
-pub struct StuckProject<'a> {
-    /// The document containing this project.
-    pub doc: &'a OrgDocument,
-    /// Index of the project entry in `doc.entries`.
-    pub entry_idx: usize,
-    /// Number of done child entries.
-    pub done: usize,
-    /// Number of actionable child entries.
-    pub actionable: usize,
-    /// Number of blocked child entries.
-    pub blocked_count: usize,
-    /// Number of waiting child entries.
-    pub waiting: usize,
 }
 
 // endregion
@@ -123,6 +150,45 @@ pub fn render_locators(matches: &[MatchedEntry<'_>]) -> String {
 
 /// Constructs a [`JsonEntry`] from a [`MatchedEntry`] and workspace document context.
 pub(crate) fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) -> JsonEntry {
+    if m.is_file_node() {
+        let line = m.doc.file_properties_line.unwrap_or(1);
+        let locator = locator_for_entry(m.doc, m.entry_idx).to_string();
+        let title = m.doc.file_title_or_stem().to_string();
+        let tags = m.doc.filetags.clone();
+        let properties = m.doc.file_properties.clone();
+
+        return JsonEntry {
+            file: m.doc.file.display().to_string(),
+            line,
+            locator,
+            level: 0,
+            keyword: None,
+            priority: None,
+            title,
+            tags,
+            properties,
+            scheduled: None,
+            deadline: None,
+            closed: None,
+            clocked_minutes: 0,
+            blocked: false,
+            checklist_summary: ChecklistSummary::default(),
+            checklist: Vec::new(),
+            filetags: None,
+            effective_tags: None,
+            vulpea_meta: None,
+            rank: None,
+            snippet: None,
+            body: None,
+            links: None,
+            digest: None,
+            checkboxes: None,
+            roam_dir: None,
+            project: None,
+            project_id: None,
+        };
+    }
+
     let entry = m.entry();
     let total_clocked: i64 = entry.clocks.iter().filter_map(|c| c.duration_minutes).sum();
     let ctx = EdnaContext {
@@ -148,6 +214,15 @@ pub(crate) fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) 
         blocked: edna::is_blocked(&ctx),
         checklist_summary: entry.checklist_summary(),
         checklist: entry.checklist.clone(),
+        filetags: None,
+        effective_tags: None,
+        vulpea_meta: None,
+        rank: None,
+        snippet: None,
+        body: None,
+        links: None,
+        digest: None,
+        checkboxes: None,
         roam_dir: None,
         project: None,
         project_id: None,
@@ -164,6 +239,19 @@ pub(crate) fn format_ts(ts: &OrgTimestamp) -> String {
 
 /// Formats a single matched entry line for human-readable query views.
 pub(crate) fn format_entry_line(m: &MatchedEntry<'_>) -> String {
+    if m.is_file_node() {
+        let tags = if m.doc.filetags.is_empty() {
+            String::new()
+        } else {
+            format!(" :{}:", m.doc.filetags.join(":"))
+        };
+        return format!(
+            "{}:{}: {}{tags}",
+            m.doc.file.display(),
+            m.doc.file_properties_line.unwrap_or(1),
+            m.doc.file_title_or_stem()
+        );
+    }
     let e = m.entry();
     let tags = if e.tags.is_empty() {
         String::new()
@@ -186,239 +274,6 @@ pub(crate) fn format_entry_line(m: &MatchedEntry<'_>) -> String {
 
 // endregion
 
-// region Blocked, Context & Waiting Renderers
-
-/// Renders blocked entries with dependency details in human-readable format.
-pub fn render_blocked_human(matches: &[MatchedEntry<'_>], all_docs: &[&OrgDocument]) -> String {
-    let mut out = String::new();
-    for m in matches {
-        out.push_str(&format!("{}\n", format_entry_line(m)));
-        let details = edna::blocking_details(&EdnaContext {
-            all_docs,
-            doc: m.doc,
-            entry_idx: m.entry_idx,
-        });
-        if !details.is_empty() {
-            out.push_str("  Blocked by:\n");
-            for d in &details {
-                let kw = d
-                    .keyword
-                    .as_deref()
-                    .map(|k| format!("{k} — "))
-                    .unwrap_or_default();
-                out.push_str(&format!(
-                    "    {}:{}: {} ({kw}{})\n",
-                    d.file, d.line, d.title, d.condition_desc
-                ));
-            }
-        }
-        out.push('\n');
-    }
-    out
-}
-
-/// Renders blocked entries as pretty JSON conforming to `org-blocked-output.schema.json`.
-pub fn render_blocked_json(matches: &[MatchedEntry<'_>], all_docs: &[&OrgDocument]) -> String {
-    let items: Vec<serde_json::Map<String, serde_json::Value>> = matches
-        .iter()
-        .map(|m| {
-            let mut obj = match serde_json::to_value(build_json_entry(m, all_docs)) {
-                Ok(serde_json::Value::Object(map)) => map,
-                _ => serde_json::Map::new(),
-            };
-            obj.remove("checklist_summary");
-            obj.remove("checklist");
-            let blockers: Vec<serde_json::Value> = edna::blocking_details(&EdnaContext {
-                all_docs,
-                doc: m.doc,
-                entry_idx: m.entry_idx,
-            })
-            .into_iter()
-            .map(|d| {
-                serde_json::json!({
-                    "title": d.title,
-                    "keyword": d.keyword,
-                    "file": d.file,
-                    "line": d.line,
-                    "locator": d.locator,
-                    "condition": d.condition_desc,
-                })
-            })
-            .collect();
-            obj.insert("blocked".into(), true.into());
-            obj.insert("blocking_entries".into(), blockers.into());
-            obj
-        })
-        .collect();
-    serde_json::to_string_pretty(&items).unwrap_or_default()
-}
-
-/// Appends a single named GTD section header and 2-space indented entries to `out`.
-pub(crate) fn append_named_group(out: &mut String, label: &str, entries: &[String]) {
-    out.push_str(&format!("{label} ({})\n", entries.len()));
-    for entry in entries {
-        out.push_str(&format!("  {entry}\n"));
-    }
-    out.push('\n');
-}
-
-/// Renders waiting entries with optional `:WAITING_FOR:` details.
-pub fn render_waiting_human(matches: &[MatchedEntry<'_>]) -> String {
-    let mut out = String::new();
-    for m in matches {
-        out.push_str(&format!("{}\n", format_entry_line(m)));
-        if let Some(waiting_for) = m.entry().properties.get("WAITING_FOR") {
-            out.push_str(&format!("  Waiting for: {waiting_for}\n"));
-        }
-    }
-    out
-}
-
-// endregion
-
-// region Stuck Project Analysis & Renderers
-
-/// Finds projects (headings with TODO children) that have zero actionable children.
-pub fn find_stuck_projects<'a>(
-    docs: &'a [OrgDocument],
-    doc_refs: &[&'a OrgDocument],
-    today: (u16, u8, u8),
-) -> Vec<StuckProject<'a>> {
-    let mut stuck = Vec::new();
-    for doc in docs {
-        for (idx, entry) in doc.entries.iter().enumerate() {
-            if let Some(project) = evaluate_stuck_candidate(doc, idx, entry, doc_refs, today) {
-                stuck.push(project);
-            }
-        }
-    }
-    stuck
-}
-
-/// Evaluates whether `entry` is a project with zero actionable direct TODO children.
-fn evaluate_stuck_candidate<'a>(
-    doc: &'a OrgDocument,
-    idx: usize,
-    entry: &OrgEntry,
-    doc_refs: &[&'a OrgDocument],
-    today: (u16, u8, u8),
-) -> Option<StuckProject<'a>> {
-    if !entry
-        .children
-        .iter()
-        .any(|&i| doc.entries[i].keyword.is_some())
-    {
-        return None;
-    }
-
-    let (mut done, mut actionable, mut blocked_count, mut waiting) = (0, 0, 0, 0);
-    for &ci in &entry.children {
-        let counts = (&mut done, &mut actionable, &mut blocked_count, &mut waiting);
-        classify_project_child(doc, ci, doc_refs, today, counts);
-    }
-
-    (actionable == 0).then_some(StuckProject {
-        doc,
-        entry_idx: idx,
-        done,
-        actionable,
-        blocked_count,
-        waiting,
-    })
-}
-
-/// Classifies a single project child into done, waiting, blocked, or actionable buckets.
-fn classify_project_child(
-    doc: &OrgDocument,
-    ci: usize,
-    refs: &[&OrgDocument],
-    today: (u16, u8, u8),
-    counts: (&mut usize, &mut usize, &mut usize, &mut usize),
-) {
-    let child = &doc.entries[ci];
-    let Some(kw) = child.keyword.as_deref() else {
-        return;
-    };
-    let act = Predicate::Actionable;
-    let is_actionable = predicate::matches_with_body(&act, child, ci, None, doc, refs, today);
-    if doc.todo_keywords.is_done(kw) {
-        *counts.0 += 1;
-    } else if kw.to_uppercase().contains("WAIT") || child.properties.contains_key("WAITING_FOR") {
-        *counts.3 += 1;
-    } else if edna::is_blocked(&EdnaContext {
-        all_docs: refs,
-        doc,
-        entry_idx: ci,
-    }) {
-        *counts.2 += 1;
-    } else if is_actionable {
-        *counts.1 += 1;
-    }
-}
-
-/// Renders stuck projects in human-readable summary format.
-pub fn render_stuck_human(stuck: &[StuckProject<'_>]) -> String {
-    let mut out = String::new();
-    for sp in stuck {
-        let entry = &sp.doc.entries[sp.entry_idx];
-        let tags = if entry.tags.is_empty() {
-            String::new()
-        } else {
-            format!(" :{}:", entry.tags.join(":"))
-        };
-        let kw = entry
-            .keyword
-            .as_deref()
-            .map(|k| format!("{k} "))
-            .unwrap_or_default();
-        out.push_str(&format!(
-            "{}:{}: {} {kw}{}{tags}\n  Children: {}\n\n",
-            sp.doc.file.display(),
-            entry.heading_line,
-            "*".repeat(entry.level),
-            entry.title,
-            format_stuck_counts(sp),
-        ));
-    }
-    out
-}
-
-/// Formats comma-separated child status counts for a [`StuckProject`].
-fn format_stuck_counts(sp: &StuckProject<'_>) -> String {
-    let mut parts: Vec<String> = (sp.done > 0)
-        .then(|| format!("{} done", sp.done))
-        .into_iter()
-        .chain(std::iter::once(format!("{} actionable", sp.actionable)))
-        .collect();
-    for (n, lbl) in [(sp.blocked_count, "blocked"), (sp.waiting, "waiting")] {
-        if n > 0 {
-            parts.push(format!("{n} {lbl}"));
-        }
-    }
-    parts.join(", ")
-}
-
-/// Renders stuck projects as pretty JSON matching `org-stuck-output.schema.json`.
-pub fn render_stuck_json(stuck: &[StuckProject<'_>]) -> String {
-    let items: Vec<serde_json::Value> = stuck
-        .iter()
-        .map(|sp| {
-            let entry = &sp.doc.entries[sp.entry_idx];
-            serde_json::json!({
-                "file": sp.doc.file.display().to_string(),
-                "line": entry.heading_line,
-                "locator": locator_for_entry(sp.doc, sp.entry_idx).to_string(),
-                "keyword": entry.keyword,
-                "title": entry.title,
-                "tags": entry.tags,
-                "children_done": sp.done,
-                "children_actionable": sp.actionable,
-                "children_blocked": sp.blocked_count,
-                "children_waiting": sp.waiting,
-            })
-        })
-        .collect();
-    serde_json::to_string_pretty(&items).unwrap_or_default()
-}
-
-// endregion
+#[path = "output/gtd.rs"]
+pub mod gtd;
+pub use gtd::*;

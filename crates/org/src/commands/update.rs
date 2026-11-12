@@ -75,6 +75,8 @@ pub(crate) enum UpdateCommand {
     DeleteProperty(DeletePropertyArgs),
     /// Set or clear heading tags aligned to column 77.
     SetTags(SetTagsArgs),
+    /// Insert an idempotent outbound link to another entry or file node.
+    Link(super::update_property::LinkArgs),
     /// Wire or remove symmetric org-edna :BLOCKER: and :TRIGGER: dependencies.
     Dep {
         /// Dependency mutation subcommand (`add` or `remove`).
@@ -334,16 +336,31 @@ pub(crate) fn resolve_final_batch_targets(
 }
 
 /// Resolves a single Org locator string into its parsed entry, source file, and document.
-pub(crate) fn resolve_single_target(
+pub(crate) fn resolve_single_target_with_workspace(
     locator_str: &str,
+    workspace: Option<&Path>,
 ) -> Result<(ResolvedEntry, SourceFile, OrgDocument), i32> {
-    let locator = OrgLocator::parse(locator_str).map_err(|e| {
-        eprintln!("org: {e}");
-        EXIT_ERROR
-    })?;
+    let locator = match OrgLocator::parse(locator_str) {
+        Ok(loc) => loc,
+        Err(_) if locator_str.ends_with(".org") || Path::new(locator_str).is_file() => {
+            OrgLocator::LineRef {
+                file: PathBuf::from(locator_str),
+                line: 1,
+            }
+        }
+        Err(e) => {
+            eprintln!("org: {e}");
+            return Err(EXIT_ERROR);
+        }
+    };
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut search_paths = vec![cwd.clone()];
-    if let Ok(cfg) = Config::load_for_dir(&cwd) {
+    let mut search_paths = Vec::new();
+    if let Some(ws) = workspace {
+        search_paths.push(ws.to_path_buf());
+    }
+    search_paths.push(cwd.clone());
+    let cfg_dir = workspace.unwrap_or(&cwd);
+    if let Ok(cfg) = Config::load_for_dir(cfg_dir) {
         for (_, vp) in cfg.roam_directories() {
             if vp.exists() && !search_paths.contains(&vp) {
                 search_paths.push(vp);
@@ -362,6 +379,13 @@ pub(crate) fn resolve_single_target(
     Ok((resolved, source, doc))
 }
 
+/// Resolves a single Org locator string using current working directory paths.
+pub(crate) fn resolve_single_target(
+    locator_str: &str,
+) -> Result<(ResolvedEntry, SourceFile, OrgDocument), i32> {
+    resolve_single_target_with_workspace(locator_str, None)
+}
+
 // endregion
 
 // region Subcommand Dispatch
@@ -372,6 +396,7 @@ fn run_metadata_or_table_update(command: UpdateCommand) -> i32 {
         UpdateCommand::SetProperty(args) => run_set_property(args),
         UpdateCommand::DeleteProperty(args) => run_delete_property(args),
         UpdateCommand::SetTags(args) => run_set_tags(args),
+        UpdateCommand::Link(args) => super::update_property::run_link(args),
         UpdateCommand::Dep { command } => run_dep(command),
         UpdateCommand::AddCookie {
             paths,

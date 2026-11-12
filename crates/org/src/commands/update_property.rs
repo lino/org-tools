@@ -1,15 +1,20 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `org update set-property`, `delete-property`, and `set-tags` subcommand handlers.
+//! `org update set-property`, `delete-property`, `set-tags`, and `link` subcommand handlers.
 
+#[path = "update_property/link.rs"]
+pub(crate) mod link;
+pub(crate) use link::{run_link, LinkArgs};
+
+use std::path::PathBuf;
 use std::time::Instant;
 
 use clap::Args;
 
 use org_tools_core::property;
 
-use super::update::resolve_single_target;
+use super::update::{invalidate_warm_workspace_caches, resolve_single_target_with_workspace};
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{EXIT_ERROR, EXIT_OK};
 
@@ -24,6 +29,10 @@ pub(crate) struct SetPropertyArgs {
 
     /// Property value to set.
     pub(crate) value: String,
+
+    /// Workspace directory for locator resolution.
+    #[arg(long)]
+    pub(crate) workspace: Option<PathBuf>,
 
     /// Print what would be changed without writing files.
     #[arg(long)]
@@ -42,6 +51,10 @@ pub(crate) struct DeletePropertyArgs {
 
     /// Property key name without colons.
     pub(crate) key: String,
+
+    /// Workspace directory for locator resolution.
+    #[arg(long)]
+    pub(crate) workspace: Option<PathBuf>,
 
     /// Print what would be changed without writing files.
     #[arg(long)]
@@ -68,6 +81,10 @@ pub(crate) struct SetTagsArgs {
     /// Target display column for heading tag alignment (`F007`).
     #[arg(long)]
     pub(crate) tag_column: Option<usize>,
+
+    /// Workspace directory for locator resolution.
+    #[arg(long)]
+    pub(crate) workspace: Option<PathBuf>,
 
     /// Print what would be changed without writing files.
     #[arg(long)]
@@ -111,10 +128,11 @@ fn record_single_entry_change(
 /// Runs `org update set-property`.
 pub(crate) fn run_set_property(args: SetPropertyArgs) -> i32 {
     let started = Instant::now();
-    let (resolved, source, doc) = match resolve_single_target(&args.locator) {
-        Ok(triple) => triple,
-        Err(code) => return code,
-    };
+    let (resolved, source, doc) =
+        match resolve_single_target_with_workspace(&args.locator, args.workspace.as_deref()) {
+            Ok(triple) => triple,
+            Err(code) => return code,
+        };
     let result =
         match property::set_property(&source, &doc, resolved.entry_index, &args.key, &args.value) {
             Ok(r) => r,
@@ -137,6 +155,12 @@ pub(crate) fn run_set_property(args: SetPropertyArgs) -> i32 {
     ) {
         return code;
     }
+    if !mutation.dry_run && result.changed {
+        invalidate_warm_workspace_caches(
+            args.workspace.as_deref(),
+            std::slice::from_ref(&resolved.file),
+        );
+    }
     mutation.finish(started, 1);
     output_mutation(&mutation, args.format);
     EXIT_OK
@@ -145,10 +169,11 @@ pub(crate) fn run_set_property(args: SetPropertyArgs) -> i32 {
 /// Runs `org update delete-property`.
 pub(crate) fn run_delete_property(args: DeletePropertyArgs) -> i32 {
     let started = Instant::now();
-    let (resolved, source, doc) = match resolve_single_target(&args.locator) {
-        Ok(triple) => triple,
-        Err(code) => return code,
-    };
+    let (resolved, source, doc) =
+        match resolve_single_target_with_workspace(&args.locator, args.workspace.as_deref()) {
+            Ok(triple) => triple,
+            Err(code) => return code,
+        };
     let result = match property::delete_property(&source, &doc, resolved.entry_index, &args.key) {
         Ok(r) => r,
         Err(e) => {
@@ -169,6 +194,12 @@ pub(crate) fn run_delete_property(args: DeletePropertyArgs) -> i32 {
         detail,
     ) {
         return code;
+    }
+    if !mutation.dry_run && result.changed {
+        invalidate_warm_workspace_caches(
+            args.workspace.as_deref(),
+            std::slice::from_ref(&resolved.file),
+        );
     }
     mutation.finish(started, 1);
     output_mutation(&mutation, args.format);
@@ -194,10 +225,11 @@ pub(crate) fn run_set_tags(args: SetTagsArgs) -> i32 {
             return EXIT_ERROR;
         }
     };
-    let (resolved, source, doc) = match resolve_single_target(&args.locator) {
-        Ok(triple) => triple,
-        Err(code) => return code,
-    };
+    let (resolved, source, doc) =
+        match resolve_single_target_with_workspace(&args.locator, args.workspace.as_deref()) {
+            Ok(triple) => triple,
+            Err(code) => return code,
+        };
     let tag_col = property::resolve_tag_column(args.tag_column);
     let result =
         match property::set_tags(&source, &doc, resolved.entry_index, &parsed_tags, tag_col) {
@@ -220,6 +252,12 @@ pub(crate) fn run_set_tags(args: SetTagsArgs) -> i32 {
         detail,
     ) {
         return code;
+    }
+    if !mutation.dry_run && result.changed {
+        invalidate_warm_workspace_caches(
+            args.workspace.as_deref(),
+            std::slice::from_ref(&resolved.file),
+        );
     }
     mutation.finish(started, 1);
     output_mutation(&mutation, args.format);

@@ -4,7 +4,7 @@
 //! Entry body extraction, `unicode61` phrase matching, FTS5 query builder, and BM25 scorer.
 
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
@@ -81,7 +81,7 @@ fn is_block_delimiter(trimmed: &str) -> bool {
 }
 
 /// Extracts clean body prose for a single heading slice `lines[start..end]`.
-fn extract_slice_body(lines: &[&str], mut idx: usize, end: usize) -> String {
+pub(crate) fn extract_slice_body(lines: &[&str], mut idx: usize, end: usize) -> String {
     if idx < end && is_planning_line(lines[idx].trim()) {
         idx += 1;
     }
@@ -194,7 +194,7 @@ pub fn matches_body_phrase(title: &str, body: &str, needle: &str) -> bool {
 // region FTS5 Query & BM25 Scorer
 
 /// Formats non-empty `unicode61` tokens from `raw` as a double-quoted FTS5 phrase clause.
-fn format_fts5_phrase(raw: &str) -> Option<String> {
+pub(crate) fn format_fts5_phrase(raw: &str) -> Option<String> {
     let tokens = tokenize_unicode61(raw);
     if tokens.is_empty() {
         return None;
@@ -213,62 +213,6 @@ pub fn build_fts5_match_expr(phrases: &[String]) -> Option<String> {
         clauses.push(format_fts5_phrase(raw)?);
     }
     Some(clauses.join(" AND "))
-}
-
-/// Populates an ephemeral in-memory `entries_fts` table from `loaded` documents.
-fn populate_ephemeral_fts5(conn: &Connection, loaded: &[BodyLoadedDoc]) -> Result<(), String> {
-    conn.execute_batch(
-        "CREATE VIRTUAL TABLE entries_fts USING fts5(
-            doc_idx UNINDEXED, entry_idx UNINDEXED, title, body,
-            tokenize = 'unicode61 remove_diacritics 0'
-        );",
-    )
-    .map_err(|e| e.to_string())?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    {
-        let mut ins = tx
-            .prepare(
-                "INSERT INTO entries_fts (doc_idx, entry_idx, title, body) VALUES (?1, ?2, ?3, ?4)",
-            )
-            .map_err(|e| e.to_string())?;
-        for (di, item) in loaded.iter().enumerate() {
-            for (ei, entry) in item.doc.entries.iter().enumerate() {
-                ins.execute(params![di as i64, ei as i64, entry.title, item.bodies[ei]])
-                    .map_err(|e| e.to_string())?;
-            }
-        }
-    }
-    tx.commit().map_err(|e| e.to_string())
-}
-
-/// Computes exact SQLite C `bm25(entries_fts)` scores on an ephemeral in-memory FTS5 table.
-fn score_in_memory_fts5_bm25(
-    loaded: &[BodyLoadedDoc],
-    or_match_expr: &str,
-) -> HashMap<(usize, usize), f64> {
-    let mut scores = HashMap::new();
-    let Ok(conn) = Connection::open_in_memory() else {
-        return scores;
-    };
-    if populate_ephemeral_fts5(&conn, loaded).is_err() {
-        return scores;
-    }
-    let sql = "SELECT doc_idx, entry_idx, bm25(entries_fts)
-               FROM entries_fts WHERE entries_fts MATCH ?1";
-    if let Ok(mut stmt) = conn.prepare(sql) {
-        if let Ok(rows) = stmt.query_map(params![or_match_expr], |r| {
-            Ok((
-                r.get::<_, i64>(0)? as usize,
-                r.get::<_, i64>(1)? as usize,
-                -r.get::<_, f64>(2)?,
-            ))
-        }) {
-            for (di, ei, s) in rows.flatten() {
-                scores.insert((di, ei), s);
-            }
-        }
-    }
-    scores
 }
 
 /// Runs an indexed SQLite FTS5 BM25 query for `phrases` ordered best-match-first.
@@ -382,34 +326,71 @@ pub fn load_cached_fts_candidate_docs(
     Ok(Some((hits, loaded)))
 }
 
-/// Ranks `(doc_idx, entry_idx)` pairs by SQLite FTS5 Okapi BM25 score and `(file, entry_idx)` tie-breaker.
-pub fn rank_matched_indices_bm25(
-    loaded: &[BodyLoadedDoc],
-    matched: &[(usize, usize)],
-    phrases: &[String],
-) -> Vec<(usize, usize)> {
-    if matched.len() <= 1 {
-        return matched.to_vec();
-    }
-    let clauses: Vec<String> = phrases
-        .iter()
-        .filter_map(|p| format_fts5_phrase(p))
-        .collect();
-    let mut ranked = matched.to_vec();
-    if clauses.is_empty() {
-        ranked.sort_by(|&(da, ea), &(db, eb)| {
-            (&loaded[da].doc.file, ea).cmp(&(&loaded[db].doc.file, eb))
-        });
-        return ranked;
-    }
-    let scores = score_in_memory_fts5_bm25(loaded, &clauses.join(" OR "));
-    ranked.sort_by(|&(da, ea), &(db, eb)| {
-        let sa = scores.get(&(da, ea)).copied().unwrap_or(0.0);
-        let sb = scores.get(&(db, eb)).copied().unwrap_or(0.0);
-        sb.total_cmp(&sa)
-            .then_with(|| (&loaded[da].doc.file, ea).cmp(&(&loaded[db].doc.file, eb)))
-    });
-    ranked
+// endregion
+
+// region Warm Ranked FTS5 Search & Ephemeral Module
+
+/// A ranked FTS5 hit containing relative file path, entry index, rank score, and snippet.
+#[derive(Debug, Clone)]
+pub struct RankedFtsHit {
+    /// Workspace-relative path to the Org document.
+    pub rel_path: String,
+    /// Entry index in the document, or [`crate::locator::FILE_NODE_ENTRY_INDEX`] for level-0 file nodes.
+    pub entry_idx: usize,
+    /// One-based line of the heading or level-0 properties drawer.
+    pub heading_line: usize,
+    /// BM25 relevance score.
+    pub rank: f64,
+    /// Highlighted contextual snippet.
+    pub snippet: String,
 }
+
+/// Executes an indexed SQLite FTS5 BM25 search with highlight snippets against warm `entries_fts`.
+pub(crate) fn query_fts5_ranked(
+    conn: &Connection,
+    match_expr: &str,
+    limit: Option<usize>,
+) -> Result<Vec<RankedFtsHit>, String> {
+    let sql = format!(
+        "SELECT rel_path, entry_idx, heading_line, bm25(entries_fts) as rank, snippet(entries_fts, -1, '<b>', '</b>', '...', 10) as snip
+         FROM entries_fts
+         WHERE entries_fts MATCH ?1
+         ORDER BY rank ASC{}",
+        limit.map(|n| format!(" LIMIT {n}")).unwrap_or_default()
+    );
+    let mut stmt = conn
+        .prepare_cached(&sql)
+        .map_err(|e| format!("failed to prepare FTS5 ranked query: {e}"))?;
+
+    let rows = stmt
+        .query_map(params![match_expr], |row| {
+            let raw_rank: f64 = row.get(3)?;
+            let raw_idx: i64 = row.get(1)?;
+            let entry_idx = if raw_idx < 0 {
+                crate::locator::FILE_NODE_ENTRY_INDEX
+            } else {
+                raw_idx as usize
+            };
+            Ok(RankedFtsHit {
+                rel_path: row.get(0)?,
+                entry_idx,
+                heading_line: row.get::<_, i64>(2)? as usize,
+                rank: -raw_rank,
+                snippet: row.get(4)?,
+            })
+        })
+        .map_err(|e| format!("failed to execute FTS5 ranked query: {e}"))?;
+
+    let mut out = Vec::new();
+    for item in rows {
+        out.push(item.map_err(|e| format!("failed to decode FTS5 ranked row: {e}"))?);
+    }
+    Ok(out)
+}
+
+#[path = "fts/ephemeral.rs"]
+pub mod ephemeral;
+
+pub use ephemeral::{execute_ephemeral_fts5_search, rank_matched_indices_bm25, EphemeralFtsHit};
 
 // endregion

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=870 reason="Pre-existing cohesive query language AST, tokenizer, recursive-descent parser, and behavioural unit tests"
+// fritz: allow-file-length=980 reason="Pre-existing cohesive query language AST, tokenizer, recursive-descent parser, and behavioural unit tests"
 
 //! Query language parser for org-mode entry matching.
 //!
@@ -61,6 +61,15 @@ pub enum Predicate {
     Actionable,
     /// Match entries in a waiting state (keyword contains "WAIT" or has `:WAITING_FOR:` property).
     Waiting,
+    /// Match all entries.
+    True,
+    /// Match entries by top-of-body `vulpea-meta` `- key :: value` items.
+    Meta {
+        /// Metadata key.
+        key: String,
+        /// Optional metadata value to match.
+        value: Option<String>,
+    },
     /// Logical AND of predicates.
     And(Vec<Predicate>),
     /// Logical OR of predicates.
@@ -208,7 +217,7 @@ impl Predicate {
 pub fn parse_query(input: &str) -> Result<Predicate, ParseError> {
     let tokens = tokenize(input)?;
     if tokens.is_empty() {
-        return Err(ParseError("empty query".to_string()));
+        return Ok(Predicate::True);
     }
     let (pred, rest) = parse_or(&tokens)?;
     if !rest.is_empty() {
@@ -446,6 +455,45 @@ fn parse_non_empty_text(
     }
 }
 
+/// Parses a `has:ID`, `has:clock`, or `has:PROP` predicate term.
+fn parse_has_term(value: &str) -> Result<Predicate, ParseError> {
+    if value.is_empty() {
+        return Err(ParseError("empty has value".to_string()));
+    }
+    match value.to_ascii_lowercase().as_str() {
+        "clock" | "clocked" => Ok(Predicate::Clocked),
+        "todo" => Ok(Predicate::Todo(None)),
+        "scheduled" | "sched" => Ok(Predicate::Scheduled(DateMatch::Any)),
+        "deadline" | "dl" => Ok(Predicate::Deadline(DateMatch::Any)),
+        "closed" => Ok(Predicate::Closed(DateMatch::Any)),
+        _ => Ok(Predicate::Property {
+            key: value.to_string(),
+            value: String::new(),
+        }),
+    }
+}
+
+/// Parses `meta:KEY=VALUE` or `meta:KEY`.
+fn parse_meta_term(value: &str) -> Result<Predicate, ParseError> {
+    if let Some((k, v)) = value.split_once('=') {
+        if k.trim().is_empty() {
+            return Err(ParseError("empty meta key".to_string()));
+        }
+        Ok(Predicate::Meta {
+            key: k.trim().to_string(),
+            value: Some(v.trim().to_string()),
+        })
+    } else {
+        if value.trim().is_empty() {
+            return Err(ParseError("empty meta key".to_string()));
+        }
+        Ok(Predicate::Meta {
+            key: value.trim().to_string(),
+            value: None,
+        })
+    }
+}
+
 /// Parses a `key:value` predicate term after splitting on the first `:` separator.
 fn parse_key_value_term(key: &str, value: &str) -> Result<Predicate, ParseError> {
     match key {
@@ -458,6 +506,12 @@ fn parse_key_value_term(key: &str, value: &str) -> Result<Predicate, ParseError>
         "property" | "prop" => parse_property_term(value),
         "priority" | "pri" => parse_priority_term(value),
         "level" | "lvl" => parse_level_term(value),
+        "has" => parse_has_term(value),
+        "has-meta" => Ok(Predicate::Meta {
+            key: value.to_string(),
+            value: None,
+        }),
+        "meta" => parse_meta_term(value),
         other => parse_planning_term(other, value),
     }
 }
@@ -472,6 +526,19 @@ fn parse_term(term: &str) -> Result<Predicate, ParseError> {
         "actionable" => return Ok(Predicate::Actionable),
         "waiting" | "WAITING" => return Ok(Predicate::Waiting),
         _ => {}
+    }
+
+    if let Some(tag) = term.strip_prefix('+') {
+        if !tag.is_empty() {
+            return Ok(Predicate::Tags(vec![tag.to_string()]));
+        }
+    }
+    if let Some(tag) = term.strip_prefix('-') {
+        if !tag.is_empty() {
+            return Ok(Predicate::Not(Box::new(Predicate::Tags(vec![
+                tag.to_string()
+            ]))));
+        }
     }
 
     if let Some((key, value)) = term.split_once(':') {
@@ -795,10 +862,11 @@ mod tests {
         assert_eq!(p, Predicate::Heading("meeting".to_string()));
     }
 
-    /// Verifies empty queries return a [`ParseError`].
+    /// Verifies empty queries parse as `Predicate::True`.
     #[test]
-    fn parse_empty_fails() {
-        assert!(parse_query("").is_err());
+    fn parse_empty_yields_true() {
+        assert_eq!(parse_query("").unwrap(), Predicate::True);
+        assert_eq!(parse_query("   ").unwrap(), Predicate::True);
     }
 
     /// Verifies `deadline:past` parses as `DateMatch::Past`.

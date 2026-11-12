@@ -29,6 +29,7 @@ fn make_doc_with_entries(entries_data: &[(&str, Option<&str>, Option<usize>)]) -
             planning: Planning::default(),
             clocks: Vec::new(),
             checklist: Vec::new(),
+            vulpea_meta: HashMap::new(),
             heading_line: i + 1,
             heading_offset: 0,
             content_end_line: i + 2,
@@ -59,6 +60,7 @@ fn make_doc_with_entries(entries_data: &[(&str, Option<&str>, Option<usize>)]) -
         table_constants: HashMap::new(),
         id_index: HashMap::new(),
         custom_id_index: HashMap::new(),
+        vulpea_meta: HashMap::new(),
     }
 }
 

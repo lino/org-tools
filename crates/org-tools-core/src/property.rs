@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=1500 reason="Cohesive property drawer, tag alignment, deterministic UUIDv5 engine, and unit tests"
+// fritz: allow-file-length=1650 reason="Cohesive property drawer, tag alignment, deterministic UUIDv5 engine, and unit tests"
 
 //! Property drawer mutations, heading tag alignment, and deterministic UUIDv5 minting.
 //!
@@ -15,6 +15,7 @@ use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
 use crate::document::{OrgDocument, OrgEntry};
+use crate::locator::FILE_NODE_ENTRY_INDEX;
 use crate::rules::heading::{is_heading, parse_heading_with_keywords};
 use crate::source::SourceFile;
 
@@ -773,6 +774,169 @@ pub fn set_property(
     set_properties(source, doc, entry_idx, &[(valid_key, value.to_string())])
 }
 
+/// Locates a level-0 file-level `:PROPERTIES:` drawer or computes where to insert one.
+fn locate_file_node_drawer(lines: &[String], doc: &OrgDocument) -> DrawerLocation {
+    if let Some(fl) = doc.file_properties_line {
+        let cursor = fl.saturating_sub(1);
+        if cursor < lines.len() && lines[cursor].trim().eq_ignore_ascii_case(":PROPERTIES:") {
+            let mut properties = Vec::new();
+            for (idx, line) in lines.iter().enumerate().skip(cursor + 1) {
+                if line.trim().eq_ignore_ascii_case(":END:") {
+                    return DrawerLocation {
+                        start_line: cursor,
+                        end_line: Some(idx),
+                        indent: String::new(),
+                        properties,
+                    };
+                }
+                if let Some(pair) = parse_drawer_property_line(line) {
+                    properties.push(pair);
+                }
+            }
+        }
+    }
+
+    let mut cursor = 0;
+    while cursor < lines.len() {
+        let trimmed = lines[cursor].trim();
+        if trimmed == "#" || trimmed.starts_with("# ") || trimmed.starts_with("#\t") {
+            cursor += 1;
+        } else {
+            break;
+        }
+    }
+
+    DrawerLocation {
+        start_line: cursor,
+        end_line: None,
+        indent: String::new(),
+        properties: Vec::new(),
+    }
+}
+
+/// Sets or inserts properties inside a level-0 file-level `:PROPERTIES:` drawer.
+fn set_file_node_properties(
+    source: &SourceFile,
+    doc: &OrgDocument,
+    pairs: &[(String, String)],
+) -> Result<PropertyMutationResult, String> {
+    let lines = split_clean_lines(&source.content);
+    let loc = locate_file_node_drawer(&lines, doc);
+    let mut props = loc.properties.clone();
+
+    for (raw_key, raw_val) in pairs {
+        let key = validate_property_key(raw_key)?;
+        let val = raw_val.trim().to_string();
+        if let Some(existing) = props.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(&key)) {
+            *existing = (key, val);
+        } else {
+            props.push((key, val));
+        }
+    }
+
+    let content = splice_drawer_lines(lines, source.content.ends_with('\n'), 0, &loc, &props);
+    let changed = content != source.content;
+    Ok(PropertyMutationResult {
+        content,
+        changed,
+        line: doc.file_properties_line.unwrap_or(loc.start_line + 1),
+    })
+}
+
+/// Deletes a property from a level-0 file-level `:PROPERTIES:` drawer.
+fn delete_file_node_property(
+    source: &SourceFile,
+    doc: &OrgDocument,
+    key: &str,
+) -> Result<PropertyMutationResult, String> {
+    let valid_key = validate_property_key(key)?;
+    let lines = split_clean_lines(&source.content);
+    let loc = locate_file_node_drawer(&lines, doc);
+    if loc.end_line.is_none() {
+        return Ok(PropertyMutationResult {
+            content: source.content.clone(),
+            changed: false,
+            line: doc.file_properties_line.unwrap_or(1),
+        });
+    }
+
+    let before_len = loc.properties.len();
+    let remaining: Vec<(String, String)> = loc
+        .properties
+        .iter()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case(&valid_key))
+        .cloned()
+        .collect();
+    if remaining.len() == before_len {
+        return Ok(PropertyMutationResult {
+            content: source.content.clone(),
+            changed: false,
+            line: doc.file_properties_line.unwrap_or(1),
+        });
+    }
+
+    let content = splice_drawer_lines(lines, source.content.ends_with('\n'), 0, &loc, &remaining);
+    let changed = content != source.content;
+    Ok(PropertyMutationResult {
+        content,
+        changed,
+        line: doc.file_properties_line.unwrap_or(1),
+    })
+}
+
+/// Matches a property value either exactly (case-insensitively) or against individual tokens.
+pub fn matches_property_token(actual: &str, target: &str) -> bool {
+    let clean_target = target.trim();
+    if clean_target.is_empty() {
+        return true;
+    }
+    if actual.trim().eq_ignore_ascii_case(clean_target) {
+        return true;
+    }
+    for token in split_quoted_or_ws_tokens(actual) {
+        if token.eq_ignore_ascii_case(clean_target) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Splits a property value into tokens, keeping double-quoted spans intact.
+pub fn split_quoted_or_ws_tokens(value: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut chars = value.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+        } else if c == '"' {
+            chars.next();
+            let mut phrase = String::new();
+            for ch in chars.by_ref() {
+                if ch == '"' {
+                    break;
+                }
+                phrase.push(ch);
+            }
+            if !phrase.trim().is_empty() {
+                tokens.push(phrase.trim().to_string());
+            }
+        } else {
+            let mut word = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch.is_whitespace() || ch == '"' {
+                    break;
+                }
+                word.push(ch);
+                chars.next();
+            }
+            if !word.trim().is_empty() {
+                tokens.push(word.trim().to_string());
+            }
+        }
+    }
+    tokens
+}
+
 /// Sets or inserts multiple properties in order inside the target entry's drawer.
 pub fn set_properties(
     source: &SourceFile,
@@ -780,6 +944,9 @@ pub fn set_properties(
     entry_idx: usize,
     pairs: &[(String, String)],
 ) -> Result<PropertyMutationResult, String> {
+    if entry_idx == FILE_NODE_ENTRY_INDEX {
+        return set_file_node_properties(source, doc, pairs);
+    }
     let entry = doc
         .entries
         .get(entry_idx)
@@ -820,6 +987,9 @@ pub fn delete_property(
     entry_idx: usize,
     key: &str,
 ) -> Result<PropertyMutationResult, String> {
+    if entry_idx == FILE_NODE_ENTRY_INDEX {
+        return delete_file_node_property(source, doc, key);
+    }
     let valid_key = validate_property_key(key)?;
     let entry = doc
         .entries

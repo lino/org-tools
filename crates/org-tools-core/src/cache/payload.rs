@@ -36,12 +36,20 @@ pub(crate) struct EdnaEdgeRecord {
 
 /// Extracted FTS5 row ready for `entries_fts` insertion.
 pub(crate) struct FtsEntryRecord {
-    /// Zero-based entry index in `doc.entries`.
+    /// Zero-based entry index in `doc.entries` or -1 for file node.
     pub(crate) entry_idx: i64,
-    /// One-based heading line number.
+    /// One-based heading line number (or file properties line).
     pub(crate) heading_line: i64,
-    /// Heading title text.
+    /// Heading title or file title text.
     pub(crate) title: String,
+    /// Comma/space-separated aliases.
+    pub(crate) aliases: String,
+    /// Space-separated tags.
+    pub(crate) tags: String,
+    /// Key=Value properties string.
+    pub(crate) properties: String,
+    /// Vulpea metadata key=value string.
+    pub(crate) vulpea_meta: String,
     /// Clean body prose text.
     pub(crate) body: String,
 }
@@ -230,6 +238,91 @@ fn extract_doc_edna_edges(doc: &OrgDocument) -> Vec<EdnaEdgeRecord> {
     edges
 }
 
+/// Extracts all FTS5 index records (level-0 file node if present, plus all heading entries).
+fn extract_fts_rows(
+    source: &SourceFile,
+    doc: &OrgDocument,
+    bodies: &[String],
+) -> Vec<FtsEntryRecord> {
+    let mut rows = Vec::with_capacity(doc.entries.len() + 1);
+    if !doc.file_properties.is_empty() || doc.file_id().is_some() {
+        let lines: Vec<&str> = source.content.lines().collect();
+        let end = doc
+            .entries
+            .first()
+            .map(|e| e.heading_line.saturating_sub(1))
+            .unwrap_or(lines.len());
+        let file_body = crate::cache::fts::extract_slice_body(&lines, 0, end);
+        let aliases = doc
+            .file_properties
+            .get("ROAM_ALIASES")
+            .cloned()
+            .unwrap_or_default();
+        let tags = doc.filetags.join(" ");
+        let props = doc
+            .file_properties
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let meta = doc
+            .vulpea_meta
+            .iter()
+            .flat_map(|(k, vs)| vs.iter().map(move |v| format!("{k}={v}")))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        rows.push(FtsEntryRecord {
+            entry_idx: -1,
+            heading_line: doc.file_properties_line.unwrap_or(1) as i64,
+            title: doc.file_title_or_stem(),
+            aliases,
+            tags,
+            properties: props,
+            vulpea_meta: meta,
+            body: file_body,
+        });
+    }
+
+    for (idx, entry) in doc.entries.iter().enumerate() {
+        let aliases = entry
+            .properties
+            .get("ROAM_ALIASES")
+            .cloned()
+            .unwrap_or_default();
+        let tags = doc.effective_tags(idx).join(" ");
+        let props = entry
+            .properties
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let meta = entry
+            .vulpea_meta
+            .iter()
+            .flat_map(|(k, vs)| vs.iter().map(move |v| format!("{k}={v}")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let body = if idx < bodies.len() {
+            bodies[idx].clone()
+        } else {
+            String::new()
+        };
+
+        rows.push(FtsEntryRecord {
+            entry_idx: idx as i64,
+            heading_line: entry.heading_line as i64,
+            title: entry.title.clone(),
+            aliases,
+            tags,
+            properties: props,
+            vulpea_meta: meta,
+            body,
+        });
+    }
+    rows
+}
+
 /// Parses raw file bytes into a [`ParsedFilePayload`] ready for SQLite insertion.
 pub(crate) fn build_file_payload(
     workspace_root: &Path,
@@ -248,18 +341,7 @@ pub(crate) fn build_file_payload(
     let links = extract_roam_links(&source, &doc);
     let edna_edges = extract_doc_edna_edges(&doc);
     let bodies = extract_entry_bodies(&source.content, &doc);
-    let fts_rows = doc
-        .entries
-        .iter()
-        .enumerate()
-        .zip(bodies)
-        .map(|((idx, entry), body)| FtsEntryRecord {
-            entry_idx: idx as i64,
-            heading_line: entry.heading_line as i64,
-            title: entry.title.clone(),
-            body,
-        })
-        .collect();
+    let fts_rows = extract_fts_rows(&source, &doc, &bodies);
     let file_props: Vec<String> = doc
         .file_properties
         .keys()
@@ -432,11 +514,24 @@ fn write_payload_in_tx(tx: &Transaction<'_>, p: &ParsedFilePayload) -> Result<()
     }
     if !p.fts_rows.is_empty() {
         let mut s = tx
-            .prepare_cached("INSERT INTO entries_fts (rel_path, entry_idx, heading_line, title, body) VALUES (?1, ?2, ?3, ?4, ?5)")
+            .prepare_cached(
+                "INSERT INTO entries_fts (rel_path, entry_idx, heading_line, title, aliases, tags, properties, vulpea_meta, body)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )
             .map_err(|e| format!("entries_fts prepare failed: {e}"))?;
         for f in &p.fts_rows {
-            s.execute(params![rel, f.entry_idx, f.heading_line, f.title, f.body])
-                .map_err(|e| format!("entries_fts insert failed for {rel}: {e}"))?;
+            s.execute(params![
+                rel,
+                f.entry_idx,
+                f.heading_line,
+                f.title,
+                f.aliases,
+                f.tags,
+                f.properties,
+                f.vulpea_meta,
+                f.body
+            ])
+            .map_err(|e| format!("entries_fts insert failed for {rel}: {e}"))?;
         }
     }
     Ok(())

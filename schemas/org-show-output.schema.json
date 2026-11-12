@@ -164,6 +164,72 @@
       "type": ["string", "null"],
       "description": "Optional bounded GitHub Flavored Markdown rendering when requested."
     },
+    "filetags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "File-level tags from #+FILETAGS:."
+    },
+    "effective_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Inherited effective tags."
+    },
+    "vulpea_meta": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "description": "Top-of-body vulpea-meta description list items."
+    },
+    "links": {
+      "type": "array",
+      "description": "Outbound links detected in the node.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "target", "line"],
+        "properties": {
+          "kind": { "type": "string" },
+          "target": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "line": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "body": {
+      "type": "string",
+      "description": "Clean body text with drawers and planning stripped."
+    },
+    "digest": {
+      "type": "string",
+      "description": "Canonical SHA-256 digest of the node/subtree."
+    },
+    "checkboxes": {
+      "type": "array",
+      "description": "Plain-list checklist items alias.",
+      "items": {
+        "type": "object",
+        "required": ["line", "state", "text"],
+        "properties": {
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based line number of the checklist item."
+          },
+          "state": {
+            "type": "string",
+            "enum": ["unchecked", "partial", "checked"],
+            "description": "Checkbox completion state."
+          },
+          "text": {
+            "type": "string",
+            "description": "Trimmed checklist item text."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "telemetry": {
       "type": "object",
       "required": ["duration_us", "files_scanned", "cache_hits", "cache_misses"],

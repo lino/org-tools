@@ -33,12 +33,13 @@ use crate::roam::{RoamBacklink, RoamIndex, RoamNode, RoamOutgoingLink};
 
 pub use federated::{FederatedVault, RoamWorkspace};
 pub use fts::{
-    build_fts5_match_expr, count_phrase_occurrences, extract_entry_bodies,
-    load_cached_fts_candidate_docs, load_docs_with_bodies, matches_body_phrase,
-    rank_matched_indices_bm25, tokenize_unicode61, BodyLoadedDoc, CachedFtsPlan,
+    build_fts5_match_expr, count_phrase_occurrences, execute_ephemeral_fts5_search,
+    extract_entry_bodies, load_cached_fts_candidate_docs, load_docs_with_bodies,
+    matches_body_phrase, rank_matched_indices_bm25, tokenize_unicode61, BodyLoadedDoc,
+    CachedFtsPlan, EphemeralFtsHit, RankedFtsHit,
 };
 
-use fts::query_fts5_bm25;
+use fts::{query_fts5_bm25, query_fts5_ranked};
 use roam::{
     load_graph_cached, query_backlinks_cached, query_blocker_target_paths,
     query_outgoing_links_cached, resolve_nodes_cached,
@@ -396,6 +397,25 @@ impl WorkspaceCache {
     /// Executes an FTS5 BM25 search for `phrases` (`AND`-joined) ordered best-first.
     pub fn search_fts_bm25(&self, phrases: &[String]) -> Result<Vec<FtsHit>, String> {
         query_fts5_bm25(&self.conn, phrases)
+    }
+
+    /// Executes an indexed FTS5 BM25 search with highlight snippets against warm `entries_fts`.
+    pub fn search_fts_ranked(
+        &self,
+        query: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<RankedFtsHit>, String> {
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|t| {
+                let clean = t.replace('"', "\"\"");
+                format!("\"{clean}\"*")
+            })
+            .collect();
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        query_fts5_ranked(&self.conn, &terms.join(" OR "), limit)
     }
 
     /// Resolves relative file paths containing `:BLOCKER:` `ids(...)` targets referenced by `rel_paths`.

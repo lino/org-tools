@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::cache::{CacheStatus, CacheTelemetry, CachedHeadingCandidate, CachedIdCandidate};
 
 /// Current schema version stored in SQLite `PRAGMA user_version`.
-pub(crate) const SCHEMA_USER_VERSION: i64 = 5;
+pub(crate) const SCHEMA_USER_VERSION: i64 = 6;
 
 /// Per-connection session pragmas applied on every open handle.
 const SESSION_PRAGMAS_SQL: &str = "
@@ -101,10 +101,14 @@ const SCHEMA_DDL_SQL: &str = "
         entry_idx UNINDEXED,
         heading_line UNINDEXED,
         title,
+        aliases,
+        tags,
+        properties,
+        vulpea_meta,
         body,
         tokenize = 'unicode61 remove_diacritics 0'
     );
-    PRAGMA user_version = 5;
+    PRAGMA user_version = 6;
     COMMIT;
 ";
 

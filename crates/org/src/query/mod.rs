@@ -17,3 +17,5 @@ pub mod output;
 pub mod parser;
 /// Predicate evaluation and Okapi BM25 body-ranking helpers.
 pub mod predicate;
+/// Rich query, show, digest, link extraction, and FTS5 ranking helpers.
+pub mod rich;

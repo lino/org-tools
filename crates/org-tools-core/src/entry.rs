@@ -130,6 +130,30 @@ pub fn parse_checklist_item(line: &str, line_number: usize) -> Option<ChecklistI
     })
 }
 
+/// Attempts to parse an Org description list item (`- key :: value` or `+ key :: value`).
+///
+/// Returns `Some((key, value))` when `line` starts with a bullet `-` or `+` followed by
+/// a non-empty key, `::`, and value prose. Plain list items and checkboxes return `None`.
+///
+/// Spec: [Syntax: Plain Lists and Items](https://orgmode.org/worg/org-syntax.html#Items)
+pub fn parse_description_list_item(line: &str) -> Option<(String, String)> {
+    let raw = line.strip_suffix('\r').unwrap_or(line).trim_start();
+    let rest = raw.strip_prefix(['-', '+'])?;
+    if !rest.starts_with([' ', '\t']) {
+        return None;
+    }
+    let after_bullet = rest.trim_start_matches([' ', '\t']);
+    if after_bullet.starts_with('[') {
+        return None;
+    }
+    let (key, val) = after_bullet.split_once("::")?;
+    let k = key.trim();
+    if k.is_empty() {
+        return None;
+    }
+    Some((k.to_string(), val.trim().to_string()))
+}
+
 /// Add a new entry to the file.
 ///
 /// When `parent_idx` resolves to an existing entry in `doc.entries`, the new entry
@@ -192,11 +216,8 @@ fn strip_plain_list_bullet(raw: &str) -> Option<&str> {
 
 /// Requires at least one space or tab at the start of `s` and strips all leading spaces/tabs.
 fn strip_required_horizontal_ws(s: &str) -> Option<&str> {
-    if s.starts_with([' ', '\t']) {
-        Some(s.trim_start_matches([' ', '\t']))
-    } else {
-        None
-    }
+    s.starts_with([' ', '\t'])
+        .then(|| s.trim_start_matches([' ', '\t']))
 }
 
 /// Skips an optional ordered-list counter cookie (`[@20]`) preceding a checkbox.

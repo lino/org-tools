@@ -144,11 +144,11 @@ impl OrgLocator {
         }
 
         if let Some(sep_pos) = input.find("::") {
-            let file = PathBuf::from(&input[..sep_pos]);
-            let search = &input[sep_pos + 2..];
-            return parse_file_scoped_locator(file, search);
+            return parse_file_scoped_locator(
+                PathBuf::from(&input[..sep_pos]),
+                &input[sep_pos + 2..],
+            );
         }
-
         Err(LocatorError::InvalidFormat(format!(
             "locator must start with 'id:' or contain '::': {input}"
         )))
@@ -229,25 +229,21 @@ pub fn locator_for_entry(doc: &OrgDocument, entry_idx: usize) -> OrgLocator {
     };
 
     if let Some(id) = entry.properties.get("ID") {
-        return OrgLocator::Id(id.clone());
-    }
-
-    if let Some(custom_id) = entry.properties.get("CUSTOM_ID") {
-        return OrgLocator::CustomId {
+        OrgLocator::Id(id.clone())
+    } else if let Some(custom_id) = entry.properties.get("CUSTOM_ID") {
+        OrgLocator::CustomId {
             file: doc.file.clone(),
             custom_id: custom_id.clone(),
-        };
-    }
-
-    let path = doc
-        .outline_path(entry_idx)
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-
-    OrgLocator::OutlinePath {
-        file: doc.file.clone(),
-        path,
+        }
+    } else {
+        OrgLocator::OutlinePath {
+            file: doc.file.clone(),
+            path: doc
+                .outline_path(entry_idx)
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        }
     }
 }
 
@@ -265,15 +261,16 @@ fn parse_file_scoped_locator(file: PathBuf, search: &str) -> Result<OrgLocator, 
 
     if let Some(custom_id) = search.strip_prefix('#') {
         let custom_id = custom_id.trim();
-        if custom_id.is_empty() {
-            return Err(LocatorError::InvalidFormat(
+        return if custom_id.is_empty() {
+            Err(LocatorError::InvalidFormat(
                 "empty CUSTOM_ID after ::#".to_string(),
-            ));
-        }
-        return Ok(OrgLocator::CustomId {
-            file,
-            custom_id: custom_id.to_string(),
-        });
+            ))
+        } else {
+            Ok(OrgLocator::CustomId {
+                file,
+                custom_id: custom_id.to_string(),
+            })
+        };
     }
 
     if let Some(path_str) = search.strip_prefix("*/") {
@@ -449,6 +446,20 @@ fn resolve_line_ref_in_doc(
 
     match best {
         Some(idx) => Ok(build_entry_resolution(doc, file.to_path_buf(), idx)),
+        None if line == 1
+            || !doc.file_properties.is_empty()
+            || doc.file_id().is_some()
+            || doc.file_properties_line.is_some()
+            || doc.entries.first().is_none_or(|e| line < e.heading_line) =>
+        {
+            Ok(ResolvedEntry {
+                file: file.to_path_buf(),
+                line: doc.file_properties_line.unwrap_or(1),
+                heading_text: doc.file_title_or_stem(),
+                level: FILE_NODE_LEVEL,
+                entry_index: FILE_NODE_ENTRY_INDEX,
+            })
+        }
         None => Err(LocatorError::EntryNotFound(format!(
             "{}::{line}",
             file.display()
@@ -472,7 +483,7 @@ mod tests {
         let loc = OrgLocator::parse("id:550e8400-e29b-41d4-a716-446655440000").unwrap();
         assert_eq!(
             loc,
-            OrgLocator::Id("550e8400-e29b-41d4-a716-446655440000".to_string())
+            OrgLocator::Id("550e8400-e29b-41d4-a716-446655440000".into())
         );
     }
 
@@ -483,8 +494,8 @@ mod tests {
         assert_eq!(
             loc,
             OrgLocator::CustomId {
-                file: PathBuf::from("notes.org"),
-                custom_id: "project-x".to_string(),
+                file: "notes.org".into(),
+                custom_id: "project-x".into()
             }
         );
     }
@@ -548,14 +559,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("test.org");
         fs::write(&file, "* Heading\n:PROPERTIES:\n:ID: test-uuid\n:END:\n").unwrap();
-
-        let result = resolve_locator(
-            &OrgLocator::Id("test-uuid".to_string()),
-            &[dir.path().to_path_buf()],
-        )
-        .unwrap();
-        assert_eq!(result.heading_text, "Heading");
-        assert_eq!(result.line, 1);
+        let res =
+            resolve_locator(&OrgLocator::Id("test-uuid".into()), &[dir.path().into()]).unwrap();
+        assert_eq!(res.heading_text, "Heading");
+        assert_eq!(res.line, 1);
     }
 
     /// Verifies resolving a `:CUSTOM_ID:` locator inside a specific file.
@@ -568,16 +575,12 @@ mod tests {
             "* Section\n:PROPERTIES:\n:CUSTOM_ID: my-sect\n:END:\n",
         )
         .unwrap();
-
-        let result = resolve_locator(
-            &OrgLocator::CustomId {
-                file: file.clone(),
-                custom_id: "my-sect".to_string(),
-            },
-            &[],
-        )
-        .unwrap();
-        assert_eq!(result.heading_text, "Section");
+        let loc = OrgLocator::CustomId {
+            file,
+            custom_id: "my-sect".into(),
+        };
+        let res = resolve_locator(&loc, &[]).unwrap();
+        assert_eq!(res.heading_text, "Section");
     }
 
     /// Verifies resolving a nested outline path locator.
@@ -586,17 +589,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("test.org");
         fs::write(&file, "* Work\n** Meeting notes\nBody\n").unwrap();
-
-        let result = resolve_locator(
-            &OrgLocator::OutlinePath {
-                file: file.clone(),
-                path: vec!["Work".to_string(), "Meeting notes".to_string()],
-            },
-            &[],
-        )
-        .unwrap();
-        assert_eq!(result.heading_text, "Meeting notes");
-        assert_eq!(result.level, 2);
+        let path = vec!["Work".to_string(), "Meeting notes".to_string()];
+        let res = resolve_locator(&OrgLocator::OutlinePath { file, path }, &[]).unwrap();
+        assert_eq!(res.heading_text, "Meeting notes");
+        assert_eq!(res.level, 2);
     }
 
     /// Verifies case-insensitive matching of outline path segments.
@@ -605,16 +601,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("test.org");
         fs::write(&file, "* Work\n** MEETING NOTES\n").unwrap();
-
-        let result = resolve_locator(
-            &OrgLocator::OutlinePath {
-                file: file.clone(),
-                path: vec!["work".to_string(), "meeting notes".to_string()],
-            },
-            &[],
-        )
-        .unwrap();
-        assert_eq!(result.heading_text, "MEETING NOTES");
+        let path = vec!["work".to_string(), "meeting notes".to_string()];
+        let res = resolve_locator(&OrgLocator::OutlinePath { file, path }, &[]).unwrap();
+        assert_eq!(res.heading_text, "MEETING NOTES");
     }
 
     /// Verifies resolving a line reference to its enclosing heading.
@@ -623,16 +612,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("test.org");
         fs::write(&file, "* First\nBody\n* Second\nMore body\n").unwrap();
-
-        let result = resolve_locator(
-            &OrgLocator::LineRef {
-                file: file.clone(),
-                line: 4,
-            },
-            &[],
-        )
-        .unwrap();
-        assert_eq!(result.heading_text, "Second");
+        let res = resolve_locator(&OrgLocator::LineRef { file, line: 4 }, &[]).unwrap();
+        assert_eq!(res.heading_text, "Second");
     }
 
     /// Verifies returning `LocatorError::EntryNotFound` when an `id:` UUID does not exist.
@@ -641,12 +622,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("test.org");
         fs::write(&file, "* Heading\n").unwrap();
-
-        let result = resolve_locator(
-            &OrgLocator::Id("nonexistent".to_string()),
-            &[dir.path().to_path_buf()],
-        );
-        assert!(result.is_err());
+        let loc = OrgLocator::Id("nonexistent".into());
+        assert!(resolve_locator(&loc, &[dir.path().into()]).is_err());
     }
 
     /// Verifies `locator_for_entry` prefers `:ID:` over `:CUSTOM_ID:` and outline path.

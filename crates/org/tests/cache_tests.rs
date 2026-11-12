@@ -30,7 +30,7 @@ const BENCH_WARMUP_MEASURED_P95: (usize, usize, usize) = (3, 9, 7);
 /// File count in the canonical `corpus-1k` synthetic benchmark corpus.
 const CORPUS_1K_FILES: usize = 1_000;
 /// Expected `(files, nodes, links, edna_edges, fts_entries)` row counts in `corpus-1k`.
-const CORPUS_1K_ROW_COUNTS: (usize, usize, usize, usize, usize) = (1_000, 4_000, 5_000, 500, 3_000);
+const CORPUS_1K_ROW_COUNTS: (usize, usize, usize, usize, usize) = (1_000, 4_000, 5_000, 500, 4_000);
 /// Hub target UUID receiving deterministic incoming links in `corpus-1k`.
 const HUB_FILE_UUID: &str = "f0000000-0000-4000-8000-000000000000";
 
@@ -217,7 +217,7 @@ fn slice1_cold_rebuild_populates_all_five_tables_and_cache_commands() {
     assert_eq!(st["nodes_count"], 5);
     assert_eq!(st["links_count"], 3);
     assert_eq!(st["edna_edges_count"], 2);
-    assert_eq!(st["fts_entries_count"], 4);
+    assert_eq!(st["fts_entries_count"], 7);
     let (cache, _) = WorkspaceCache::open_and_sync(dir.path()).unwrap();
     let tables = cache.table_names().unwrap();
     for t in ["files", "nodes", "links", "edna_edges", "entries_fts"] {

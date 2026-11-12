@@ -7,13 +7,10 @@
 #[path = "query_agenda.rs"]
 pub(crate) mod query_agenda;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Subcommand, ValueEnum, ValueHint};
 
-use org_tools_core::cache::{
-    load_cached_fts_candidate_docs, load_docs_with_bodies, WorkspaceCache,
-};
 use org_tools_core::document::OrgDocument;
 use org_tools_core::files::collect_org_files;
 
@@ -22,7 +19,7 @@ use super::query_columns::{run_columns, ColumnsOutputFormat};
 use super::query_gtd::{
     run_blocked, run_inbox, run_next, run_stuck, run_waiting, GtdViewArgs, NextArgs,
 };
-use crate::{date, query, EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
+use crate::{query, EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
 // region CLI Types
 
@@ -35,6 +32,21 @@ pub(crate) enum QueryOutputFormat {
     Json,
     /// One OrgLocator string per line.
     Locator,
+}
+
+/// Field to sort query search results by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum QuerySortOrder {
+    /// Sort by FTS5 BM25 relevance score best-first.
+    Rank,
+    /// Sort alphabetically by title.
+    Title,
+    /// Sort by line number ascending.
+    Line,
+    /// Sort alphabetically by file path.
+    File,
+    /// Sort by outline level ascending.
+    Level,
 }
 
 /// Output format for dependency graphs.
@@ -56,6 +68,7 @@ pub(crate) enum QueryCommand {
     /// Search for entries matching a query.
     Search {
         /// Query expression (e.g., "todo:TODO tags:work").
+        #[arg(default_value = "")]
         query: String,
         /// Files or directories to search.
         #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
@@ -66,6 +79,21 @@ pub(crate) enum QueryCommand {
         /// Maximum results to return.
         #[arg(long)]
         limit: Option<usize>,
+        /// Ranked full-text search query across title, aliases, tags, properties, meta, and body.
+        #[arg(long)]
+        fts: Option<String>,
+        /// Optional fields to include in JSON output (body, vulpea_meta, checkboxes, links, digest).
+        #[arg(long, value_delimiter = ',')]
+        include: Option<Vec<String>>,
+        /// Exclude property keys from canonical digest calculation.
+        #[arg(long, value_delimiter = ',')]
+        exclude_properties: Option<Vec<String>>,
+        /// Field to sort results by.
+        #[arg(long, value_enum)]
+        sort: Option<QuerySortOrder>,
+        /// Tag filters (e.g. +tagA or -tagB).
+        #[arg(long)]
+        tag: Option<Vec<String>>,
     },
     /// Show agenda view (scheduled/deadline timeline and optional composite GTD sections).
     Agenda(query_agenda::AgendaArgs),
@@ -122,6 +150,14 @@ pub(crate) fn collect_predicate_matches<'a>(
 ) -> Vec<query::output::MatchedEntry<'a>> {
     let mut matches = Vec::new();
     for doc in docs {
+        if (!doc.file_properties.is_empty() || doc.file_id().is_some())
+            && query::predicate::matches_file_node(pred, doc, doc_refs, today)
+        {
+            matches.push(query::output::MatchedEntry {
+                doc,
+                entry_idx: org_tools_core::locator::FILE_NODE_ENTRY_INDEX,
+            });
+        }
         for (idx, entry) in doc.entries.iter().enumerate() {
             if query::predicate::matches_with_body(pred, entry, idx, None, doc, doc_refs, today) {
                 matches.push(query::output::MatchedEntry {
@@ -150,97 +186,32 @@ pub(crate) fn render_standard_matches(
     }
 }
 
-/// Renders `(doc_idx, entry_idx)` body-search pairs and returns `EXIT_OK` or `EXIT_ISSUES`.
-fn render_body_pairs(
-    loaded: &[org_tools_core::cache::BodyLoadedDoc],
-    doc_refs: &[&OrgDocument],
-    pairs: Vec<(usize, usize)>,
-    format: QueryOutputFormat,
-) -> i32 {
-    if pairs.is_empty() {
-        return EXIT_ISSUES;
-    }
-    let matches: Vec<_> = pairs
-        .into_iter()
-        .map(|(di, ei)| query::output::MatchedEntry {
-            doc: &loaded[di].doc,
-            entry_idx: ei,
-        })
-        .collect();
-    render_standard_matches(&matches, doc_refs, format);
-    EXIT_OK
-}
-
-/// Attempts an FTS5-accelerated `org query search` when `!no_cache` targets a single directory.
-fn try_cached_fts_search(
-    pred: &query::parser::Predicate,
-    scan_dir: &Path,
-    format: QueryOutputFormat,
-    limit: Option<usize>,
-) -> Option<i32> {
-    let req = pred.required_body_phrases();
-    if req.is_empty() || req != pred.positive_body_phrases() || pred.uses_edna() {
-        return None;
-    }
-    let (cache, tel) = WorkspaceCache::open_and_sync(scan_dir).ok()?;
-    if tel.files_scanned == 0 {
-        eprintln!("org: no .org files found");
-        return Some(EXIT_ERROR);
-    }
-    let (hits, loaded) = load_cached_fts_candidate_docs(&cache, scan_dir, &req).ok()??;
-    if hits.is_empty() {
-        return Some(EXIT_ISSUES);
-    }
-    let doc_refs: Vec<&OrgDocument> = loaded.iter().map(|d| &d.doc).collect();
-    let today = date::current_date();
-    let pairs =
-        query::predicate::filter_fts_hits(pred, scan_dir, hits, &loaded, &doc_refs, today, limit);
-    Some(render_body_pairs(&loaded, &doc_refs, pairs, format))
-}
-
-/// Executes `org query search`.
+/// Executes `org query search` across FTS5, cached phrases, or general predicate evaluation.
+#[allow(clippy::too_many_arguments)]
 fn run_search(
     query_str: &str,
     paths: &[PathBuf],
     format: QueryOutputFormat,
     limit: Option<usize>,
+    fts: Option<&str>,
+    include: Option<&[String]>,
+    exclude_properties: Option<&[String]>,
+    sort: Option<QuerySortOrder>,
+    tag: Option<&[String]>,
     no_cache: bool,
 ) -> i32 {
-    let Ok(pred) = query::parser::parse_query(query_str).map_err(|e| eprintln!("org: {e}")) else {
-        return EXIT_ERROR;
-    };
-    if !no_cache && paths.len() == 1 && paths[0].is_dir() {
-        if let Some(code) = try_cached_fts_search(&pred, &paths[0], format, limit) {
-            return code;
-        }
-        let _ = WorkspaceCache::open_and_sync(&paths[0]);
-    }
-    let files = collect_org_files(paths);
-    if files.is_empty() {
-        eprintln!("org: no .org files found");
-        return EXIT_ERROR;
-    }
-    if pred.uses_body() {
-        let loaded = load_docs_with_bodies(&files);
-        let doc_refs: Vec<&OrgDocument> = loaded.iter().map(|d| &d.doc).collect();
-        let pairs = query::predicate::eval_and_rank_body_docs(
-            &pred,
-            &loaded,
-            &doc_refs,
-            date::current_date(),
-            limit,
-        );
-        return render_body_pairs(&loaded, &doc_refs, pairs, format);
-    }
-    let docs = parse_org_files(&files);
-    let doc_refs: Vec<&OrgDocument> = docs.iter().collect();
-    let matches = collect_predicate_matches(&pred, &docs, &doc_refs, date::current_date(), limit);
-    if matches.is_empty() {
-        EXIT_ISSUES
-    } else {
-        render_standard_matches(&matches, &doc_refs, format);
-        EXIT_OK
-    }
+    query::rich::run_search_command(
+        query_str,
+        paths,
+        format,
+        limit,
+        fts,
+        include,
+        exclude_properties,
+        sort,
+        tag,
+        no_cache,
+    )
 }
 
 // endregion
@@ -282,7 +253,23 @@ pub(crate) fn run_query(command: QueryCommand, no_cache: bool) -> i32 {
             paths,
             format,
             limit,
-        } => run_search(&query_str, &paths, format, limit, no_cache),
+            fts,
+            include,
+            exclude_properties,
+            sort,
+            tag,
+        } => run_search(
+            &query_str,
+            &paths,
+            format,
+            limit,
+            fts.as_deref(),
+            include.as_deref(),
+            exclude_properties.as_deref(),
+            sort,
+            tag.as_deref(),
+            no_cache,
+        ),
         QueryCommand::Agenda(args) => query_agenda::run_agenda(args, no_cache),
         QueryCommand::Blocked(args) => run_blocked(args),
         QueryCommand::Next(args) => run_next(*args),

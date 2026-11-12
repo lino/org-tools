@@ -1,8 +1,8 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=590 reason="Cohesive query predicate evaluator, BM25 body-ranking bridge, and 23-case behavioural unit test suite"
+// fritz: allow-file-length=680 reason="Cohesive query predicate evaluator, BM25 body-ranking bridge, and 23-case behavioural unit test suite"
 
-//! Predicate evaluation and BM25 body-search helpers against [`OrgEntry`] values.
+//! Predicate evaluation and BM25 body-search helpers against [`org_tools_core::document::OrgEntry`] values.
 
 use std::path::Path;
 
@@ -46,10 +46,21 @@ pub fn matches_with_body(
     today: (u16, u8, u8),
 ) -> bool {
     match pred {
+        Predicate::True => true,
         Predicate::Body(needle) => eval_body(entry, entry_idx, entry_body, doc, needle),
         Predicate::Blocked => is_entry_blocked(doc, all_docs, entry_idx),
         Predicate::Actionable => is_entry_actionable(entry, doc, all_docs, entry_idx),
         Predicate::Waiting => is_entry_waiting(entry),
+        Predicate::Meta { key, value } => {
+            let meta_vals = entry
+                .get_vulpea_meta(key)
+                .or_else(|| doc.get_vulpea_meta(key));
+            match (meta_vals, value) {
+                (Some(vals), Some(v)) => vals.iter().any(|item| item.eq_ignore_ascii_case(v)),
+                (Some(vals), None) => !vals.is_empty(),
+                (None, _) => false,
+            }
+        }
         Predicate::And(preds) => preds
             .iter()
             .all(|p| matches_with_body(p, entry, entry_idx, entry_body, doc, all_docs, today)),
@@ -208,23 +219,35 @@ fn match_metadata_predicate(
             .as_deref()
             .is_some_and(|k| doc.todo_keywords.is_done(k)),
         Predicate::Tags(tags) => {
-            let inherited = doc.inherited_tags(entry_idx);
+            let eff = doc.effective_tags(entry_idx);
             tags.iter()
-                .all(|t| inherited.iter().any(|it| it.eq_ignore_ascii_case(t)))
+                .all(|t| eff.iter().any(|it| it.eq_ignore_ascii_case(t)))
         }
         Predicate::Heading(substr) => entry.title.to_lowercase().contains(&substr.to_lowercase()),
-        other => match_structural_predicate(other, entry, today),
+        other => match_structural_predicate(other, entry, entry_idx, doc, today),
     }
 }
 
 /// Evaluates property, priority, level, clock, and planning predicates on `entry`.
-fn match_structural_predicate(pred: &Predicate, entry: &OrgEntry, today: (u16, u8, u8)) -> bool {
+fn match_structural_predicate(
+    pred: &Predicate,
+    entry: &OrgEntry,
+    entry_idx: usize,
+    doc: &OrgDocument,
+    today: (u16, u8, u8),
+) -> bool {
     match pred {
         Predicate::Property { key, value } => {
-            if value.is_empty() {
-                entry.properties.contains_key(key)
-            } else {
-                entry.properties.get(key).is_some_and(|v| v == value)
+            let actual = doc.property(entry_idx, key).or_else(|| {
+                entry
+                    .properties
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                    .map(|(_, v)| v.as_str())
+            });
+            match actual {
+                Some(act) => org_tools_core::property::matches_property_token(act, value),
+                None => false,
             }
         }
         Predicate::Priority(pm) => match pm {
@@ -234,6 +257,58 @@ fn match_structural_predicate(pred: &Predicate, entry: &OrgEntry, today: (u16, u
         Predicate::Level(cmp) => match_comparison(cmp, entry.level),
         Predicate::Clocked => !entry.clocks.is_empty(),
         other => match_planning_predicate(other, entry, today),
+    }
+}
+
+/// Evaluates `pred` against a level-0 file `:PROPERTIES:` node.
+pub fn matches_file_node(
+    pred: &Predicate,
+    doc: &OrgDocument,
+    _all_docs: &[&OrgDocument],
+    _today: (u16, u8, u8),
+) -> bool {
+    match pred {
+        Predicate::True => true,
+        Predicate::Level(cmp) => match_comparison(cmp, 0),
+        Predicate::Heading(substr) => doc
+            .file_title_or_stem()
+            .to_lowercase()
+            .contains(&substr.to_lowercase()),
+        Predicate::Tags(tags) => {
+            let eff = doc.effective_tags(org_tools_core::locator::FILE_NODE_ENTRY_INDEX);
+            tags.iter()
+                .all(|t| eff.iter().any(|it| it.eq_ignore_ascii_case(t)))
+        }
+        Predicate::Property { key, value } => {
+            let actual = doc
+                .property(org_tools_core::locator::FILE_NODE_ENTRY_INDEX, key)
+                .or_else(|| {
+                    doc.file_properties
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                        .map(|(_, v)| v.as_str())
+                });
+            match actual {
+                Some(act) => org_tools_core::property::matches_property_token(act, value),
+                None => false,
+            }
+        }
+        Predicate::Meta { key, value } => {
+            let meta_vals = doc.get_vulpea_meta(key);
+            match (meta_vals, value) {
+                (Some(vals), Some(v)) => vals.iter().any(|item| item.eq_ignore_ascii_case(v)),
+                (Some(vals), None) => !vals.is_empty(),
+                (None, _) => false,
+            }
+        }
+        Predicate::And(preds) => preds
+            .iter()
+            .all(|p| matches_file_node(p, doc, _all_docs, _today)),
+        Predicate::Or(preds) => preds
+            .iter()
+            .any(|p| matches_file_node(p, doc, _all_docs, _today)),
+        Predicate::Not(inner) => !matches_file_node(inner, doc, _all_docs, _today),
+        _ => false,
     }
 }
 

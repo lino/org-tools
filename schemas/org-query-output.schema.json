@@ -34,8 +34,8 @@
       },
       "level": {
         "type": "integer",
-        "minimum": 1,
-        "description": "Heading level (1 = top-level *)."
+        "minimum": 0,
+        "description": "Heading level (0 = file node, 1 = top-level *)."
       },
       "keyword": {
         "type": ["string", "null"],
@@ -144,6 +144,80 @@
       "project_id": {
         "type": ["string", "null"],
         "description": "Optional resolved owning GTD project :ID:, :CUSTOM_ID:, or :PROJECT_ID:."
+      },
+      "filetags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional file-level tags from #+FILETAGS:."
+      },
+      "effective_tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional inherited effective tags."
+      },
+      "vulpea_meta": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "description": "Optional top-of-body vulpea-meta description list items."
+      },
+      "rank": {
+        "type": "number",
+        "description": "Optional FTS5 BM25 relevance score."
+      },
+      "snippet": {
+        "type": "string",
+        "description": "Optional highlighted FTS5 snippet."
+      },
+      "body": {
+        "type": "string",
+        "description": "Optional clean body text."
+      },
+      "links": {
+        "type": "array",
+        "description": "Optional outbound links.",
+        "items": {
+          "type": "object",
+          "required": ["kind", "target", "line"],
+          "properties": {
+            "kind": { "type": "string" },
+            "target": { "type": "string" },
+            "description": { "type": ["string", "null"] },
+            "line": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "digest": {
+        "type": "string",
+        "description": "Optional subtree sha256 digest."
+      },
+      "checkboxes": {
+        "type": "array",
+        "description": "Optional plain-list checklist items alias.",
+        "items": {
+          "type": "object",
+          "required": ["line", "state", "text"],
+          "properties": {
+            "line": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "1-based line number of the checklist item."
+            },
+            "state": {
+              "type": "string",
+              "enum": ["unchecked", "partial", "checked"],
+              "description": "Checkbox completion state."
+            },
+            "text": {
+              "type": "string",
+              "description": "Trimmed checklist item text."
+            }
+          },
+          "additionalProperties": false
+        }
       }
     },
     "additionalProperties": false

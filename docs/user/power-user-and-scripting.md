@@ -9,24 +9,26 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 **What you will learn:**
 
-- How to chain `org` subcommands over standard input (`stdin`) and standard output (`stdout`) using `OrgLocator` addresses.
+- How to chain `org` subcommands over standard streams using `OrgLocator` addresses.
 - How to branch reliably in shell scripts using the canonical `0..3` exit-code contract.
-- How to override workspace paths, configuration files, colors, and cache locations with environment variables.
-- How to enable workspace-aware dynamic shell completions (`bash`, `zsh`, `fish`) powered by `.cache/org-cache.db`.
+- How to filter entries by project landscape and ranked full-text queries (`--fts`).
+- How to inspect binary capability envelopes via `org --version --format json`.
+- How to enable dynamic shell completions powered by `.cache/org-cache.db`.
 
-Interactive terminal commands are only half the story when managing thousands of tasks and notes.
-`org` follows strict Unix stream discipline (`stdout` for data, `stderr` for diagnostics) so scripts never parse human log noise.
-You can compose multi-step task migrations and CI gates using standard POSIX pipes and `jq`.
+Interactive terminal commands are only half the story when managing thousands of notes.
+The CLI follows strict Unix stream discipline with standard output for structured data.
+Diagnostics stream to standard error so scripts never parse log noise.
+You can compose multi-step task migrations using standard POSIX pipes and `jq`.
 
 ## Prerequisites
 
-- `org` installed on your workstation or CI host (see [Five-Minute Quickstart](quickstart.md)).
-- A POSIX shell (`sh`, `bash`, `zsh`) and `jq` for inspecting JSON output envelopes.
-- Familiarity with [Querying & Agenda Views](querying-and-agenda.md) and [Updating, Clocking & Exporting](updating-clocking-and-exporting.md).
+- `org` installed on your workstation or Continuous Integration runner.
+- A POSIX shell (`sh`, `bash`, `zsh`) and `jq` for parsing JSON payloads.
+- Familiarity with querying, agenda projection, and entry mutation workflows.
 
 ## Steps
 
-1. Emit one `OrgLocator` per line with `--format locator` and pipe the stream directly into `org update` subcommands.
+1. Emit one `OrgLocator` per line with `--format locator` and pipe into mutating subcommands.
    ```sh
    org query search 'todo:TODO tags:stale' --format locator ~/org/ \
      | org update set-state DONE
@@ -34,21 +36,25 @@ You can compose multi-step task migrations and CI gates using standard POSIX pip
    org query next --context @errands --format locator ~/org/ \
      | org update set-scheduled today
    ```
-1. Pipe raw Org content through `org fmt` or `org update set-state --query` to transform streams without modifying disk files.
+1. Assign deterministic identifiers to file-level drawers using `org update add-id --file`.
    ```sh
-   cat draft.org | org fmt format > clean.org
-   cat inbox.org | org update set-state DONE --query 'tags:shipped' > inbox-updated.org
+   org update add-id --file --write-seed note.org
+   org update add-id --headings --max-level 2 tasks.org
    ```
-1. Override configuration, cache, namespace, and terminal color settings via environment variables in headless scripts.
+1. Filter notes across project landscapes with ranked full-text search (`--fts`) and scope flags.
    ```sh
-   export NO_COLOR=1
-   export ORG_TOOLS_CONFIG="$PWD/.org-tools.toml"
-   export ORG_TOOLS_WORKSPACE="$PWD"
-   export ORG_TOOLS_CACHE_PATH="$PWD/.cache/org-cache.db"
-   export ORG_ID_NAMESPACE="6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-   export ORG_TAG_COLUMN=77
+   org query search --fts "idempotency" --for-project payments-api --format json
+   org query search --for-landscape billing-platform --strict-scope --format locator
    ```
-1. Branch on the deterministic `0..3` exit-code contract in shell automation and Continuous Integration (CI) jobs.
+1. Enforce cross-file link integrity across federated vaults with `--id-scope vault`.
+   ```sh
+   org fmt check --id-scope vault notes/
+   ```
+1. Inspect binary version capabilities programmatically using `org --version --format json`.
+   ```sh
+   org --version --format json | jq '.capabilities'
+   ```
+1. Branch on the deterministic `0..3` exit-code contract in automation pipelines.
    ```sh
    org update calc budget.org
    status=$?
@@ -57,10 +63,6 @@ You can compose multi-step task migrations and CI gates using standard POSIX pip
    elif [ "$status" -ne 0 ]; then
      exit "$status"
    fi
-   ```
-1. Inspect execution telemetry (`duration_us`, `files_scanned`, `cache_hits`, `cache_misses`) from `--format json` mutation envelopes.
-   ```sh
-   org update add-cookie --recursive --format json ~/org/ | jq '.telemetry'
    ```
 1. Enable workspace-aware dynamic tab completions in `zsh`, `fish`, or `bash` to complete `OrgLocator` targets, `roam-node` titles, `todo-state` keywords, and `date-spec` shifts.
    ```sh
@@ -76,23 +78,32 @@ You can compose multi-step task migrations and CI gates using standard POSIX pip
 
 ## Expected Outcome
 
-Piped commands process every incoming `OrgLocator` atomically and emit a consolidated summary or JSON envelope on `stdout`.
-Scripts can inspect `$?` against the canonical exit-code table to distinguish clean runs (`0`), diagnostic/empty matches (`1`), errors (`2`), and Emacs fallbacks (`3`):
+Piped commands process every incoming locator atomically and emit a consolidated summary on standard output.
+Every mutation performs incremental BLAKE3 write-through sync to `.cache/org-cache.db`.
+Scripts inspect exit codes to distinguish clean runs (`0`), empty matches (`1`), and operational errors (`2`):
 
 ```text
-$ org query search 'todo:TODO tags:launch' --format locator tasks.org | org update set-state NEXT --dry-run
-Would update 2 entries across 1 file (dry run)
+$ org query search --fts "idempotency" --for-project payments-api --format json
+[
+  {
+    "file": "billing.org",
+    "line": 12,
+    "title": "Payment Idempotency Keys",
+    "scope": "landscape:billing-platform"
+  }
+]
 $ echo $?
 0
 ```
 
 ## Power-User & Scripting Options
 
-Combine `org query` JSON output with `jq` and `xargs` for conditional batch updates or cross-vault reporting.
-See [JSON Schemas & Contracts](schemas.md), [CI Pipelines & Shell Automation](../cookbook/automation-and-ci.md), and the [Glossary](../glossary.md) for schema details:
+Combine query JSON output with `jq` and `xargs` for conditional updates.
+Pass `--strict-scope` to exclude implicit global entries during landscape evaluations.
+Every mutating subcommand supports `--dry-run` to inspect proposed edits before writing files:
 
 ```sh
-# Extract locators for high-priority tasks missing an EFFORT property and assign 0:30
+# Assign effort estimates to high-priority tasks missing an EFFORT property
 org query search 'todo:TODO priority:A not property:EFFORT' --format locator ~/org/ \
   | xargs -I{} org update set-property "{}" EFFORT 0:30
 ```
@@ -102,8 +113,8 @@ org query search 'todo:TODO priority:A not property:EFFORT' --format locator ~/o
 | Variable or Code       | Default / Value | Behavior                                                                                  |
 | ---------------------- | --------------- | ----------------------------------------------------------------------------------------- |
 | `ORG_TOOLS_CONFIG`     | *(ancestor)*    | Explicit path to `.org-tools.toml` configuration file.                                    |
-| `ORG_TOOLS_WORKSPACE`  | `cwd`           | Default workspace root for `id:` resolution and `org mcp` confinement.                    |
-| `ORG_TOOLS_CACHE_PATH` | `.cache/...`    | Override path for the SQLite Write-Ahead Logging (`WAL`) `WorkspaceCache` database.       |
+| `ORG_TOOLS_WORKSPACE`  | `cwd`           | Default workspace root for `id:` resolution and MCP confinement.                          |
+| `ORG_TOOLS_CACHE_PATH` | `.cache/...`    | Override path for the SQLite Write-Ahead Logging `WorkspaceCache` database.               |
 | `ORG_ID_NAMESPACE`     | DNS UUID        | Namespace UUID used by `org update add-id --deterministic` (`UUIDv5`).                    |
 | `ORG_TAG_COLUMN`       | `77`            | Target right-margin column for `F007` heading tag alignment.                              |
 | `NO_COLOR` / `TERM`    | unset / `xterm` | Disables ANSI color escapes when `NO_COLOR` is non-empty or `TERM=dumb`.                  |
@@ -111,9 +122,9 @@ org query search 'todo:TODO priority:A not property:EFFORT' --format locator ~/o
 
 ## Troubleshooting
 
-| Symptom                                                  | Cause                                                          | Fix                                                                  |
-| -------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `set -e` script aborts when `org query search` finds 0   | `org query` returns exit code `1` (`EXIT_ISSUES`) on zero hits | Handle exit code `1` explicitly (`org query ... \|\| [ $? -eq 1 ]`)  |
-| ANSI escape codes appear in redirected log files         | Forced terminal settings in CI environment                     | Export `NO_COLOR=1` or `TERM=dumb` before invoking `org`             |
-| Piped `org update set-state` prints Org text to `stdout` | Input stream contained raw Org headings instead of locators    | Pass `--format locator` to the upstream `org query` command          |
-| Slow repeated queries in a tight shell loop              | `--no-cache` was set or `.cache/` directory is not writable    | Remove `--no-cache` and run `org cache rebuild` once before the loop |
+| Symptom                                                | Cause                                                          | Fix                                                                  |
+| ------------------------------------------------------ | -------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `set -e` script aborts when `org query search` finds 0 | `org query` returns exit code `1` (`EXIT_ISSUES`) on zero hits | Handle exit code `1` explicitly (`org query ... \|\| [ $? -eq 1 ]`)  |
+| Global notes appear in landscape query results         | Unscoped notes default to global validity                      | Pass `--strict-scope` to restrict results strictly to the target     |
+| ANSI escape codes appear in redirected log files       | Forced terminal settings in CI environment                     | Export `NO_COLOR=1` or `TERM=dumb` before invoking `org`             |
+| Slow repeated queries in a tight shell loop            | `--no-cache` was set or `.cache/` directory is not writable    | Remove `--no-cache` and run `org cache rebuild` once before the loop |

@@ -151,6 +151,9 @@ struct ShowJsonEnvelope {
     checkboxes: Option<Vec<ChecklistItem>>,
     /// Execution duration and file-scan observability telemetry.
     telemetry: MutationTelemetry,
+    /// Optional resolved scope constraint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope: Option<String>,
 }
 
 /// Node-specific metadata shared across level-0 file-node and heading JSON builders.
@@ -289,6 +292,19 @@ fn build_json_envelope(
             files_scanned: loaded.files_scanned,
             cache_hits: loaded.cache_hits,
             cache_misses: loaded.cache_misses,
+        },
+        scope: {
+            let mut s =
+                org_tools_core::scope::resolve_node_scope(&loaded.doc, loaded.resolved.entry_index);
+            if s.is_none()
+                && args
+                    .include
+                    .as_ref()
+                    .is_some_and(|inc| inc.iter().any(|item| item.eq_ignore_ascii_case("scope")))
+            {
+                s = Some("global".to_string());
+            }
+            s
         },
     }
 }

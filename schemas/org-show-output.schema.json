@@ -257,6 +257,10 @@
       },
       "additionalProperties": false,
       "description": "Execution duration and file-scan observability telemetry."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Optional resolved scope constraint (e.g. 'global', 'project:name', 'landscape:fleet')."
     }
   },
   "additionalProperties": false

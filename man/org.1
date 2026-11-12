@@ -20,16 +20,25 @@ All subcommands support human-readable terminal output and machine-readable JSON
 .SH SUBCOMMANDS
 .TP
 .B fmt check \fR[\fIPATHS\fR...]
-Check Org files for formatting and lint issues without modifying files on disk.
+Check Org files for formatting and lint issues without modifying files on disk. Accepts \fB\-\-id\-scope\fR (\fIfile\fR, \fIworkspace\fR, or \fIvault\fR) to control cross-file ID resolution.
 .TP
 .B fmt format \fR[\fIPATHS\fR...]
 Apply auto-fixable formatting rules (`F001` through `F008`) to Org files in place or on standard input.
 .TP
+.B query search \fR[\fIPATHS\fR...]
+Search headings with \fB\-\-fts\fR ranked full-text queries, optional \fB\-\-include\fR fields, \fB\-\-exclude\-properties\fR for digest calculation, and composable scope filtering (\fB\-\-scope\fR, \fB\-\-for\-project\fR, \fB\-\-for\-landscape\fR, \fB\-\-forge\-path\fR, \fB\-\-strict\-scope\fR, \fB\-\-scope\-config\fR).
+.TP
 .B query \fISUBCOMMAND\fR
 Search headings (`search`, `next`, `inbox`, `waiting`, `someday`, `projects`, `stuck`, `blocked`, `deps`, `agenda`, `columns`).
 .TP
+.B update add\-id \fR[\fIPATHS\fR...]
+Add :ID: properties to entries that lack them. Accepts \fB\-\-file\fR, \fB\-\-headings\fR, \fB\-\-max\-level\fR, \fB\-\-locator\fR, \fB\-\-uuidv5\-seed\fR, and \fB\-\-write\-seed\fR.
+.TP
+.B update link \fB\-\-to\fR \fIDEST\fR \fILOCATOR\fR
+Insert an idempotent outbound link to another entry or file node.
+.TP
 .B update \fISUBCOMMAND\fR
-Mutate Org entries (`add-id`, `set-state`, `add-todo`, `add-cookie`, `set-property`, `delete-property`, `set-tags`, `set-scheduled`, `set-deadline`, `add-blocker`, `add-trigger`, `calc`).
+Mutate Org entries (`add-id`, `link`, `set-state`, `add-todo`, `add-cookie`, `set-property`, `delete-property`, `set-tags`, `set-scheduled`, `set-deadline`, `add-blocker`, `add-trigger`, `calc`).
 .TP
 .B clock \fISUBCOMMAND\fR
 Inspect active clocks (`status`), generate duration and effort variance reports (`report`), or mutate clock entries (`in`, `out`, `cancel`).
@@ -72,7 +81,7 @@ Generate workspace-aware shell completion scripts (`eval "$(org --completions zs
 Print concise or detailed command help and exit.
 .TP
 .B \-V\fR, \fB\-\-version
-Print the `org` binary version and exit.
+Print the `org` binary version and exit. When paired with \fB\-\-format json\fR, prints a deterministic JSON envelope listing capability flags.
 .SH EXIT STATUS
 .TP
 .B 0

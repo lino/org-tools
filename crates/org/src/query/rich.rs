@@ -6,6 +6,9 @@
 #[path = "rich/digest.rs"]
 pub mod digest;
 
+#[path = "rich/enrich.rs"]
+pub mod enrich;
+
 #[path = "rich/search.rs"]
 pub mod search;
 

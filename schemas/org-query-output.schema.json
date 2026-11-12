@@ -145,6 +145,10 @@
         "type": ["string", "null"],
         "description": "Optional resolved owning GTD project :ID:, :CUSTOM_ID:, or :PROJECT_ID:."
       },
+      "scope": {
+        "type": "string",
+        "description": "Optional resolved scope constraint (e.g. 'global', 'project:name', 'landscape:fleet')."
+      },
       "filetags": {
         "type": "array",
         "items": { "type": "string" },

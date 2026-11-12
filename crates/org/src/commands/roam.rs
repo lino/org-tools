@@ -15,6 +15,7 @@ use org_tools_core::config::Config;
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
 
 use super::roam_capture::{run_roam_capture, RoamCaptureArgs};
+use super::roam_filter::{filter_nodes_by_scope, resolve_roam_scan_dir, RoamNodeScopeFilter};
 use super::roam_gtd::{run_roam_gtd, run_sync_agenda_tags, RoamGtdCommand, SyncAgendaTagsArgs};
 use super::MutationTelemetry;
 use crate::{EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
@@ -71,6 +72,24 @@ pub(crate) enum RoamCommand {
         /// Output format (`human` or `json`).
         #[arg(long, value_enum, default_value = "human")]
         format: RoamOutputFormat,
+        /// Target scope expression constraint (e.g. "global", "landscape:core").
+        #[arg(long = "scope")]
+        filter_scope: Option<String>,
+        /// Filter nodes relevant to target project slug.
+        #[arg(long)]
+        for_project: Option<String>,
+        /// Filter nodes relevant to target project landscape slug.
+        #[arg(long)]
+        for_landscape: Option<String>,
+        /// Filter nodes matching target repository forge path or prefix.
+        #[arg(long)]
+        forge_path: Option<String>,
+        /// Exclude implicit global nodes when filtering by project, landscape, or forge.
+        #[arg(long)]
+        strict_scope: bool,
+        /// Explicit path to scope and landscape configuration file.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        scope_config: Option<PathBuf>,
     },
     /// List incoming `[[id:...]]` backlinks pointing to a target node.
     Backlinks {
@@ -223,10 +242,11 @@ fn handle_node(
     query: String,
     scope: &RoamScopeArgs,
     format: RoamOutputFormat,
+    filter: &RoamNodeScopeFilter<'_>,
     no_cache: bool,
 ) -> i32 {
     let started = Instant::now();
-    let (nodes, counts) = match open_roam_backend(scope, no_cache)
+    let (raw_nodes, counts) = match open_roam_backend(scope, no_cache)
         .and_then(|b| Ok((b.resolve(&query)?, b.counts())))
     {
         Ok(v) => v,
@@ -235,6 +255,8 @@ fn handle_node(
             return EXIT_ERROR;
         }
     };
+    let scan_dir = resolve_roam_scan_dir(scope);
+    let nodes = filter_nodes_by_scope(raw_nodes, filter, scan_dir);
     let code = if nodes.is_empty() {
         EXIT_ISSUES
     } else {
@@ -377,7 +399,23 @@ pub(crate) fn run_roam(command: RoamCommand, no_cache: bool) -> i32 {
             query,
             scope,
             format,
-        } => handle_node(query, &scope, format, no_cache),
+            filter_scope,
+            for_project,
+            for_landscape,
+            forge_path,
+            strict_scope,
+            scope_config,
+        } => {
+            let filter = RoamNodeScopeFilter {
+                filter_scope: filter_scope.as_deref(),
+                for_project: for_project.as_deref(),
+                for_landscape: for_landscape.as_deref(),
+                forge_path: forge_path.as_deref(),
+                strict_scope,
+                scope_config: scope_config.as_deref(),
+            };
+            handle_node(query, &scope, format, &filter, no_cache)
+        }
         RoamCommand::Backlinks {
             target,
             scope,

@@ -94,6 +94,24 @@ pub(crate) enum QueryCommand {
         /// Tag filters (e.g. +tagA or -tagB).
         #[arg(long)]
         tag: Option<Vec<String>>,
+        /// Explicit scope expression constraint (e.g. "global", "landscape:core").
+        #[arg(long)]
+        scope: Option<String>,
+        /// Filter entries relevant to target project slug.
+        #[arg(long)]
+        for_project: Option<String>,
+        /// Filter entries relevant to target project landscape slug.
+        #[arg(long)]
+        for_landscape: Option<String>,
+        /// Filter entries matching target repository forge path or prefix.
+        #[arg(long)]
+        forge_path: Option<String>,
+        /// Exclude implicit global entries when filtering by project, landscape, or forge.
+        #[arg(long)]
+        strict_scope: bool,
+        /// Explicit path to scope and landscape configuration file (.org-tools.toml or kb.toml).
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        scope_config: Option<PathBuf>,
     },
     /// Show agenda view (scheduled/deadline timeline and optional composite GTD sections).
     Agenda(query_agenda::AgendaArgs),
@@ -198,6 +216,7 @@ fn run_search(
     exclude_properties: Option<&[String]>,
     sort: Option<QuerySortOrder>,
     tag: Option<&[String]>,
+    scope_opts: &crate::query::rich::search::SearchScopeOpts<'_>,
     no_cache: bool,
 ) -> i32 {
     query::rich::run_search_command(
@@ -210,6 +229,7 @@ fn run_search(
         exclude_properties,
         sort,
         tag,
+        scope_opts,
         no_cache,
     )
 }
@@ -258,18 +278,35 @@ pub(crate) fn run_query(command: QueryCommand, no_cache: bool) -> i32 {
             exclude_properties,
             sort,
             tag,
-        } => run_search(
-            &query_str,
-            &paths,
-            format,
-            limit,
-            fts.as_deref(),
-            include.as_deref(),
-            exclude_properties.as_deref(),
-            sort,
-            tag.as_deref(),
-            no_cache,
-        ),
+            scope,
+            for_project,
+            for_landscape,
+            forge_path,
+            strict_scope,
+            scope_config,
+        } => {
+            let scope_opts = crate::query::rich::search::SearchScopeOpts {
+                scope: scope.as_deref(),
+                for_project: for_project.as_deref(),
+                for_landscape: for_landscape.as_deref(),
+                forge_path: forge_path.as_deref(),
+                strict_scope,
+                scope_config: scope_config.as_deref(),
+            };
+            run_search(
+                &query_str,
+                &paths,
+                format,
+                limit,
+                fts.as_deref(),
+                include.as_deref(),
+                exclude_properties.as_deref(),
+                sort,
+                tag.as_deref(),
+                &scope_opts,
+                no_cache,
+            )
+        }
         QueryCommand::Agenda(args) => query_agenda::run_agenda(args, no_cache),
         QueryCommand::Blocked(args) => run_blocked(args),
         QueryCommand::Next(args) => run_next(*args),

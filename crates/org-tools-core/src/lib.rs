@@ -59,6 +59,8 @@ pub mod roam;
 pub mod rules;
 /// Rule execution pipeline across source files.
 pub mod runner;
+/// Composable project, project-landscape, forge, and tag `:SCOPE:` validity engine.
+pub mod scope;
 /// Source text buffer with line and column lookup tables.
 pub mod source;
 /// TODO state transitions, `CLOSED:` management, and repeater auto-advance.

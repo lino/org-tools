@@ -18,6 +18,7 @@ pub(crate) mod query_gtd;
 pub(crate) mod refile;
 pub(crate) mod roam;
 pub(crate) mod roam_capture;
+pub(crate) mod roam_filter;
 pub(crate) mod roam_gtd;
 pub(crate) mod schema;
 pub(crate) mod show;

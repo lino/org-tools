@@ -117,6 +117,9 @@ pub struct JsonEntry {
     /// Optional resolved owning GTD project `:ID:`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    /// Optional resolved scope constraint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 // endregion
@@ -186,6 +189,7 @@ pub(crate) fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) 
             roam_dir: None,
             project: None,
             project_id: None,
+            scope: org_tools_core::scope::resolve_node_scope(m.doc, m.entry_idx),
         };
     }
 
@@ -226,6 +230,7 @@ pub(crate) fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) 
         roam_dir: None,
         project: None,
         project_id: None,
+        scope: org_tools_core::scope::resolve_node_scope(m.doc, m.entry_idx),
     }
 }
 

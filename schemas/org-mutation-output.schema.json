@@ -84,6 +84,55 @@
         }
       },
       "additionalProperties": false
+    },
+    "cache_synced": {
+      "type": "boolean",
+      "description": "Whether the active workspace index was updated with this mutation."
+    },
+    "records": {
+      "type": "array",
+      "description": "Machine-readable mutation records for inspected targets.",
+      "items": {
+        "type": "object",
+        "required": ["file", "locator", "level", "line", "id", "created", "cache_synced"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Path to the org file."
+          },
+          "locator": {
+            "type": "string",
+            "description": "Canonical OrgLocator identifying the target element."
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Heading star level (0 for file-level drawer, >= 1 for headings)."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based line number of the target element."
+          },
+          "id": {
+            "type": "string",
+            "description": "Minted or existing :ID: value."
+          },
+          "id_seed": {
+            "type": ["string", "null"],
+            "description": "Optional :ID_SEED: provenance URN string."
+          },
+          "created": {
+            "type": "boolean",
+            "description": "Whether a new :ID: was minted."
+          },
+          "cache_synced": {
+            "type": "boolean",
+            "description": "Whether the active workspace index was updated with this mutation."
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false

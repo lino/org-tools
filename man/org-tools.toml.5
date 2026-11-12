@@ -63,6 +63,23 @@ Controls structural and stylistic lint rules (`E001` through `I007`):
 .TP
 .B disabled_rules \fR(array of strings, default: \fB[]\fR)
 Rule identifiers or kebab-case names to skip during `org fmt check` (for example, `["W001", "heading-level-gap"]`).
+.TP
+.B id_scope \fR(string, default: \fB"workspace"\fR)
+Resolution boundary for `:ID:` uniqueness checks and cross-file link validation (`"file"`, `"workspace"`, or `"vault"`).
+.SS [landscapes.<slug>]
+Defines composable project clusters, member repositories, and forge globs:
+.TP
+.B description \fR(string, optional)
+Human-readable summary of the landscape scope.
+.TP
+.B projects \fR(array of strings, default: \fB[]\fR)
+Member project slugs belonging to this landscape.
+.TP
+.B forges \fR(array of strings, default: \fB[]\fR)
+Repository forge path or glob patterns belonging to this landscape (alias: `forge_prefixes`).
+.TP
+.B includes \fR(array of strings, default: \fB[]\fR)
+Slugs of child landscapes recursively included by this landscape.
 .SS [agenda]
 Controls daily and weekly agenda timeline projection:
 .TP

@@ -51,7 +51,7 @@ pub(crate) const EXIT_REQUIRES_EMACS: i32 = 3;
 #[derive(Parser)]
 #[command(
     name = "org",
-    version,
+    disable_version_flag = true,
     about = "Unified CLI for org-mode: lint, format, query, clock, export"
 )]
 struct Cli {
@@ -212,8 +212,51 @@ fn dispatch_command(command: OrgCommand, no_cache: bool) -> i32 {
     }
 }
 
+/// Handles top-level `--version` and `--version --format json` requests.
+fn handle_version_flags() {
+    let args: Vec<String> = std::env::args().collect();
+    let has_version = args.iter().any(|a| a == "--version" || a == "-V");
+    if !has_version {
+        return;
+    }
+    let is_json = args.iter().any(|a| a == "--format=json")
+        || args
+            .windows(2)
+            .any(|w| w[0] == "--format" && w[1] == "json");
+    if is_json {
+        let payload = serde_json::json!({
+            "name": "org",
+            "version": env!("CARGO_PKG_VERSION"),
+            "capabilities": [
+                "fts5",
+                "fts5_search",
+                "workspace_cache_blake3",
+                "level0_file_nodes",
+                "vulpea_meta",
+                "id_scope",
+                "vault_id_scope",
+                "scope_evaluator",
+                "scope_filter",
+                "uuidv5_add_id",
+                "add_id_auto_sync",
+                "rich_show_digest",
+                "mcp",
+                "lsp",
+            ],
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload).unwrap_or_default()
+        );
+        process::exit(EXIT_OK);
+    }
+    println!("org {}", env!("CARGO_PKG_VERSION"));
+    process::exit(EXIT_OK);
+}
+
 /// Parses CLI arguments, handles `--completions` / help, and exits with the subcommand code.
 fn main() {
+    handle_version_flags();
     let cli = Cli::parse();
 
     if let Some(shell) = cli.completions {

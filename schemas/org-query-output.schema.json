@@ -132,6 +132,18 @@
           },
           "additionalProperties": false
         }
+      },
+      "roam_dir": {
+        "type": ["string", "null"],
+        "description": "Optional configured org-roam vault name or directory identifier."
+      },
+      "project": {
+        "type": ["string", "null"],
+        "description": "Optional resolved owning GTD project title or category."
+      },
+      "project_id": {
+        "type": ["string", "null"],
+        "description": "Optional resolved owning GTD project :ID:, :CUSTOM_ID:, or :PROJECT_ID:."
       }
     },
     "additionalProperties": false

@@ -27,6 +27,7 @@ use commands::fmt::{run_fmt, FmtCommand};
 use commands::lsp::{run_lsp, LspArgs};
 use commands::mcp::{run_mcp, McpArgs};
 use commands::query::{run_query, QueryCommand};
+use commands::query_gtd::{run_next, NextArgs};
 use commands::refile::{run_refile, RefileArgs};
 use commands::roam::{run_roam, RoamCommand};
 use commands::schema::{run_schema, SchemaArgs};
@@ -85,6 +86,8 @@ enum OrgCommand {
         #[command(subcommand)]
         command: QueryCommand,
     },
+    /// GTD next actions navigator ("what to do next" across org-roam vaults).
+    Next(Box<NextArgs>),
     /// Update org entries (add IDs, modify properties).
     Update {
         /// Update subcommand.
@@ -193,6 +196,7 @@ fn dispatch_command(command: OrgCommand, no_cache: bool) -> i32 {
             run_fmt(command, &runner)
         }
         OrgCommand::Query { command } => run_query(command, no_cache),
+        OrgCommand::Next(args) => run_next(*args),
         OrgCommand::Update { command } => run_update(command),
         OrgCommand::Clock { command } => run_clock(command),
         OrgCommand::Export { command } => run_export(command),

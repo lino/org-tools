@@ -10,15 +10,17 @@ mod update_dep;
 pub(crate) mod update_planning;
 
 use std::collections::{HashMap, HashSet};
-use std::io::BufRead;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use clap::{Subcommand, ValueHint};
 
 use org_tools_core::cache::WorkspaceCache;
+use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::{discover_workspace_root, normalize_workspace_path};
 use org_tools_core::files::collect_org_files;
+use org_tools_core::gtd_roam::parse_piped_stdin_targets;
 use org_tools_core::locator::{resolve_locator, OrgLocator, ResolvedEntry};
 use org_tools_core::source::SourceFile;
 
@@ -50,10 +52,6 @@ const ORG_CONTENT_PREFIXES: &[&str] = &[
     ":PROPERTIES:",
     ":END:",
 ];
-
-/// Error hint emitted when raw Org content is piped where locators were expected.
-const STDIN_ORG_CONTENT_HINT: &str =
-    "hint: pipe locators (e.g. from `org query search`), not org file content";
 
 /// Sorted `(file_path, optional_entry_indices)` targets for batch mutation commands.
 pub(crate) type FileEntryTargets = Vec<(PathBuf, Option<Vec<usize>>)>;
@@ -131,25 +129,14 @@ pub(crate) fn looks_like_org_content(line: &str) -> bool {
     ORG_CONTENT_PREFIXES.iter().any(|p| trimmed.starts_with(p))
 }
 
-/// Formats the standard diagnostic when stdin contains Org lines instead of locators.
-pub(crate) fn format_stdin_content_error(bad: &str) -> String {
-    format!(
-        "org: stdin looks like org-mode content, not locator targets\nfirst offending line: {bad}\n{STDIN_ORG_CONTENT_HINT}"
-    )
-}
-
-/// Reads locator strings from stdin (one per line), rejecting raw Org-mode content.
+/// Reads locator strings from stdin (`human`, `json`, or `locator` format), rejecting raw Org-mode content.
 pub(crate) fn read_stdin_targets() -> Result<Vec<String>, String> {
-    let lines: Vec<String> = std::io::stdin()
+    let mut raw = String::new();
+    std::io::stdin()
         .lock()
-        .lines()
-        .map_while(|l| l.ok())
-        .filter(|l| !l.trim().is_empty())
-        .collect();
-    if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
-        return Err(format_stdin_content_error(bad));
-    }
-    Ok(lines)
+        .read_to_string(&mut raw)
+        .map_err(|e| format!("org: error reading stdin: {e}"))?;
+    parse_piped_stdin_targets(&raw)
 }
 
 /// Parses an optional CLI `--query` expression, reporting diagnostics on invalid syntax.
@@ -279,7 +266,15 @@ pub(crate) fn resolve_batch_entry_targets(
 ) -> Result<FileEntryTargets, i32> {
     let mut file_targets: HashMap<PathBuf, Option<Vec<usize>>> = HashMap::new();
     let mut search_paths: Vec<PathBuf> = workspace.into_iter().map(Path::to_path_buf).collect();
-    search_paths.push(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    search_paths.push(cwd.clone());
+    if let Ok(cfg) = Config::load_for_dir(workspace.unwrap_or(&cwd)) {
+        for (_, vp) in cfg.roam_directories() {
+            if vp.exists() && !search_paths.contains(&vp) {
+                search_paths.push(vp);
+            }
+        }
+    }
 
     for target in targets {
         if let Some(loc_res) = parse_target_locator(target) {
@@ -346,7 +341,15 @@ pub(crate) fn resolve_single_target(
         EXIT_ERROR
     })?;
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let resolved = resolve_locator(&locator, &[cwd]).map_err(|e| {
+    let mut search_paths = vec![cwd.clone()];
+    if let Ok(cfg) = Config::load_for_dir(&cwd) {
+        for (_, vp) in cfg.roam_directories() {
+            if vp.exists() && !search_paths.contains(&vp) {
+                search_paths.push(vp);
+            }
+        }
+    }
+    let resolved = resolve_locator(&locator, &search_paths).map_err(|e| {
         eprintln!("org: {e}");
         EXIT_ERROR
     })?;

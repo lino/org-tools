@@ -33,6 +33,8 @@ pub mod export_md;
 pub mod files;
 /// Non-overlapping span auto-fix application engine.
 pub mod formatter;
+/// `org-roam` v2 GTD workflow, `:agenda:` filetag sync, project resolution, and `stdin` piping.
+pub mod gtd_roam;
 /// `:ID:` UUID discovery, indexing, and link resolution.
 pub mod id;
 /// Cross-file `#+INCLUDE:` expansion, workspace confinement, and cycle detection.

@@ -11,12 +11,13 @@ use std::time::Instant;
 use clap::{Args, ValueHint};
 
 use org_tools_core::document::OrgDocument;
+use org_tools_core::gtd_roam::parse_piped_stdin_targets;
 use org_tools_core::planning::{set_planning_timestamp, PlanningKind};
 use org_tools_core::source::SourceFile;
 
 use super::{
-    filter_entries_by_query, format_stdin_content_error, invalidate_warm_workspace_caches,
-    looks_like_org_content, parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
+    filter_entries_by_query, invalidate_warm_workspace_caches, looks_like_org_content,
+    parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
 };
 use crate::commands::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{date, query, EXIT_ERROR, EXIT_OK};
@@ -325,16 +326,11 @@ fn read_piped_planning_stdin(
         handle_piped_org_planning(content, kind, spec, query_pred, today, args.dry_run)?;
         return Ok(true);
     }
-    let lines: Vec<String> = content
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(ToString::to_string)
-        .collect();
-    if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
-        eprintln!("{}", format_stdin_content_error(bad));
-        return Err(EXIT_ERROR);
-    }
-    targets.extend(lines);
+    let parsed = parse_piped_stdin_targets(&content).map_err(|e| {
+        eprintln!("{e}");
+        EXIT_ERROR
+    })?;
+    targets.extend(parsed);
     Ok(false)
 }
 

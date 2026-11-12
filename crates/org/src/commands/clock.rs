@@ -3,15 +3,17 @@
 
 //! Subcommand definitions and report, status, and mutation handlers for `org clock`.
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use clap::{Subcommand, ValueEnum, ValueHint};
 
+use org_tools_core::config::Config;
 use org_tools_core::files::{canonicalize_clean, collect_org_files};
 use org_tools_core::locator::OrgLocator;
 
 use super::parse_org_files;
-use super::update::invalidate_warm_workspace_caches;
+use super::update::{invalidate_warm_workspace_caches, read_stdin_targets};
 use crate::clock::mutate::{
     execute_clock_in_on_files, terminate_active_clock, ClockMutationResult,
 };
@@ -67,8 +69,8 @@ pub(crate) enum ClockCommand {
     },
     /// Start an active clock on a target heading entry.
     In {
-        /// Target heading locator (`id:<uuid>`, `<file>::#<id>`, `<file>::*Heading`, or `<file>::<line>`).
-        locator: String,
+        /// Target heading locator (`id:<uuid>`, `<file>::#<id>`, `<file>::*Heading`, or `<file>::<line>`); read from `stdin` if omitted.
+        locator: Option<String>,
 
         /// Files or directories to scan.
         #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
@@ -230,12 +232,56 @@ pub(crate) fn locator_file_path(loc: &OrgLocator) -> Option<&Path> {
     }
 }
 
+/// Resolves the target locator and search paths for `org clock in`, reading `stdin` when piped.
+fn resolve_clock_in_args(
+    locator: Option<String>,
+    mut paths: Vec<PathBuf>,
+) -> Result<(String, Vec<PathBuf>), String> {
+    if let Some(loc_str) = locator {
+        if Path::new(&loc_str).is_dir() && !std::io::stdin().is_terminal() {
+            let dir = PathBuf::from(&loc_str);
+            if paths == [PathBuf::from(".")] {
+                paths = vec![dir];
+            } else {
+                paths.insert(0, dir);
+            }
+            let targets = read_stdin_targets()?;
+            let first = targets
+                .into_iter()
+                .next()
+                .ok_or_else(|| "no target locator found in stdin".to_string())?;
+            return Ok((first, paths));
+        }
+        return Ok((loc_str, paths));
+    }
+    if !std::io::stdin().is_terminal() {
+        let targets = read_stdin_targets()?;
+        let first = targets
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no target locator found in stdin".to_string())?;
+        return Ok((first, paths));
+    }
+    Err("missing target locator (supply <locator> or pipe via stdin)".to_string())
+}
+
 /// Collects deduplicated `.org` files from `paths`, adapting default `"."` when `locator` points elsewhere.
 fn collect_clock_files(
     paths: &[PathBuf],
     locator: Option<&OrgLocator>,
 ) -> Result<Vec<PathBuf>, String> {
-    let mut files = collect_org_files(paths);
+    let mut scan_roots = paths.to_vec();
+    if paths == [PathBuf::from(".")] {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        if let Ok(cfg) = Config::load_for_dir(&cwd) {
+            for (_, vault) in cfg.roam_directories() {
+                if vault.is_dir() && !scan_roots.contains(&vault) {
+                    scan_roots.push(vault);
+                }
+            }
+        }
+    }
+    let mut files = collect_org_files(&scan_roots);
     if let Some(lf) = locator.and_then(locator_file_path).filter(|p| p.exists()) {
         let lc = canonicalize_clean(lf).unwrap_or_else(|_| lf.to_path_buf());
         let has_lc = |list: &[PathBuf]| {
@@ -346,10 +392,11 @@ pub(crate) fn run_clock(command: ClockCommand) -> i32 {
             dry_run,
             format,
         } => {
-            let outcome = parse_clock_locator(&locator)
-                .and_then(|p| collect_clock_files(&paths, Some(&p)))
-                .and_then(|f| {
-                    execute_clock_in_on_files(&f, &locator, at.as_deref(), auto_out, dry_run)
+            let outcome =
+                resolve_clock_in_args(locator, paths).and_then(|(loc_str, scan_paths)| {
+                    let parsed = parse_clock_locator(&loc_str)?;
+                    let files = collect_clock_files(&scan_paths, Some(&parsed))?;
+                    execute_clock_in_on_files(&files, &loc_str, at.as_deref(), auto_out, dry_run)
                 });
             finish_clock_mutation(outcome, dry_run, format)
         }

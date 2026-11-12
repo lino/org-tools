@@ -9,6 +9,8 @@ pub mod agenda;
 pub mod agenda_render;
 /// Dependency graph edge extraction and diagram output for `org-edna` `BLOCKER` and `TRIGGER`.
 pub mod deps;
+/// Candidate ranking and human/JSON/`--pick` renderers for `org [query] next`.
+pub mod next_render;
 /// Search, GTD context, blocked, waiting, and stuck-project output formatters.
 pub mod output;
 /// Recursive-descent query expression parser (`todo:`, `tags:`, `scheduled:`, `body:`, etc.).

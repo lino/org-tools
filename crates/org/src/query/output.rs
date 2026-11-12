@@ -3,7 +3,7 @@
 
 //! Output rendering for query search, GTD views, blocked dependencies, and stuck projects.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use org_tools_core::document::{ChecklistItem, ChecklistSummary, OrgDocument, OrgEntry};
 use org_tools_core::edna::{self, EdnaContext};
@@ -65,6 +65,15 @@ pub struct JsonEntry {
     pub checklist_summary: ChecklistSummary,
     /// Plain-list checklist items in this entry's own body.
     pub checklist: Vec<ChecklistItem>,
+    /// Optional configured `org-roam` vault name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roam_dir: Option<String>,
+    /// Optional resolved owning GTD project title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Optional resolved owning GTD project `:ID:`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
 }
 
 /// A project entry paired with child completion and actionability counts.
@@ -113,7 +122,7 @@ pub fn render_locators(matches: &[MatchedEntry<'_>]) -> String {
 }
 
 /// Constructs a [`JsonEntry`] from a [`MatchedEntry`] and workspace document context.
-fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) -> JsonEntry {
+pub(crate) fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) -> JsonEntry {
     let entry = m.entry();
     let total_clocked: i64 = entry.clocks.iter().filter_map(|c| c.duration_minutes).sum();
     let ctx = EdnaContext {
@@ -139,11 +148,14 @@ fn build_json_entry(m: &MatchedEntry<'_>, all_docs: &[&OrgDocument]) -> JsonEntr
         blocked: edna::is_blocked(&ctx),
         checklist_summary: entry.checklist_summary(),
         checklist: entry.checklist.clone(),
+        roam_dir: None,
+        project: None,
+        project_id: None,
     }
 }
 
 /// Formats an [`OrgTimestamp`] as `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`.
-fn format_ts(ts: &OrgTimestamp) -> String {
+pub(crate) fn format_ts(ts: &OrgTimestamp) -> String {
     match (ts.hour, ts.minute) {
         (Some(h), Some(m)) => format!("{:04}-{:02}-{:02} {h:02}:{m:02}", ts.year, ts.month, ts.day),
         _ => format!("{:04}-{:02}-{:02}", ts.year, ts.month, ts.day),
@@ -151,28 +163,24 @@ fn format_ts(ts: &OrgTimestamp) -> String {
 }
 
 /// Formats a single matched entry line for human-readable query views.
-fn format_entry_line(m: &MatchedEntry<'_>) -> String {
-    let entry = m.entry();
-    let tags = if entry.tags.is_empty() {
+pub(crate) fn format_entry_line(m: &MatchedEntry<'_>) -> String {
+    let e = m.entry();
+    let tags = if e.tags.is_empty() {
         String::new()
     } else {
-        format!(" :{}:", entry.tags.join(":"))
+        format!(" :{}:", e.tags.join(":"))
     };
-    let kw = entry
+    let kw = e
         .keyword
         .as_deref()
-        .map(|k| format!("{k} "))
-        .unwrap_or_default();
-    let pri = entry
-        .priority
-        .map(|p| format!("[#{p}] "))
-        .unwrap_or_default();
+        .map_or(String::new(), |k| format!("{k} "));
+    let pri = e.priority.map_or(String::new(), |p| format!("[#{p}] "));
     format!(
         "{}:{}: {} {kw}{pri}{}{tags}",
         m.doc.file.display(),
-        entry.heading_line,
-        "*".repeat(entry.level),
-        entry.title,
+        e.heading_line,
+        "*".repeat(e.level),
+        e.title
     )
 }
 
@@ -245,35 +253,8 @@ pub fn render_blocked_json(matches: &[MatchedEntry<'_>], all_docs: &[&OrgDocumen
     serde_json::to_string_pretty(&items).unwrap_or_default()
 }
 
-/// Renders matched entries grouped by `@`-prefixed GTD context tags.
-pub fn render_grouped_by_context(matches: &[MatchedEntry<'_>]) -> String {
-    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut no_context: Vec<String> = Vec::new();
-
-    for m in matches {
-        let line = format_entry_line(m);
-        let mut tagged = false;
-        for tag in m.entry().tags.iter().filter(|t| t.starts_with('@')) {
-            tagged = true;
-            groups.entry(tag.clone()).or_default().push(line.clone());
-        }
-        if !tagged {
-            no_context.push(line);
-        }
-    }
-
-    let mut out = String::new();
-    for (ctx, entries) in &groups {
-        append_context_group(&mut out, ctx, entries);
-    }
-    if !no_context.is_empty() {
-        append_context_group(&mut out, "No context", &no_context);
-    }
-    out
-}
-
-/// Appends a single named GTD context section to `out`.
-fn append_context_group(out: &mut String, label: &str, entries: &[String]) {
+/// Appends a single named GTD section header and 2-space indented entries to `out`.
+pub(crate) fn append_named_group(out: &mut String, label: &str, entries: &[String]) {
     out.push_str(&format!("{label} ({})\n", entries.len()));
     for entry in entries {
         out.push_str(&format!("  {entry}\n"));
@@ -404,16 +385,15 @@ pub fn render_stuck_human(stuck: &[StuckProject<'_>]) -> String {
 
 /// Formats comma-separated child status counts for a [`StuckProject`].
 fn format_stuck_counts(sp: &StuckProject<'_>) -> String {
-    let mut parts = Vec::new();
-    if sp.done > 0 {
-        parts.push(format!("{} done", sp.done));
-    }
-    parts.push(format!("{} actionable", sp.actionable));
-    if sp.blocked_count > 0 {
-        parts.push(format!("{} blocked", sp.blocked_count));
-    }
-    if sp.waiting > 0 {
-        parts.push(format!("{} waiting", sp.waiting));
+    let mut parts: Vec<String> = (sp.done > 0)
+        .then(|| format!("{} done", sp.done))
+        .into_iter()
+        .chain(std::iter::once(format!("{} actionable", sp.actionable)))
+        .collect();
+    for (n, lbl) in [(sp.blocked_count, "blocked"), (sp.waiting, "waiting")] {
+        if n > 0 {
+            parts.push(format!("{n} {lbl}"));
+        }
     }
     parts.join(", ")
 }

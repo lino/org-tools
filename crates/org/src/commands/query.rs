@@ -19,7 +19,9 @@ use org_tools_core::files::collect_org_files;
 
 use super::parse_org_files;
 use super::query_columns::{run_columns, ColumnsOutputFormat};
-use super::query_gtd::{run_blocked, run_inbox, run_next, run_stuck, run_waiting};
+use super::query_gtd::{
+    run_blocked, run_inbox, run_next, run_stuck, run_waiting, GtdViewArgs, NextArgs,
+};
 use crate::{date, query, EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
 // region CLI Types
@@ -68,68 +70,15 @@ pub(crate) enum QueryCommand {
     /// Show agenda view (scheduled/deadline timeline and optional composite GTD sections).
     Agenda(query_agenda::AgendaArgs),
     /// Show blocked entries with dependency details.
-    Blocked {
-        /// Files or directories to scan.
-        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
-        paths: Vec<PathBuf>,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: QueryOutputFormat,
-        /// Maximum results to return.
-        #[arg(long)]
-        limit: Option<usize>,
-    },
-    /// GTD next actions: actionable tasks grouped by context.
-    Next {
-        /// Files or directories to scan.
-        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
-        paths: Vec<PathBuf>,
-        /// Filter to a specific @context tag.
-        #[arg(long)]
-        context: Option<String>,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: QueryOutputFormat,
-        /// Maximum results to return.
-        #[arg(long)]
-        limit: Option<usize>,
-    },
-    /// GTD inbox: entries with TODO keywords but no tags and no planning dates.
-    Inbox {
-        /// Files or directories to scan.
-        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
-        paths: Vec<PathBuf>,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: QueryOutputFormat,
-        /// Maximum results to return.
-        #[arg(long)]
-        limit: Option<usize>,
-    },
+    Blocked(GtdViewArgs),
+    /// GTD next actions: actionable tasks ranked by urgency and grouped by dimension.
+    Next(Box<NextArgs>),
+    /// GTD inbox: entries in `inbox.org` or with TODO keywords and no tags/planning dates.
+    Inbox(GtdViewArgs),
     /// GTD waiting-for: entries in a waiting state.
-    Waiting {
-        /// Files or directories to scan.
-        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
-        paths: Vec<PathBuf>,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: QueryOutputFormat,
-        /// Maximum results to return.
-        #[arg(long)]
-        limit: Option<usize>,
-    },
+    Waiting(GtdViewArgs),
     /// GTD stuck projects: projects with no actionable children.
-    Stuck {
-        /// Files or directories to scan.
-        #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
-        paths: Vec<PathBuf>,
-        /// Output format.
-        #[arg(long, value_enum, default_value = "human")]
-        format: QueryOutputFormat,
-        /// Maximum results to return.
-        #[arg(long)]
-        limit: Option<usize>,
-    },
+    Stuck(GtdViewArgs),
     /// Show org-edna dependency graph.
     Deps {
         /// Files or directories to scan.
@@ -335,32 +284,11 @@ pub(crate) fn run_query(command: QueryCommand, no_cache: bool) -> i32 {
             limit,
         } => run_search(&query_str, &paths, format, limit, no_cache),
         QueryCommand::Agenda(args) => query_agenda::run_agenda(args, no_cache),
-        QueryCommand::Blocked {
-            paths,
-            format,
-            limit,
-        } => run_blocked(&paths, format, limit),
-        QueryCommand::Next {
-            paths,
-            context,
-            format,
-            limit,
-        } => run_next(&paths, context.as_deref(), format, limit),
-        QueryCommand::Inbox {
-            paths,
-            format,
-            limit,
-        } => run_inbox(&paths, format, limit),
-        QueryCommand::Waiting {
-            paths,
-            format,
-            limit,
-        } => run_waiting(&paths, format, limit),
-        QueryCommand::Stuck {
-            paths,
-            format,
-            limit,
-        } => run_stuck(&paths, format, limit),
+        QueryCommand::Blocked(args) => run_blocked(args),
+        QueryCommand::Next(args) => run_next(*args),
+        QueryCommand::Inbox(args) => run_inbox(args),
+        QueryCommand::Waiting(args) => run_waiting(args),
+        QueryCommand::Stuck(args) => run_stuck(args),
         QueryCommand::Deps {
             paths,
             format,

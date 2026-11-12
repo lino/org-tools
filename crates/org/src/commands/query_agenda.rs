@@ -56,9 +56,17 @@ pub(crate) enum AgendaOutputFormat {
 /// CLI arguments for `org query agenda`.
 #[derive(Debug, Clone, Args)]
 pub(crate) struct AgendaArgs {
-    /// Files or directories to scan.
-    #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
+    /// Files or directories to scan (defaults to configured `org-roam` vaults or `.`).
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub(crate) paths: Vec<PathBuf>,
+
+    /// Repeatable named `[roam.directories]` vault or directory path selector.
+    #[arg(long = "roam-dir")]
+    pub(crate) roam_dir: Vec<String>,
+
+    /// Scan only `#+filetags: :agenda:` files and base `<gtd_subdir>/` files.
+    #[arg(long)]
+    pub(crate) agenda_only: bool,
 
     /// Inclusive start date in `YYYY-MM-DD` format (defaults to local today).
     #[arg(long)]
@@ -375,8 +383,23 @@ pub(crate) fn render_agenda_for_options(
 
 /// Executes `org query agenda` from CLI `args` and returns the process exit code.
 pub(crate) fn run_agenda(args: AgendaArgs, no_cache: bool) -> i32 {
+    let resolved_paths = if !args.roam_dir.is_empty() || args.agenda_only || args.paths.is_empty() {
+        match crate::commands::query_gtd::resolve_gtd_scan_paths(
+            &args.paths,
+            &args.roam_dir,
+            args.agenda_only,
+        ) {
+            Ok(p) => p,
+            Err(err) => {
+                eprintln!("org: {err}");
+                return EXIT_ERROR;
+            }
+        }
+    } else {
+        args.paths
+    };
     let opts = AgendaQueryOptions {
-        paths: args.paths,
+        paths: resolved_paths,
         from: args.from,
         days: args.days,
         warning_days: args.warning_days,

@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::builder::{PossibleValue, PossibleValuesParser};
+use clap::builder::{PossibleValue, TypedValueParser};
 use clap::{Args, ValueEnum, ValueHint};
 use serde::Serialize;
 
@@ -14,17 +14,33 @@ use crate::{EXIT_ERROR, EXIT_OK};
 
 // region CLI Arguments & Types
 
-/// Returns the [`PossibleValuesParser`] registering canonical schema names and their hidden CLI aliases.
-fn schema_name_parser() -> PossibleValuesParser {
-    PossibleValuesParser::from(
-        SCHEMA_REGISTRY
-            .iter()
-            .map(|entry| {
-                PossibleValue::new(entry.name)
-                    .aliases(entry.aliases.iter().copied().filter(|&a| a != entry.name))
-            })
-            .collect::<Vec<_>>(),
-    )
+/// Custom [`TypedValueParser`] advertising schema `possible_values()` to `clap_complete` while deferring validation to `run_schema`.
+#[derive(Clone, Copy)]
+struct SchemaNameParser;
+
+impl TypedValueParser for SchemaNameParser {
+    type Value = String;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        clap::builder::StringValueParser::new().parse_ref(cmd, arg, value)
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        Some(Box::new(SCHEMA_REGISTRY.iter().map(|entry| {
+            PossibleValue::new(entry.name)
+                .aliases(entry.aliases.iter().copied().filter(|&a| a != entry.name))
+        })))
+    }
+}
+
+/// Returns the [`SchemaNameParser`] registering canonical schema names and their hidden CLI aliases.
+fn schema_name_parser() -> SchemaNameParser {
+    SchemaNameParser
 }
 
 /// Output format for `org schema --list`.

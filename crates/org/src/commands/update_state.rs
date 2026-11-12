@@ -11,14 +11,16 @@ use std::time::Instant;
 
 use clap::{Args, ValueHint};
 
+use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
 use org_tools_core::edna::run_file_trigger_cascade;
+use org_tools_core::gtd_roam::{maybe_sync_agenda_filetag_for_mutation, parse_piped_stdin_targets};
 use org_tools_core::source::SourceFile;
 use org_tools_core::state::{set_state_with_options, SetStateOptions, SetStateResult};
 
 use super::update::{
-    filter_entries_by_query, format_stdin_content_error, invalidate_warm_workspace_caches,
-    looks_like_org_content, parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
+    filter_entries_by_query, invalidate_warm_workspace_caches, looks_like_org_content,
+    parse_optional_query, resolve_final_batch_targets, FileEntryTargets,
 };
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{query, EXIT_ERROR, EXIT_OK};
@@ -47,6 +49,9 @@ pub(crate) struct SetStateArgs {
     /// Disable repeater auto-advance and close repeating entries permanently.
     #[arg(long)]
     pub(crate) no_repeat: bool,
+    /// Skip automatic `:agenda:` filetag synchronization on `org-roam` files.
+    #[arg(long)]
+    pub(crate) no_agenda_sync: bool,
     /// Print what would be changed without writing files.
     #[arg(long)]
     pub(crate) dry_run: bool,
@@ -154,16 +159,11 @@ fn read_piped_state_stdin(
     {
         return Ok(Some(handle_piped_org_set_state(content, query_pred, args)));
     }
-    let lines: Vec<String> = content
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(ToString::to_string)
-        .collect();
-    if let Some(bad) = lines.iter().find(|l| looks_like_org_content(l)) {
-        eprintln!("{}", format_stdin_content_error(bad));
-        return Err(EXIT_ERROR);
-    }
-    targets.extend(lines);
+    let parsed = parse_piped_stdin_targets(&content).map_err(|e| {
+        eprintln!("{e}");
+        EXIT_ERROR
+    })?;
+    targets.extend(parsed);
     Ok(None)
 }
 
@@ -219,16 +219,24 @@ fn commit_single_file_state(
     file: &Path,
     doc: &OrgDocument,
     r: &SetStateResult,
-    workspace: Option<&Path>,
-    dry_run: bool,
+    args: &SetStateArgs,
     modified_paths: &mut HashSet<PathBuf>,
     mutation: &mut MutationResult,
 ) -> bool {
+    let ws = args.workspace.as_deref();
     let canon =
         org_tools_core::files::canonicalize_clean(file).unwrap_or_else(|_| file.to_path_buf());
-    if !dry_run {
-        invalidate_warm_workspace_caches(workspace, std::slice::from_ref(&canon));
-        if let Err(e) = org_tools_core::files::write_file_atomic(file, &r.content) {
+    let mut final_content = r.content.clone();
+    if !args.no_agenda_sync {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let cfg = Config::load_for_dir(ws.unwrap_or(&cwd)).unwrap_or_default();
+        if let Some(synced) = maybe_sync_agenda_filetag_for_mutation(file, &final_content, &cfg) {
+            final_content = synced;
+        }
+    }
+    if !args.dry_run {
+        invalidate_warm_workspace_caches(ws, std::slice::from_ref(&canon));
+        if let Err(e) = org_tools_core::files::write_file_atomic(file, &final_content) {
             let msg = format!("error writing {}: {e}", file.display());
             eprintln!("org: {msg}");
             mutation.errors.push(msg);
@@ -258,7 +266,7 @@ fn commit_state_change(
         .iter()
         .any(|&idx| doc.property(idx, "TRIGGER").is_some());
     if !has_triggers {
-        return commit_single_file_state(file, doc, &r, ws, args.dry_run, modified_paths, mutation);
+        return commit_single_file_state(file, doc, &r, args, modified_paths, mutation);
     }
     match run_file_trigger_cascade(file, doc, &r, ws, !args.no_closed, args.dry_run) {
         Ok((paths, cascade)) => {

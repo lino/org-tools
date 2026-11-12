@@ -17,6 +17,7 @@ pub(crate) mod query_gtd;
 pub(crate) mod refile;
 pub(crate) mod roam;
 pub(crate) mod roam_capture;
+pub(crate) mod roam_gtd;
 pub(crate) mod schema;
 pub(crate) mod show;
 pub(crate) mod update;
@@ -168,6 +169,7 @@ pub(crate) fn output_mutation(result: &MutationResult, format: MutationOutputFor
 }
 
 /// Loads all [`OrgDocument`] trees discovered under `paths`, logging read errors to stderr.
+#[allow(dead_code)]
 pub(crate) fn load_docs(paths: &[PathBuf]) -> Vec<OrgDocument> {
     let files = collect_org_files(paths);
     if files.is_empty() {

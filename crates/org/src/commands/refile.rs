@@ -3,21 +3,29 @@
 
 //! Subcommand handler for `org refile` atomic same-file and cross-file subtree refiling.
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::{Args, ValueHint};
 
+use org_tools_core::config::Config;
 use org_tools_core::document::OrgDocument;
-use org_tools_core::files::{canonicalize_clean, collect_org_files, write_file_atomic};
-use org_tools_core::locator::{resolve_in_document, resolve_locator, OrgLocator, ResolvedEntry};
+use org_tools_core::files::{collect_org_files, write_file_atomic};
+use org_tools_core::gtd_roam::maybe_sync_agenda_filetag_for_mutation;
+pub(crate) use org_tools_core::gtd_roam::{
+    is_plain_org_path_target, is_same_org_file, parse_flexible_locator,
+    resolve_flexible_in_document,
+};
+use org_tools_core::locator::{resolve_locator, OrgLocator, ResolvedEntry};
 use org_tools_core::property::resolve_tag_column;
 use org_tools_core::refile::{
     refile_cross_file, refile_same_file, RefileDestination, RefileOptions, RefileOutcome,
 };
 use org_tools_core::source::SourceFile;
 
-use super::update::invalidate_warm_workspace_caches;
+use super::roam::{open_roam_backend, RoamScopeArgs};
+use super::update::{invalidate_warm_workspace_caches, read_stdin_targets};
 use super::{output_mutation, MutationDetail, MutationOutputFormat, MutationResult};
 use crate::{EXIT_ERROR, EXIT_OK};
 
@@ -26,29 +34,26 @@ use crate::{EXIT_ERROR, EXIT_OK};
 /// CLI arguments for `org refile`.
 #[derive(Args)]
 pub(crate) struct RefileArgs {
-    /// Source entry locator (`id:<uuid>`, `<file>::#<custom-id>`, `<file>::*/Path`, `<file>::*Heading`, or `<file>::<line>`).
-    pub(crate) source_locator: String,
-
-    /// Destination locator or `.org` file path.
+    /// Source entry locator (`id:<uuid>`, `<file>::#<custom-id>`, `<file>::*/Path`, `<file>::*Heading`, or `<file>::<line>`; reads stdin when omitted).
+    pub(crate) source_locator: Option<String>,
+    /// Destination locator, `org-roam` node title/alias/ID, or `.org` file path.
     #[arg(long = "to")]
     pub(crate) to: String,
-
     /// Files or directories to scan when resolving locators.
-    #[arg(default_value = ".", value_hint = ValueHint::AnyPath)]
+    #[arg(value_hint = ValueHint::AnyPath)]
     pub(crate) paths: Vec<PathBuf>,
-
     /// Optional workspace root directory override.
     #[arg(long, value_hint = ValueHint::DirPath)]
     pub(crate) workspace: Option<PathBuf>,
-
     /// Refile the subtree as a top-level (`*`) heading at the end of the target file.
     #[arg(long)]
     pub(crate) as_root: bool,
-
+    /// Skip automatic `:agenda:` filetag synchronization on `org-roam` files.
+    #[arg(long)]
+    pub(crate) no_agenda_sync: bool,
     /// Preview the refile operation without writing files.
     #[arg(long)]
     pub(crate) dry_run: bool,
-
     /// Output format (`human` or `json`).
     #[arg(long, value_enum, default_value = "human")]
     pub(crate) format: MutationOutputFormat,
@@ -57,95 +62,6 @@ pub(crate) struct RefileArgs {
 // endregion
 
 // region Flexible Locator Resolution
-
-/// Parses a fileless shorthand (`custom-id:...`, `#...`, `olp:...`, `*Heading`) against `file`.
-fn parse_default_file_shorthand(trimmed: &str, file: &Path) -> Option<Result<OrgLocator, String>> {
-    if let Some(cid) = trimmed
-        .strip_prefix("custom-id:")
-        .or_else(|| trimmed.strip_prefix('#'))
-    {
-        return Some(
-            OrgLocator::parse(&format!("{}::#{}", file.display(), cid.trim()))
-                .map_err(|e| e.to_string()),
-        );
-    }
-    if let Some(olp) = trimmed
-        .strip_prefix("olp:")
-        .or_else(|| trimmed.strip_prefix('*'))
-    {
-        let cleaned = olp.trim_start_matches('*').trim();
-        return Some(
-            OrgLocator::parse(&format!("{}::*/{cleaned}", file.display()))
-                .map_err(|e| e.to_string()),
-        );
-    }
-    None
-}
-
-/// Normalizes shorthand locator strings (`file.org::*Heading`, `file.org::olp:A/B`) into [`OrgLocator`].
-pub(crate) fn parse_flexible_locator(
-    raw: &str,
-    default_file: Option<&Path>,
-) -> Result<OrgLocator, String> {
-    let trimmed = raw.trim();
-    if let Ok(loc) = OrgLocator::parse(trimmed) {
-        return Ok(loc);
-    }
-    if let Some((file_part, search_part)) = trimmed.split_once("::") {
-        let file = if file_part.trim().is_empty() {
-            default_file
-                .ok_or_else(|| format!("missing file path in locator '{trimmed}'"))?
-                .to_path_buf()
-        } else {
-            PathBuf::from(file_part.trim())
-        };
-        let search = search_part.trim();
-        let cleaned = search
-            .strip_prefix("olp:")
-            .or_else(|| search.strip_prefix("*/"))
-            .unwrap_or_else(|| search.trim_start_matches('*').trim_start());
-        if !cleaned.is_empty() && !cleaned.starts_with('#') {
-            return OrgLocator::parse(&format!("{}::*/{cleaned}", file.display()))
-                .map_err(|e| e.to_string());
-        }
-    }
-    if let Some(file) = default_file {
-        if let Some(res) = parse_default_file_shorthand(trimmed, file) {
-            return res;
-        }
-    }
-    Err(format!("invalid locator format: {trimmed}"))
-}
-
-/// Resolves `locator` in `doc`, falling back to matching a single-segment `*Heading` at any depth.
-pub(crate) fn resolve_flexible_in_document(
-    locator: &OrgLocator,
-    doc: &OrgDocument,
-) -> Result<ResolvedEntry, String> {
-    if let Ok(resolved) = resolve_in_document(locator, doc) {
-        return Ok(resolved);
-    }
-    if let OrgLocator::OutlinePath { file, path } = locator {
-        if path.len() == 1 {
-            let target_lower = path[0].to_lowercase();
-            if let Some((idx, entry)) = doc
-                .entries
-                .iter()
-                .enumerate()
-                .find(|(_, e)| e.title.to_lowercase() == target_lower)
-            {
-                return Ok(ResolvedEntry {
-                    file: file.clone(),
-                    line: entry.heading_line,
-                    heading_text: entry.title.clone(),
-                    level: entry.level,
-                    entry_index: idx,
-                });
-            }
-        }
-    }
-    Err(format!("entry not found: {locator}"))
-}
 
 /// Resolves a flexible locator string across `search_paths` (checking `preferred_file` first for fileless shorthands).
 pub(crate) fn resolve_flexible_locator(
@@ -186,37 +102,47 @@ pub(crate) fn resolve_flexible_locator(
 
 // region Target Resolution & Atomic Persistence
 
-/// Returns `true` when `raw` is a plain `.org` file path rather than a heading locator.
-pub(crate) fn is_plain_org_path_target(raw: &str) -> bool {
-    let trimmed = raw.trim();
-    !trimmed.contains("::")
-        && !trimmed.starts_with("id:")
-        && !trimmed.starts_with("custom-id:")
-        && !trimmed.starts_with("olp:")
-        && !trimmed.starts_with('#')
-        && !trimmed.starts_with('*')
-        && Path::new(trimmed)
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("org"))
-}
-
-/// Builds ordered search roots from `--workspace`, positional `paths`, and `current_dir()`.
+/// Builds ordered search roots from `--workspace`, positional `paths`, roam vaults, and `current_dir()`.
 fn build_refile_search_paths(args: &RefileArgs) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    if let Some(ref ws) = args.workspace {
-        roots.push(ws.clone());
-    }
-    for path in &args.paths {
-        if !roots.contains(path) {
-            roots.push(path.clone());
+    let mut roots: Vec<PathBuf> = args.workspace.iter().chain(&args.paths).cloned().collect();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Ok(cfg) = Config::load_for_dir(args.workspace.as_deref().unwrap_or(&cwd)) {
+        for (_, vp) in cfg.roam_directories() {
+            if vp.exists() && !roots.contains(&vp) {
+                roots.push(vp);
+            }
         }
     }
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     if !roots.contains(&cwd) {
         roots.push(cwd);
     }
     roots
+}
+
+/// Resolves `--to <TARGET>` against `org-roam` node titles, aliases, or `:ID:` across vaults.
+fn resolve_roam_refile_destination(
+    to_raw: &str,
+    as_root: bool,
+    workspace: Option<&Path>,
+    no_cache: bool,
+) -> Option<(PathBuf, RefileDestination)> {
+    let scope = RoamScopeArgs {
+        paths: Vec::new(),
+        workspace: workspace.map(Path::to_path_buf),
+        roam_dir: Vec::new(),
+    };
+    let ws = open_roam_backend(&scope, no_cache).ok()?;
+    let node = ws.resolve(to_raw.trim()).ok()?.into_iter().next()?;
+    let file = PathBuf::from(&node.file);
+    if node.level == 0 || as_root {
+        return Some((file, RefileDestination::FileRoot));
+    }
+    let src = SourceFile::from_path(&file).ok()?;
+    let idx = OrgDocument::from_source(&src)
+        .entries
+        .iter()
+        .position(|e| e.heading_line == node.line)?;
+    Some((file, RefileDestination::UnderEntry(idx)))
 }
 
 /// Resolves `--to <TARGET>` into `(dest_file_path, RefileDestination)`.
@@ -226,6 +152,7 @@ fn resolve_refile_destination(
     search_paths: &[PathBuf],
     source_file: &Path,
     workspace: Option<&Path>,
+    no_cache: bool,
 ) -> Result<(PathBuf, RefileDestination), String> {
     if is_plain_org_path_target(to_raw) {
         let mut candidate = PathBuf::from(to_raw.trim());
@@ -242,27 +169,18 @@ fn resolve_refile_destination(
         }
         return Ok((candidate, RefileDestination::FileRoot));
     }
-
-    let resolved = resolve_flexible_locator(to_raw, search_paths, Some(source_file))?;
-    if resolved.is_file_node() || as_root {
-        Ok((resolved.file, RefileDestination::FileRoot))
-    } else {
-        Ok((
-            resolved.file,
-            RefileDestination::UnderEntry(resolved.entry_index),
-        ))
+    if let Ok(res) = resolve_flexible_locator(to_raw, search_paths, Some(source_file)) {
+        let dest = if res.is_file_node() || as_root {
+            RefileDestination::FileRoot
+        } else {
+            RefileDestination::UnderEntry(res.entry_index)
+        };
+        return Ok((res.file, dest));
     }
-}
-
-/// Returns `true` when `path_a` and `path_b` resolve to the same canonical file on disk.
-pub(crate) fn is_same_org_file(path_a: &Path, path_b: &Path) -> bool {
-    if path_a == path_b {
-        return true;
+    if let Some(roam_dest) = resolve_roam_refile_destination(to_raw, as_root, workspace, no_cache) {
+        return Ok(roam_dest);
     }
-    match (canonicalize_clean(path_a), canonicalize_clean(path_b)) {
-        (Ok(ca), Ok(cb)) => ca == cb,
-        _ => false,
-    }
+    Err(format!("entry not found: {}", to_raw.trim()))
 }
 
 /// Computes the [`RefileOutcome`] and affected file list for `(source_file, source_idx)` -> `(dest_file, dest)`.
@@ -309,20 +227,114 @@ pub(crate) fn commit_refile_writes(
     Ok(())
 }
 
+/// Applies automatic `:agenda:` filetag upkeep to `outcome`'s destination and source buffers.
+fn sync_refile_agenda_tags(
+    source_file: &Path,
+    dest_file: &Path,
+    outcome: &mut RefileOutcome,
+    workspace: Option<&Path>,
+) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cfg = Config::load_for_dir(workspace.unwrap_or(&cwd)).unwrap_or_default();
+    if let Some(s) = maybe_sync_agenda_filetag_for_mutation(dest_file, &outcome.dest_content, &cfg)
+    {
+        outcome.dest_content = s;
+    }
+    if !outcome.same_file {
+        if let Some(s) =
+            maybe_sync_agenda_filetag_for_mutation(source_file, &outcome.source_content, &cfg)
+        {
+            outcome.source_content = s;
+        }
+    }
+}
+
 // endregion
 
 // region Entrypoint
 
-/// Builds the [`MutationResult`] envelope for a completed or dry-run refile operation.
-fn build_refile_mutation_result(
-    dest_file: &Path,
-    outcome: &RefileOutcome,
-    modified_count: usize,
-    dry_run: bool,
-    started: Instant,
-) -> MutationResult {
-    let mut mutation = MutationResult::new("refile", dry_run);
-    mutation.files_modified = modified_count;
+/// Resolves the source locator from CLI `args` or piped `stdin`.
+fn resolve_source_locator_arg(args: &RefileArgs) -> Result<String, i32> {
+    if let Some(ref loc) = args.source_locator {
+        return Ok(loc.clone());
+    }
+    if !std::io::stdin().is_terminal() {
+        let targets = read_stdin_targets().map_err(|e| {
+            eprintln!("{e}");
+            EXIT_ERROR
+        })?;
+        if let Some(first) = targets.into_iter().next() {
+            return Ok(first);
+        }
+    }
+    eprintln!("org: missing source locator (specify <SOURCE_LOCATOR> or pipe a locator on stdin)");
+    Err(EXIT_ERROR)
+}
+
+/// Executes `org refile` and returns the CLI exit code.
+pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
+    let started = Instant::now();
+    let Ok(source_locator) = resolve_source_locator_arg(&args) else {
+        return EXIT_ERROR;
+    };
+    let search_paths = build_refile_search_paths(&args);
+    let Ok(source_res) =
+        resolve_flexible_locator(&source_locator, &search_paths, None).map_err(|m| {
+            eprintln!("org: {m}");
+        })
+    else {
+        return EXIT_ERROR;
+    };
+    if source_res.is_file_node() {
+        eprintln!(
+            "org: cannot refile file-level node '{source_locator}'; specify a heading locator"
+        );
+        return EXIT_ERROR;
+    }
+    let Ok((dest_file, dest_target)) = resolve_refile_destination(
+        &args.to,
+        args.as_root,
+        &search_paths,
+        &source_res.file,
+        args.workspace.as_deref(),
+        no_cache,
+    )
+    .map_err(|m| eprintln!("org: {m}")) else {
+        return EXIT_ERROR;
+    };
+    let opts = RefileOptions {
+        as_root: args.as_root,
+        tag_column: resolve_tag_column(None),
+    };
+    let Ok((mut outcome, modified_files)) = execute_refile_pass(
+        &source_res.file,
+        source_res.entry_index,
+        &dest_file,
+        dest_target,
+        opts,
+    )
+    .map_err(|m| eprintln!("org: {m}")) else {
+        return EXIT_ERROR;
+    };
+    if !args.no_agenda_sync {
+        sync_refile_agenda_tags(
+            &source_res.file,
+            &dest_file,
+            &mut outcome,
+            args.workspace.as_deref(),
+        );
+    }
+    if !args.dry_run {
+        if let Err(msg) = commit_refile_writes(&source_res.file, &dest_file, &outcome) {
+            eprintln!("org: {msg}");
+            return EXIT_ERROR;
+        }
+        if !no_cache {
+            invalidate_warm_workspace_caches(args.workspace.as_deref(), &modified_files);
+        }
+    }
+    let mut mutation = MutationResult::new("refile", args.dry_run);
+    mutation.files_modified = modified_files.len();
     mutation.entries_affected = 1;
     mutation.details.push(MutationDetail {
         file: dest_file.display().to_string(),
@@ -333,74 +345,7 @@ fn build_refile_mutation_result(
             outcome.title, outcome.new_locator, outcome.old_level, outcome.new_level
         )),
     });
-    mutation.finish(started, modified_count);
-    mutation
-}
-
-/// Executes `org refile` and returns the CLI exit code.
-pub(crate) fn run_refile(args: RefileArgs, no_cache: bool) -> i32 {
-    let started = Instant::now();
-    let search_paths = build_refile_search_paths(&args);
-    let source_res = match resolve_flexible_locator(&args.source_locator, &search_paths, None) {
-        Ok(res) => res,
-        Err(msg) => {
-            eprintln!("org: {msg}");
-            return EXIT_ERROR;
-        }
-    };
-    if source_res.is_file_node() {
-        eprintln!(
-            "org: cannot refile file-level node '{}'; specify a heading locator",
-            args.source_locator
-        );
-        return EXIT_ERROR;
-    }
-    let (dest_file, dest_target) = match resolve_refile_destination(
-        &args.to,
-        args.as_root,
-        &search_paths,
-        &source_res.file,
-        args.workspace.as_deref(),
-    ) {
-        Ok(pair) => pair,
-        Err(msg) => {
-            eprintln!("org: {msg}");
-            return EXIT_ERROR;
-        }
-    };
-    let opts = RefileOptions {
-        as_root: args.as_root,
-        tag_column: resolve_tag_column(None),
-    };
-    let (outcome, modified_files) = match execute_refile_pass(
-        &source_res.file,
-        source_res.entry_index,
-        &dest_file,
-        dest_target,
-        opts,
-    ) {
-        Ok(res) => res,
-        Err(msg) => {
-            eprintln!("org: {msg}");
-            return EXIT_ERROR;
-        }
-    };
-    if !args.dry_run {
-        if let Err(msg) = commit_refile_writes(&source_res.file, &dest_file, &outcome) {
-            eprintln!("org: {msg}");
-            return EXIT_ERROR;
-        }
-        if !no_cache {
-            invalidate_warm_workspace_caches(args.workspace.as_deref(), &modified_files);
-        }
-    }
-    let mutation = build_refile_mutation_result(
-        &dest_file,
-        &outcome,
-        modified_files.len(),
-        args.dry_run,
-        started,
-    );
+    mutation.finish(started, modified_files.len());
     output_mutation(&mutation, args.format);
     EXIT_OK
 }

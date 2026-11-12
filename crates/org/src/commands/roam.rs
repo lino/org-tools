@@ -13,9 +13,9 @@ use serde::Serialize;
 use org_tools_core::cache::RoamWorkspace;
 use org_tools_core::config::Config;
 use org_tools_core::export_md::{normalize_workspace_path, WORKSPACE_ENV_VAR};
-use org_tools_core::roam::{RoamBacklink, RoamLink, RoamNode, RoamOutgoingLink};
 
 use super::roam_capture::{run_roam_capture, RoamCaptureArgs};
+use super::roam_gtd::{run_roam_gtd, run_sync_agenda_tags, RoamGtdCommand, SyncAgendaTagsArgs};
 use super::MutationTelemetry;
 use crate::{EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
@@ -105,66 +105,14 @@ pub(crate) enum RoamCommand {
     },
     /// Capture a new `org-roam` v2 note or entry using a built-in or configured template.
     Capture(Box<RoamCaptureArgs>),
-}
-
-// endregion
-
-// region JSON Envelopes
-
-/// JSON output envelope for `org roam node --format json`.
-#[derive(Serialize)]
-struct NodeJsonEnvelope {
-    /// Response discriminator (`"node"`).
-    kind: &'static str,
-    /// Original query string.
-    query: String,
-    /// Matched nodes sorted by `(file, line)`.
-    nodes: Vec<RoamNode>,
-    /// Execution timing and scan telemetry.
-    telemetry: MutationTelemetry,
-}
-
-/// JSON output envelope for `org roam backlinks --format json`.
-#[derive(Serialize)]
-struct BacklinksJsonEnvelope {
-    /// Response discriminator (`"backlinks"`).
-    kind: &'static str,
-    /// Original target query or locator.
-    target: String,
-    /// Resolved target nodes.
-    nodes: Vec<RoamNode>,
-    /// Incoming backlinks sorted by `(source_file, line)`.
-    backlinks: Vec<RoamBacklink>,
-    /// Execution timing and scan telemetry.
-    telemetry: MutationTelemetry,
-}
-
-/// JSON output envelope for `org roam links --format json`.
-#[derive(Serialize)]
-struct LinksJsonEnvelope {
-    /// Response discriminator (`"links"`).
-    kind: &'static str,
-    /// Original source query or locator.
-    source: String,
-    /// Resolved source nodes.
-    nodes: Vec<RoamNode>,
-    /// Outgoing links sorted by `(source_file, line)`.
-    links: Vec<RoamOutgoingLink>,
-    /// Execution timing and scan telemetry.
-    telemetry: MutationTelemetry,
-}
-
-/// JSON output envelope for `org roam graph --format json`.
-#[derive(Serialize)]
-struct GraphJsonEnvelope {
-    /// Response discriminator (`"graph"`).
-    kind: &'static str,
-    /// All non-excluded workspace nodes.
-    nodes: Vec<RoamNode>,
-    /// All extracted workspace `[[id:...]]` edges.
-    edges: Vec<RoamLink>,
-    /// Execution timing and scan telemetry.
-    telemetry: MutationTelemetry,
+    /// Synchronize `:agenda:` in `#+filetags:` across `org-roam` files with active TODOs.
+    SyncAgendaTags(SyncAgendaTagsArgs),
+    /// GTD inbox and project node capture commands for `org-roam` vaults.
+    Gtd {
+        /// GTD subcommand (`inbox` or `project`).
+        #[command(subcommand)]
+        command: RoamGtdCommand,
+    },
 }
 
 // endregion
@@ -293,12 +241,12 @@ fn handle_node(
         EXIT_OK
     };
     match format {
-        RoamOutputFormat::Json => emit_json(&NodeJsonEnvelope {
-            kind: "node",
-            query,
-            nodes,
-            telemetry: finish_telemetry(started, counts),
-        }),
+        RoamOutputFormat::Json => emit_json(&serde_json::json!({
+            "kind": "node",
+            "query": query,
+            "nodes": nodes,
+            "telemetry": finish_telemetry(started, counts),
+        })),
         RoamOutputFormat::Human => {
             for n in &nodes {
                 emit_text(&format!("{}  {}  ({}:{})\n", n.id, n.title, n.file, n.line));
@@ -332,13 +280,13 @@ fn handle_backlinks(
         EXIT_OK
     };
     match format {
-        RoamOutputFormat::Json => emit_json(&BacklinksJsonEnvelope {
-            kind: "backlinks",
-            target,
-            nodes,
-            backlinks,
-            telemetry: finish_telemetry(started, counts),
-        }),
+        RoamOutputFormat::Json => emit_json(&serde_json::json!({
+            "kind": "backlinks",
+            "target": target,
+            "nodes": nodes,
+            "backlinks": backlinks,
+            "telemetry": finish_telemetry(started, counts),
+        })),
         RoamOutputFormat::Human => {
             for bl in &backlinks {
                 emit_text(&format!(
@@ -378,13 +326,13 @@ fn handle_links(
         EXIT_OK
     };
     match format {
-        RoamOutputFormat::Json => emit_json(&LinksJsonEnvelope {
-            kind: "links",
-            source,
-            nodes,
-            links,
-            telemetry: finish_telemetry(started, counts),
-        }),
+        RoamOutputFormat::Json => emit_json(&serde_json::json!({
+            "kind": "links",
+            "source": source,
+            "nodes": nodes,
+            "links": links,
+            "telemetry": finish_telemetry(started, counts),
+        })),
         RoamOutputFormat::Human => {
             for l in &links {
                 let title = l.target_title.as_deref().unwrap_or("<unresolved>");
@@ -410,12 +358,12 @@ fn handle_graph(scope: &RoamScopeArgs, format: RoamGraphFormat, no_cache: bool) 
             }
         };
     match format {
-        RoamGraphFormat::Json => emit_json(&GraphJsonEnvelope {
-            kind: "graph",
-            nodes: index.nodes,
-            edges: index.links,
-            telemetry: finish_telemetry(started, counts),
-        }),
+        RoamGraphFormat::Json => emit_json(&serde_json::json!({
+            "kind": "graph",
+            "nodes": index.nodes,
+            "edges": index.links,
+            "telemetry": finish_telemetry(started, counts),
+        })),
         RoamGraphFormat::Mermaid => emit_text(&index.render_mermaid()),
         RoamGraphFormat::Dot => emit_text(&index.render_dot()),
     }
@@ -442,6 +390,8 @@ pub(crate) fn run_roam(command: RoamCommand, no_cache: bool) -> i32 {
         } => handle_links(source, &scope, format, no_cache),
         RoamCommand::Graph { scope, format } => handle_graph(&scope, format, no_cache),
         RoamCommand::Capture(args) => run_roam_capture(*args, no_cache),
+        RoamCommand::SyncAgendaTags(args) => run_sync_agenda_tags(args, no_cache),
+        RoamCommand::Gtd { command } => run_roam_gtd(command, no_cache),
     }
 }
 

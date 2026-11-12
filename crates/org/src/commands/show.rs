@@ -4,12 +4,14 @@
 //! Subcommand handler for `org show` bounded subtree and file-node extraction.
 
 use std::collections::HashMap;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use clap::{Args, ValueEnum, ValueHint};
 use serde::Serialize;
 
+use org_tools_core::config::Config;
 use org_tools_core::document::{ChecklistItem, ChecklistSummary};
 use org_tools_core::export_md::{
     export_slice_to_markdown, extract_org_slice, resolve_workspace_locator,
@@ -19,6 +21,7 @@ use org_tools_core::include::expand_includes;
 use org_tools_core::locator::{locator_for_entry, OrgLocator, FILE_NODE_ENTRY_INDEX};
 use org_tools_core::rules::timestamp::OrgTimestamp;
 
+use super::update::read_stdin_targets;
 use super::MutationTelemetry;
 use crate::{EXIT_ERROR, EXIT_OK};
 
@@ -36,8 +39,8 @@ pub(crate) enum ShowOutputFormat {
 /// CLI arguments for `org show`.
 #[derive(Args)]
 pub(crate) struct ShowArgs {
-    /// Org locator (`id:<uuid>`, `<file>::#<custom-id>`, `<file>::*/Path`, or `<file>::<line>`).
-    pub(crate) locator: String,
+    /// Org locator (`id:<uuid>`, `<file>::#<custom-id>`, `<file>::*/Path`, or `<file>::<line>`); read from `stdin` if omitted.
+    pub(crate) locator: Option<String>,
 
     /// Workspace directory to scan when resolving `id:` locators and cross-node links.
     #[arg(long, value_hint = ValueHint::DirPath)]
@@ -251,10 +254,60 @@ fn emit_show_output(
     }
 }
 
+/// Resolves the target locator string from CLI arguments or piped `stdin`.
+fn resolve_show_locator_str(locator_opt: Option<&str>) -> Result<String, String> {
+    if let Some(loc) = locator_opt.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(loc.to_string());
+    }
+    if !std::io::stdin().is_terminal() {
+        let targets = read_stdin_targets()?;
+        return targets
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no target locator found in stdin".to_string());
+    }
+    Err("missing target locator (supply <locator> or pipe via stdin)".to_string())
+}
+
+/// Resolves `locator` against `workspace`, `cwd`, or configured `[roam] directories`.
+fn resolve_show_node(
+    locator: &OrgLocator,
+    workspace: Option<&std::path::Path>,
+    cwd: &std::path::Path,
+    need_ws_docs: bool,
+) -> Result<ResolvedWorkspaceNode, String> {
+    match resolve_workspace_locator(locator, workspace, cwd, need_ws_docs) {
+        Ok(target) => Ok(target),
+        Err(primary_err) => {
+            if workspace.is_none() {
+                if let Ok(cfg) = Config::load_for_dir(cwd) {
+                    for (_, vault) in cfg.roam_directories() {
+                        if vault.is_dir() {
+                            if let Ok(target) =
+                                resolve_workspace_locator(locator, Some(&vault), cwd, need_ws_docs)
+                            {
+                                return Ok(target);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(primary_err)
+        }
+    }
+}
+
 /// Executes `org show <locator>` and returns the process exit status code.
 pub(crate) fn run_show(args: ShowArgs) -> i32 {
     let started = Instant::now();
-    let locator = match OrgLocator::parse(&args.locator) {
+    let raw_locator = match resolve_show_locator_str(args.locator.as_deref()) {
+        Ok(loc) => loc,
+        Err(err) => {
+            eprintln!("org: {err}");
+            return EXIT_ERROR;
+        }
+    };
+    let locator = match OrgLocator::parse(&raw_locator) {
         Ok(loc) => loc,
         Err(err) => {
             eprintln!("org: {err}");
@@ -263,14 +316,13 @@ pub(crate) fn run_show(args: ShowArgs) -> i32 {
     };
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let need_ws_docs = args.format == ShowOutputFormat::Md || args.include_markdown;
-    let loaded =
-        match resolve_workspace_locator(&locator, args.workspace.as_deref(), &cwd, need_ws_docs) {
-            Ok(target) => target,
-            Err(err) => {
-                eprintln!("org: {err}");
-                return EXIT_ERROR;
-            }
-        };
+    let loaded = match resolve_show_node(&locator, args.workspace.as_deref(), &cwd, need_ws_docs) {
+        Ok(target) => target,
+        Err(err) => {
+            eprintln!("org: {err}");
+            return EXIT_ERROR;
+        }
+    };
     let mut slice = extract_org_slice(
         &loaded.source,
         &loaded.doc,

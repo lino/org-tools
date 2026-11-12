@@ -55,3 +55,4 @@ pub mod unclosed_block;
 pub mod undeclared_tag;
 pub mod unknown_options_item;
 pub mod unresolved_edna_ids;
+pub mod zettel_hygiene;

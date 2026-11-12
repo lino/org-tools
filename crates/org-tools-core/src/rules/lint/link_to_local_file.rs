@@ -1,9 +1,10 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Detects `file:` links pointing to non-existent local files.
+//! Detects `file:` links pointing to non-existent local files (`W023`).
 //!
 //! Spec: [§4.4 Handling Links](https://orgmode.org/manual/Handling-Links.html)
+//! Org Syntax: <https://orgmode.org/worg/org-syntax.html#Links>
 //! org-lint: `link-to-local-file`
 
 use std::path::Path;
@@ -25,39 +26,49 @@ const LINK_CLOSE_DELIMITER: &str = "]]";
 const LINK_SEARCH_DELIMITER: &str = "::";
 
 /// Checks that `file:` links in bracket link syntax point to files that exist
-/// on the local filesystem.
+/// on the local filesystem (`W023`).
 ///
 /// Resolves paths relative to the directory containing the source file. Strips
 /// search strings (`::search`) before checking existence. Skips links inside
-/// protected regions (code blocks, example blocks, etc.).
+/// protected regions (code blocks, example blocks), comment lines, drawers,
+/// and inline verbatim spans.
 ///
 /// Spec: [§4.4 Handling Links](https://orgmode.org/manual/Handling-Links.html)
-/// org-lint: `link-to-local-file`
+/// Org Syntax: <https://orgmode.org/worg/org-syntax.html#Links>
 pub struct LinkToLocalFile;
 
-/// Extracts the next `(raw_target, remaining_line)` from `search`.
-fn next_file_link(search: &str) -> Option<(&str, &str)> {
-    let pos = search.find(FILE_LINK_PREFIX)?;
-    let rest = &search[pos + FILE_LINK_PREFIX.len()..];
-    match (
-        rest.find(LINK_DESC_DELIMITER),
-        rest.find(LINK_CLOSE_DELIMITER),
-    ) {
-        (Some(desc_pos), Some(close_pos)) if desc_pos < close_pos => {
-            let after_desc = &rest[desc_pos + LINK_DESC_DELIMITER.len()..];
-            let next = match after_desc.find(LINK_CLOSE_DELIMITER) {
-                Some(end_pos) => &after_desc[end_pos + LINK_CLOSE_DELIMITER.len()..],
-                None => "",
-            };
-            Some((&rest[..desc_pos], next))
+/// Returns `true` when `line` is an Org comment line starting with `#`.
+fn is_comment_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('#')
+}
+
+/// Tracks `:PROPERTIES:` ... `:END:` drawer blocks and returns `true` while inside a drawer.
+fn step_property_drawer(line: &str, in_drawer: &mut bool) -> bool {
+    let trimmed = line.trim();
+    if *in_drawer {
+        if trimmed.starts_with('*') || trimmed.eq_ignore_ascii_case(":END:") {
+            *in_drawer = false;
         }
-        (_, Some(close_pos)) => {
-            let next = &rest[close_pos + LINK_CLOSE_DELIMITER.len()..];
-            Some((&rest[..close_pos], next))
-        }
-        (Some(desc_pos), None) => Some((&rest[..desc_pos], "")),
-        (None, None) => Some((rest, "")),
+        return true;
     }
+    if trimmed.eq_ignore_ascii_case(":PROPERTIES:") {
+        *in_drawer = true;
+        return true;
+    }
+    false
+}
+
+/// Advances past an inline code or verbatim span (`~...~`, `=...=`, or backticks) starting at `pos`.
+fn skip_inline_verbatim(line: &str, pos: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let marker = *bytes.get(pos)?;
+    if marker != b'~' && marker != b'=' && marker != b'`' {
+        return None;
+    }
+    let rest = line.get(pos + 1..)?;
+    let end_rel = rest.find(marker as char)?;
+    Some(pos + 1 + end_rel + 1)
 }
 
 /// Strips any `::search` suffix from a `file:` link target path.
@@ -66,6 +77,24 @@ fn strip_search_suffix(raw_target: &str) -> &str {
         Some(pos) => &raw_target[..pos],
         None => raw_target,
     }
+}
+
+/// Extracts next local file link target from `line` at `pos`, returning `(target_path, next_pos, col_offset)`.
+fn extract_file_link(line: &str, pos: usize) -> Option<(&str, usize, usize)> {
+    let after_prefix = line.get(pos..)?.strip_prefix(FILE_LINK_PREFIX)?;
+    let col_offset = pos;
+    let close_idx = after_prefix.find(LINK_CLOSE_DELIMITER)?;
+    let target = if let Some(desc_idx) = after_prefix.find(LINK_DESC_DELIMITER) {
+        if desc_idx < close_idx {
+            &after_prefix[..desc_idx]
+        } else {
+            &after_prefix[..close_idx]
+        }
+    } else {
+        &after_prefix[..close_idx]
+    };
+    let next_pos = pos + FILE_LINK_PREFIX.len() + close_idx + LINK_CLOSE_DELIMITER.len();
+    Some((target, next_pos, col_offset))
 }
 
 impl LintRule for LinkToLocalFile {
@@ -90,32 +119,49 @@ impl LintRule for LinkToLocalFile {
         let regions = protected_regions(&ctx.source.content);
         let base_dir = ctx.source.path.parent().unwrap_or(Path::new("."));
         let mut offset = 0;
+        let mut in_drawer = false;
 
         for (i, line) in ctx.source.content.split('\n').enumerate() {
             let raw = line.strip_suffix('\r').unwrap_or(line);
 
-            if is_protected(i, &regions) {
+            if is_protected(i, &regions)
+                || step_property_drawer(raw, &mut in_drawer)
+                || is_comment_line(raw)
+            {
                 offset += line.len() + 1;
                 continue;
             }
 
-            let mut search = raw;
-            while let Some((raw_target, remaining)) = next_file_link(search) {
-                let file_path = strip_search_suffix(raw_target);
-                if !file_path.is_empty() && !base_dir.join(file_path).exists() {
-                    let (line_num, _) = ctx.source.line_col(offset);
-                    diagnostics.push(Diagnostic {
-                        file: ctx.source.path.clone(),
-                        line: line_num,
-                        column: 1,
-                        severity: Severity::Warning,
-                        rule_id: self.id(),
-                        rule: self.name(),
-                        message: format!("file link '{file_path}' points to a non-existent file"),
-                        fix: None,
-                    });
+            let mut pos = 0;
+            while pos < raw.len() {
+                if let Some(next_pos) = skip_inline_verbatim(raw, pos) {
+                    pos = next_pos;
+                    continue;
                 }
-                search = remaining;
+
+                if raw[pos..].starts_with(FILE_LINK_PREFIX) {
+                    if let Some((raw_target, next_pos, col_offset)) = extract_file_link(raw, pos) {
+                        let file_path = strip_search_suffix(raw_target).trim();
+                        if !file_path.is_empty() && !base_dir.join(file_path).exists() {
+                            let (line_num, col) = ctx.source.line_col(offset + col_offset);
+                            diagnostics.push(Diagnostic {
+                                file: ctx.source.path.clone(),
+                                line: line_num,
+                                column: col,
+                                severity: Severity::Warning,
+                                rule_id: self.id(),
+                                rule: self.name(),
+                                message: format!(
+                                    "file link '{file_path}' points to a non-existent file"
+                                ),
+                                fix: None,
+                            });
+                        }
+                        pos = next_pos;
+                        continue;
+                    }
+                }
+                pos += raw[pos..].chars().next().map_or(1, char::len_utf8);
             }
 
             offset += line.len() + 1;

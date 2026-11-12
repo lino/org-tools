@@ -3,6 +3,8 @@
 
 //! `org fmt` subcommand definitions and check/format execution handlers.
 
+mod scope;
+
 use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -10,13 +12,13 @@ use std::path::{Path, PathBuf};
 use clap::{Subcommand, ValueHint};
 
 use org_tools_core::cache::WorkspaceCache;
-use org_tools_core::document::OrgDocument;
 use org_tools_core::export_md::normalize_workspace_path;
 use org_tools_core::files::{collect_org_files, write_file_atomic};
 use org_tools_core::output::{render_diagnostics, OutputFormat};
 use org_tools_core::runner::Runner;
 use org_tools_core::source::SourceFile;
 
+use self::scope::{resolve_fmt_scope, ResolvedScope, ScopeArgs};
 use super::read_stdin_source;
 use crate::{EXIT_ERROR, EXIT_ISSUES, EXIT_OK};
 
@@ -36,6 +38,10 @@ pub(crate) enum FmtCommand {
         /// Auto-fix fixable issues (applies format rule fixes in-place).
         #[arg(long)]
         fix: bool,
+
+        /// Resolution scope and workspace configuration arguments.
+        #[command(flatten)]
+        scope: ScopeArgs,
     },
     /// Format org files.
     Format {
@@ -50,18 +56,28 @@ pub(crate) enum FmtCommand {
         /// Write to stdout instead of modifying files.
         #[arg(long)]
         stdout: bool,
+
+        /// Resolution scope and workspace configuration arguments.
+        #[command(flatten)]
+        scope: ScopeArgs,
     },
 }
 
 /// Runs the `fmt` subcommand (`check` or `format`).
 pub(crate) fn run_fmt(command: FmtCommand, runner: &Runner) -> i32 {
     match command {
-        FmtCommand::Check { paths, format, fix } => run_check(&paths, format, fix, runner),
+        FmtCommand::Check {
+            paths,
+            format,
+            fix,
+            scope,
+        } => run_check(&paths, format, fix, &scope, runner),
         FmtCommand::Format {
             paths,
             check,
             stdout,
-        } => run_format(&paths, check, stdout, runner),
+            scope,
+        } => run_format(&paths, check, stdout, &scope, runner),
     }
 }
 
@@ -96,24 +112,11 @@ fn sync_fmt_written_files(files: &[PathBuf]) {
     }
 }
 
-/// Parses all readable Org files in `files` into [`OrgDocument`]s for cross-file lints.
-fn parse_workspace_docs(files: &[PathBuf]) -> Vec<OrgDocument> {
-    let mut all_files = files.to_vec();
-    if let Some(first) = files.first() {
-        if let Some(ws) = find_ancestor_with_cache(first) {
-            let _ = WorkspaceCache::open_and_sync(&ws);
-            for f in collect_org_files(&[ws]) {
-                if !all_files.contains(&f) {
-                    all_files.push(f);
-                }
-            }
-        }
-    }
-    all_files
-        .iter()
-        .filter_map(|path| SourceFile::from_path(path).ok())
-        .map(|src| OrgDocument::from_source(&src))
-        .collect()
+/// Constructs an effective runner honoring the resolved [`org_tools_core::config::IdScope`].
+fn build_effective_runner(base_runner: &Runner, resolved: &ResolvedScope) -> Runner {
+    let mut config = base_runner.config().clone();
+    config.lint.id_scope = resolved.effective_scope;
+    Runner::new(config)
 }
 
 /// Executes `org fmt check` on piped stdin when no file paths are provided.
@@ -147,7 +150,7 @@ fn fix_single_file(
     file: &Path,
     format: OutputFormat,
     runner: &Runner,
-    workspace_docs: &[OrgDocument],
+    resolved: &ResolvedScope,
 ) -> (bool, bool) {
     let source = match SourceFile::from_path(file) {
         Ok(s) => s,
@@ -156,7 +159,12 @@ fn fix_single_file(
             return (false, true);
         }
     };
-    let (formatted, lint_diags) = runner.format_with_workspace(&source, workspace_docs);
+    let (formatted, lint_diags) = runner.format_with_scope(
+        &source,
+        Some(&resolved.workspace_docs),
+        Some(&resolved.scoped_ids),
+        Some(&resolved.id_locations),
+    );
     let mut io_error = false;
     if formatted != source.content {
         if let Err(e) = write_file_atomic(file, &formatted) {
@@ -174,12 +182,18 @@ fn fix_single_file(
 }
 
 /// Runs `org fmt check --fix` across all collected Org files.
-fn run_check_fix_files(files: &[PathBuf], format: OutputFormat, runner: &Runner) -> i32 {
-    let workspace_docs = parse_workspace_docs(files);
+fn run_check_fix_files(
+    files: &[PathBuf],
+    format: OutputFormat,
+    scope: &ScopeArgs,
+    runner: &Runner,
+) -> i32 {
+    let resolved = resolve_fmt_scope(files, scope, runner.config());
+    let effective_runner = build_effective_runner(runner, &resolved);
     let mut has_issues = false;
     let mut has_io_error = false;
     for file in files {
-        let (issues, io_err) = fix_single_file(file, format, runner, &workspace_docs);
+        let (issues, io_err) = fix_single_file(file, format, &effective_runner, &resolved);
         has_issues |= issues;
         has_io_error |= io_err;
     }
@@ -194,14 +208,25 @@ fn run_check_fix_files(files: &[PathBuf], format: OutputFormat, runner: &Runner)
 }
 
 /// Runs read-only `org fmt check` across all collected Org files.
-fn run_check_readonly_files(files: &[PathBuf], format: OutputFormat, runner: &Runner) -> i32 {
-    let workspace_docs = parse_workspace_docs(files);
+fn run_check_readonly_files(
+    files: &[PathBuf],
+    format: OutputFormat,
+    scope: &ScopeArgs,
+    runner: &Runner,
+) -> i32 {
+    let resolved = resolve_fmt_scope(files, scope, runner.config());
+    let effective_runner = build_effective_runner(runner, &resolved);
     let mut all_diagnostics = Vec::new();
     let mut has_io_error = false;
     for file in files {
         match SourceFile::from_path(file) {
             Ok(source) => {
-                all_diagnostics.extend(runner.check_with_workspace(&source, &workspace_docs))
+                all_diagnostics.extend(effective_runner.check_with_scope(
+                    &source,
+                    Some(&resolved.workspace_docs),
+                    Some(&resolved.scoped_ids),
+                    Some(&resolved.id_locations),
+                ));
             }
             Err(e) => {
                 eprintln!("org: error reading {}: {}", file.display(), e);
@@ -220,7 +245,13 @@ fn run_check_readonly_files(files: &[PathBuf], format: OutputFormat, runner: &Ru
 }
 
 /// Dispatches `org fmt check` between piped stdin and filesystem targets.
-fn run_check(paths: &[PathBuf], format: OutputFormat, fix: bool, runner: &Runner) -> i32 {
+fn run_check(
+    paths: &[PathBuf],
+    format: OutputFormat,
+    fix: bool,
+    scope: &ScopeArgs,
+    runner: &Runner,
+) -> i32 {
     if paths.is_empty() && !std::io::stdin().is_terminal() {
         return run_check_stdin(format, fix, runner);
     }
@@ -230,9 +261,9 @@ fn run_check(paths: &[PathBuf], format: OutputFormat, fix: bool, runner: &Runner
         return EXIT_ERROR;
     }
     if fix {
-        run_check_fix_files(&files, format, runner)
+        run_check_fix_files(&files, format, scope, runner)
     } else {
-        run_check_readonly_files(&files, format, runner)
+        run_check_readonly_files(&files, format, scope, runner)
     }
 }
 
@@ -266,7 +297,7 @@ fn format_single_file(
     check: bool,
     stdout: bool,
     runner: &Runner,
-    workspace_docs: &[OrgDocument],
+    resolved: &ResolvedScope,
 ) -> (bool, bool, bool) {
     let source = match SourceFile::from_path(file) {
         Ok(s) => s,
@@ -275,7 +306,12 @@ fn format_single_file(
             return (false, false, true);
         }
     };
-    let (formatted, lint_diags) = runner.format_with_workspace(&source, workspace_docs);
+    let (formatted, lint_diags) = runner.format_with_scope(
+        &source,
+        Some(&resolved.workspace_docs),
+        Some(&resolved.scoped_ids),
+        Some(&resolved.id_locations),
+    );
     let changed = formatted != source.content;
     let has_lint = !lint_diags.is_empty();
     let mut io_error = false;
@@ -300,7 +336,13 @@ fn format_single_file(
 }
 
 /// Dispatches `org fmt format` between piped stdin and filesystem targets.
-fn run_format(paths: &[PathBuf], check: bool, stdout: bool, runner: &Runner) -> i32 {
+fn run_format(
+    paths: &[PathBuf],
+    check: bool,
+    stdout: bool,
+    scope: &ScopeArgs,
+    runner: &Runner,
+) -> i32 {
     if paths.is_empty() && !std::io::stdin().is_terminal() {
         return run_format_stdin(check, runner);
     }
@@ -309,14 +351,15 @@ fn run_format(paths: &[PathBuf], check: bool, stdout: bool, runner: &Runner) -> 
         eprintln!("org: no .org files found");
         return EXIT_ERROR;
     }
-    let workspace_docs = parse_workspace_docs(&files);
+    let resolved = resolve_fmt_scope(&files, scope, runner.config());
+    let effective_runner = build_effective_runner(runner, &resolved);
     let mut has_changes = false;
     let mut has_lint_issues = false;
     let mut has_io_error = false;
     let mut written = Vec::new();
     for file in &files {
         let (changed, lint, io_err) =
-            format_single_file(file, check, stdout, runner, &workspace_docs);
+            format_single_file(file, check, stdout, &effective_runner, &resolved);
         has_changes |= changed;
         has_lint_issues |= lint;
         has_io_error |= io_err;

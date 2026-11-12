@@ -3,6 +3,9 @@
 
 //! Orchestration pipeline executing [`FormatRule`]s and [`LintRule`]s over [`SourceFile`]s.
 
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
 use crate::config::Config;
 use crate::diagnostic::{Diagnostic, Fix, Severity};
 use crate::document::OrgDocument;
@@ -178,6 +181,9 @@ fn append_extended_lint_rules(rules: &mut Vec<Box<dyn LintRule>>) {
         Box::new(InvalidIdSeed),
         Box::new(BrokenIdLink),
         Box::new(IncludeValidity),
+        Box::new(crate::rules::lint::zettel_hygiene::ZettelTaskHygiene),
+        Box::new(crate::rules::lint::zettel_hygiene::EphemeralHeader),
+        Box::new(crate::rules::lint::zettel_hygiene::OversizedTableCell),
     ]);
 }
 
@@ -199,9 +205,14 @@ impl Runner {
         }
     }
 
+    /// Returns a reference to the active configuration.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
     /// Runs all format and lint rules on a single `source` without workspace context.
     pub fn check(&self, source: &SourceFile) -> Vec<Diagnostic> {
-        self.check_internal(source, None)
+        self.check_internal(source, None, None, None)
     }
 
     /// Runs all format and lint rules on `source` with cross-file `workspace_docs`.
@@ -210,12 +221,23 @@ impl Runner {
         source: &SourceFile,
         workspace_docs: &[OrgDocument],
     ) -> Vec<Diagnostic> {
-        self.check_internal(source, Some(workspace_docs))
+        self.check_internal(source, Some(workspace_docs), None, None)
+    }
+
+    /// Runs all format and lint rules on `source` with precomputed scope index data.
+    pub fn check_with_scope(
+        &self,
+        source: &SourceFile,
+        workspace_docs: Option<&[OrgDocument]>,
+        scoped_ids: Option<&HashSet<String>>,
+        id_locations: Option<&HashMap<String, Vec<PathBuf>>>,
+    ) -> Vec<Diagnostic> {
+        self.check_internal(source, workspace_docs, scoped_ids, id_locations)
     }
 
     /// Runs format rules, applies fixes, and lints `source` without workspace context.
     pub fn format(&self, source: &SourceFile) -> (String, Vec<Diagnostic>) {
-        self.format_internal(source, None)
+        self.format_internal(source, None, None, None)
     }
 
     /// Runs format rules, applies fixes, and lints `source` with cross-file `workspace_docs`.
@@ -224,14 +246,27 @@ impl Runner {
         source: &SourceFile,
         workspace_docs: &[OrgDocument],
     ) -> (String, Vec<Diagnostic>) {
-        self.format_internal(source, Some(workspace_docs))
+        self.format_internal(source, Some(workspace_docs), None, None)
     }
 
-    /// Collects format-check and lint diagnostics with optional `workspace_docs`.
+    /// Runs format rules and lints `source` with precomputed scope index data.
+    pub fn format_with_scope(
+        &self,
+        source: &SourceFile,
+        workspace_docs: Option<&[OrgDocument]>,
+        scoped_ids: Option<&HashSet<String>>,
+        id_locations: Option<&HashMap<String, Vec<PathBuf>>>,
+    ) -> (String, Vec<Diagnostic>) {
+        self.format_internal(source, workspace_docs, scoped_ids, id_locations)
+    }
+
+    /// Collects format-check and lint diagnostics with optional `workspace_docs` and scope sets.
     fn check_internal(
         &self,
         source: &SourceFile,
         workspace_docs: Option<&[OrgDocument]>,
+        scoped_ids: Option<&HashSet<String>>,
+        id_locations: Option<&HashMap<String, Vec<PathBuf>>>,
     ) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         let fmt_ctx = FormatContext::new(source, &self.config);
@@ -251,7 +286,7 @@ impl Runner {
             }
         }
 
-        diagnostics.extend(self.run_lint_rules(source, workspace_docs));
+        diagnostics.extend(self.run_lint_rules(source, workspace_docs, scoped_ids, id_locations));
         diagnostics.sort_by_key(|d| (d.line, d.column));
         diagnostics
     }
@@ -261,6 +296,8 @@ impl Runner {
         &self,
         source: &SourceFile,
         workspace_docs: Option<&[OrgDocument]>,
+        scoped_ids: Option<&HashSet<String>>,
+        id_locations: Option<&HashMap<String, Vec<PathBuf>>>,
     ) -> (String, Vec<Diagnostic>) {
         let fmt_ctx = FormatContext::new(source, &self.config);
         let mut all_fixes: Vec<Fix> = Vec::new();
@@ -280,24 +317,30 @@ impl Runner {
 
         let formatted = apply_fixes(&source.content, &deduped);
         let formatted_source = SourceFile::new(source.path.clone(), formatted.clone());
-        let mut diagnostics = self.run_lint_rules(&formatted_source, workspace_docs);
+        let mut diagnostics =
+            self.run_lint_rules(&formatted_source, workspace_docs, scoped_ids, id_locations);
         diagnostics.sort_by_key(|d| (d.line, d.column));
         (formatted, diagnostics)
     }
 
-    /// Executes enabled [`LintRule`]s against `source` and optional `workspace_docs`.
+    /// Executes enabled [`LintRule`]s against `source` and optional scope context.
     fn run_lint_rules(
         &self,
         source: &SourceFile,
         workspace_docs: Option<&[OrgDocument]>,
+        scoped_ids: Option<&HashSet<String>>,
+        id_locations: Option<&HashMap<String, Vec<PathBuf>>>,
     ) -> Vec<Diagnostic> {
-        let lint_ctx = match workspace_docs {
-            Some(ws) => LintContext::with_workspace(source, &self.config, ws),
-            None => LintContext::new(source, &self.config),
-        };
+        let lint_ctx = LintContext::with_scope(
+            source,
+            &self.config,
+            workspace_docs,
+            scoped_ids,
+            id_locations,
+        );
         let mut diagnostics = Vec::new();
         for rule in &self.lint_rules {
-            if !self.config.is_rule_disabled(rule.id(), rule.name()) {
+            if rule.is_enabled(&self.config) {
                 diagnostics.extend(rule.check(&lint_ctx));
             }
         }

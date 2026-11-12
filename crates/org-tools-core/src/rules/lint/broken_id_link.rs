@@ -50,7 +50,7 @@ impl LintRule for BrokenIdLink {
         let mut diagnostics = Vec::new();
 
         for link in scan_id_links(ctx.source) {
-            if !id_exists_in_scope(&link.target_id, &current_doc, ctx.workspace_docs) {
+            if !id_exists_in_scope(&link.target_id, &current_doc, ctx) {
                 diagnostics.push(Diagnostic {
                     file: ctx.source.path.clone(),
                     line: link.line,
@@ -68,16 +68,19 @@ impl LintRule for BrokenIdLink {
     }
 }
 
-/// Returns `true` when `target_id` matches any `:ID:` in `current_doc` or `workspace_docs`.
-fn id_exists_in_scope(
-    target_id: &str,
-    current_doc: &OrgDocument,
-    workspace_docs: Option<&[OrgDocument]>,
-) -> bool {
+/// Returns `true` when `target_id` matches any `:ID:` in `current_doc`, `scoped_ids`, or `workspace_docs`.
+fn id_exists_in_scope(target_id: &str, current_doc: &OrgDocument, ctx: &LintContext) -> bool {
     if doc_contains_id_ci(current_doc, target_id) {
         return true;
     }
-    workspace_docs.is_some_and(|ws| ws.iter().any(|doc| doc_contains_id_ci(doc, target_id)))
+    if ctx.config.lint.id_scope == crate::config::IdScope::File {
+        return false;
+    }
+    if let Some(scoped) = ctx.scoped_ids {
+        return scoped.contains(&target_id.to_ascii_lowercase()) || scoped.contains(target_id);
+    }
+    ctx.workspace_docs
+        .is_some_and(|ws| ws.iter().any(|doc| doc_contains_id_ci(doc, target_id)))
 }
 
 #[cfg(test)]

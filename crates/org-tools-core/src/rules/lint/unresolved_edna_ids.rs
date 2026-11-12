@@ -56,7 +56,7 @@ impl LintRule for UnresolvedEdnaIds {
                 if let Some((prop_name, prop_val)) = extract_edna_property(raw.trim()) {
                     for raw_id in extract_dependency_ids(prop_val) {
                         let clean_id = raw_id.strip_prefix("id:").unwrap_or(raw_id.as_str());
-                        if !id_exists_in_scope(clean_id, &current_doc, ctx.workspace_docs) {
+                        if !id_exists_in_scope(clean_id, &current_doc, ctx) {
                             let (line_num, col) = ctx.source.line_col(offset);
                             diagnostics.push(Diagnostic {
                                 file: ctx.source.path.clone(),
@@ -99,16 +99,18 @@ fn extract_edna_property(trimmed: &str) -> Option<(&'static str, &str)> {
     }
 }
 
-/// Checks whether `id` matches any heading or level-0 file `:ID:` in `current_doc` or `workspace_docs`.
-fn id_exists_in_scope(
-    id: &str,
-    current_doc: &OrgDocument,
-    workspace_docs: Option<&[OrgDocument]>,
-) -> bool {
+/// Checks whether `id` matches any heading or level-0 file `:ID:` in `current_doc`, `scoped_ids`, or `workspace_docs`.
+fn id_exists_in_scope(id: &str, current_doc: &OrgDocument, ctx: &LintContext) -> bool {
     if current_doc.contains_id(id) {
         return true;
     }
-    if let Some(ws) = workspace_docs {
+    if ctx.config.lint.id_scope == crate::config::IdScope::File {
+        return false;
+    }
+    if let Some(scoped) = ctx.scoped_ids {
+        return scoped.contains(&id.to_ascii_lowercase()) || scoped.contains(id);
+    }
+    if let Some(ws) = ctx.workspace_docs {
         return ws.iter().any(|doc| doc.contains_id(id));
     }
     false

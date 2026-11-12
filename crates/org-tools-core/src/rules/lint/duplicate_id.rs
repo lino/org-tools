@@ -75,9 +75,7 @@ impl LintRule for DuplicateId {
             }
             seen_in_file.insert(norm, item.line);
 
-            if let Some(other_file) =
-                find_cross_file_collision(&ctx.source.path, &item.id, ctx.workspace_docs)
-            {
+            if let Some(other_file) = find_cross_file_collision(&ctx.source.path, &item.id, ctx) {
                 diagnostics.push(build_error(
                     ctx,
                     &item,
@@ -113,16 +111,35 @@ fn is_same_document_path(left: &Path, right: &Path) -> bool {
     left == right || normalize_workspace_path(left) == normalize_workspace_path(right)
 }
 
-/// Finds another document in `workspace_docs` that also defines `id` case-insensitively.
-fn find_cross_file_collision<'a>(
+/// Finds another document in `id_locations` or `workspace_docs` that also defines `id`.
+fn find_cross_file_collision(
     current_path: &Path,
     id: &str,
-    workspace_docs: Option<&'a [OrgDocument]>,
-) -> Option<&'a Path> {
-    let ws = workspace_docs?;
-    ws.iter()
-        .find(|doc| !is_same_document_path(current_path, &doc.file) && doc_contains_id_ci(doc, id))
-        .map(|doc| doc.file.as_path())
+    ctx: &LintContext,
+) -> Option<std::path::PathBuf> {
+    if ctx.config.lint.id_scope == crate::config::IdScope::File {
+        return None;
+    }
+    if let Some(locations) = ctx.id_locations {
+        let norm = id.to_ascii_lowercase();
+        if let Some(paths) = locations.get(&norm) {
+            if let Some(other) = paths
+                .iter()
+                .find(|p| !is_same_document_path(current_path, p))
+            {
+                return Some(other.clone());
+            }
+        }
+    }
+    if let Some(ws) = ctx.workspace_docs {
+        if let Some(doc) = ws
+            .iter()
+            .find(|d| !is_same_document_path(current_path, &d.file) && doc_contains_id_ci(d, id))
+        {
+            return Some(doc.file.clone());
+        }
+    }
+    None
 }
 
 /// Extracts `:ID:` value from a trimmed property line when the key is `"ID"` (case-insensitive).

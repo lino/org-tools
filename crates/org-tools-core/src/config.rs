@@ -3,6 +3,7 @@
 
 //! Configuration loading and validation for `.org-tools.toml`.
 
+mod lint;
 mod loader;
 
 use std::collections::BTreeMap;
@@ -13,6 +14,7 @@ use serde::Deserialize;
 use crate::capture::{CaptureConfig, CaptureTemplateLayer};
 use crate::rules::heading::{parse_todo_spec, TodoKeywords};
 
+pub use self::lint::{AuthoringLintConfig, IdScope, LintConfig, ZettelLintConfig};
 use self::loader::{
     collect_config_chain, merge_config_layer, parse_env_roam_directories, resolve_spec_directories,
     vault_name_from_path, LayerMergeState,
@@ -147,14 +149,6 @@ impl Default for FormatConfig {
             property_drawer_align: true,
         }
     }
-}
-
-/// Configuration for lint rules.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
-pub struct LintConfig {
-    /// Rule names or IDs to disable (e.g., `["W001", "heading-level-gap"]`).
-    pub disabled_rules: Vec<String>,
 }
 
 /// Raw `[roam.directories]` table or `[roam] directories = [...]` array in `.org-tools.toml`.
@@ -349,6 +343,14 @@ impl Config {
     pub fn is_rule_disabled(&self, id: &str, name: &str) -> bool {
         self.lint
             .disabled_rules
+            .iter()
+            .any(|r| r == name || r.eq_ignore_ascii_case(id))
+    }
+
+    /// Checks whether an opt-in rule is explicitly enabled by kebab-case name or rule ID.
+    pub fn is_rule_enabled(&self, id: &str, name: &str) -> bool {
+        self.lint
+            .enable
             .iter()
             .any(|r| r == name || r.eq_ignore_ascii_case(id))
     }

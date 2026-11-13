@@ -235,7 +235,12 @@ fn slice4_org_fleeting_list_and_transform_workflows() {
     );
     assert!(!dir.path().join("escaped.org").exists());
 
-    // Confinement test: destination "to" in /tmp or absolute outside must be rejected
+    // Confinement test: destination "to" in outside absolute path must be rejected
+    let outside_abs = dir
+        .path()
+        .parent()
+        .unwrap_or_else(|| Path::new("/tmp"))
+        .join("escaped-outside.org");
     client.assert_err(
         7,
         "org_fleeting_transform",
@@ -243,7 +248,7 @@ fn slice4_org_fleeting_list_and_transform_workflows() {
             "target": "f2222222-2222-3333-4444-555555555555",
             "action": "to-task",
             "roam_dir": "work",
-            "to": "/tmp/escaped.org"
+            "to": outside_abs.to_string_lossy()
         }),
     );
 

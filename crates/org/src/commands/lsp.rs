@@ -210,23 +210,37 @@ impl LspSession {
 
 // region Coordinate & URI Helpers
 
+/// Encodes a normalized filesystem path string into an RFC 8089 `file://` URI.
+pub(crate) fn encode_file_uri_path(raw: &str) -> String {
+    let slash = raw.replace('\\', "/");
+    let rooted = if slash.starts_with('/') {
+        slash
+    } else {
+        format!("/{slash}")
+    };
+    let bytes = rooted.as_bytes();
+    let has_win_drive = bytes.len() >= 3 && bytes[1].is_ascii_alphabetic() && bytes[2] == b':';
+    let mut out = String::from("file://");
+    for (idx, &b) in bytes.iter().enumerate() {
+        let keep = matches!(
+            b,
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/'
+        ) || (idx == 2 && has_win_drive);
+        if keep {
+            out.push(b as char);
+        } else {
+            use std::fmt::Write as _;
+            let _ = write!(out, "%{b:02X}");
+        }
+    }
+    out
+}
+
 /// Converts a filesystem path to a standard `file://` URI string.
 #[allow(dead_code)]
 pub(crate) fn path_to_file_uri(path: &Path) -> String {
     let s = normalize_workspace_path(path).to_string_lossy().to_string();
-    let mut out = String::from("file://");
-    for b in s.bytes() {
-        match b {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
-                out.push(b as char)
-            }
-            _ => {
-                use std::fmt::Write as _;
-                let _ = write!(out, "%{b:02X}");
-            }
-        }
-    }
-    out
+    encode_file_uri_path(&s)
 }
 
 /// Converts a `file://` URI string to a local filesystem [`PathBuf`].
@@ -415,6 +429,21 @@ pub(crate) fn run_lsp(args: LspArgs, no_cache: bool) -> i32 {
         }
     }
     session.exit_code.unwrap_or(EXIT_OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_file_uri_path;
+
+    /// Verifies RFC 8089 `file://` URI encoding for Unix and Windows drive paths.
+    #[test]
+    fn encodes_unix_and_windows_file_uris() {
+        assert_eq!(encode_file_uri_path("/tmp/doc.org"), "file:///tmp/doc.org");
+        assert_eq!(
+            encode_file_uri_path(r"C:\Users\runner\my notes.org"),
+            "file:///C:/Users/runner/my%20notes.org"
+        );
+    }
 }
 
 // endregion

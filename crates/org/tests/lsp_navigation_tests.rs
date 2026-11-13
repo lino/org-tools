@@ -122,8 +122,14 @@ impl LspNavTestClient {
 
 /// Converts a path to a canonical `file://` URI string.
 fn to_file_uri(path: &Path) -> String {
-    let s = normalize_workspace_path(path).to_string_lossy().to_string();
-    format!("file://{s}")
+    let s = normalize_workspace_path(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
 }
 
 /// Creates a test workspace with sample `.org` files and subdirectories.

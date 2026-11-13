@@ -43,8 +43,8 @@ daily_subdir = "daily"
 work = "{}"
 private = "{}"
 "#,
-        work_dir.display(),
-        private_dir.display()
+        work_dir.to_string_lossy().replace('\\', "/"),
+        private_dir.to_string_lossy().replace('\\', "/")
     );
     fs::write(root.join(".org-tools.toml"), cfg).expect("write workspace config");
 }

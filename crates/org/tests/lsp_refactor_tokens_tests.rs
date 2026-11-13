@@ -9,6 +9,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+use org_tools_core::export_md::normalize_workspace_path;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -111,6 +112,18 @@ impl LspTestClient {
     }
 }
 
+/// Converts a path to a canonical RFC 8089 `file://` URI string.
+fn to_file_uri(path: &Path) -> String {
+    let s = normalize_workspace_path(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
 /// Initializes an LSP client connection for `dir`.
 fn init_client(dir: &Path) -> LspTestClient {
     let mut client = LspTestClient::spawn(dir);
@@ -118,7 +131,7 @@ fn init_client(dir: &Path) -> LspTestClient {
         "initialize",
         1,
         json!({
-            "rootUri": format!("file://{}", dir.display()),
+            "rootUri": to_file_uri(dir),
             "capabilities": {}
         }),
     );
@@ -164,7 +177,7 @@ fn assert_heading_rename_edits(doc1_edits: &[Value], doc2_edits: &[Value]) {
 #[test]
 fn test_rename_heading_title_with_tags_and_workspace_links() {
     let temp = TempDir::new().expect("create temp dir");
-    let ws = temp.path().canonicalize().expect("canonicalize ws");
+    let ws = normalize_workspace_path(temp.path());
 
     let doc1 = "#+TITLE: Notes\n* TODO Old Heading Title :tag1:tag2:\n:PROPERTIES:\n:ID:       11111111-2222-3333-4444-555555555555\n:END:\nLink: [[*Old Heading Title]]\n";
     let doc2 = "#+TITLE: Tasks\nRef: [[id:11111111-2222-3333-4444-555555555555][Old Heading Title]]\nTarget: [[file:doc1.org::*Old Heading Title]]\nOther: [[id:11111111-2222-3333-4444-555555555555][Keep Desc]]\n";
@@ -172,8 +185,8 @@ fn test_rename_heading_title_with_tags_and_workspace_links() {
     fs::write(ws.join("doc2.org"), doc2).expect("write doc2");
 
     let mut client = init_client(&ws);
-    let doc1_uri = format!("file://{}", ws.join("doc1.org").display());
-    let doc2_uri = format!("file://{}", ws.join("doc2.org").display());
+    let doc1_uri = to_file_uri(&ws.join("doc1.org"));
+    let doc2_uri = to_file_uri(&ws.join("doc2.org"));
 
     let prep = client.send_request(
         "textDocument/prepareRename",
@@ -207,13 +220,13 @@ fn test_rename_heading_title_with_tags_and_workspace_links() {
 #[test]
 fn test_rename_invoked_from_heading_link() {
     let temp = TempDir::new().expect("create temp dir");
-    let ws = temp.path().canonicalize().expect("canonicalize ws");
+    let ws = normalize_workspace_path(temp.path());
 
     let doc1 = "#+TITLE: Doc\n* Target Heading\nBody text.\nLink here: [[*Target Heading]]\n";
     fs::write(ws.join("doc1.org"), doc1).expect("write doc1");
 
     let mut client = init_client(&ws);
-    let doc1_uri = format!("file://{}", ws.join("doc1.org").display());
+    let doc1_uri = to_file_uri(&ws.join("doc1.org"));
 
     let prep = client.send_request(
         "textDocument/prepareRename",
@@ -251,7 +264,7 @@ fn test_rename_invoked_from_heading_link() {
 #[test]
 fn test_rename_custom_id_and_file_links() {
     let temp = TempDir::new().expect("create temp dir");
-    let ws = temp.path().canonicalize().expect("canonicalize ws");
+    let ws = normalize_workspace_path(temp.path());
 
     let doc1 = "* Heading\n:PROPERTIES:\n:CUSTOM_ID: my-cid\n:END:\nLink: [[#my-cid]]\n";
     let doc2 = "Ref: [[file:doc1.org::#my-cid]]\n";
@@ -259,8 +272,8 @@ fn test_rename_custom_id_and_file_links() {
     fs::write(ws.join("doc2.org"), doc2).expect("write doc2");
 
     let mut client = init_client(&ws);
-    let doc1_uri = format!("file://{}", ws.join("doc1.org").display());
-    let doc2_uri = format!("file://{}", ws.join("doc2.org").display());
+    let doc1_uri = to_file_uri(&ws.join("doc1.org"));
+    let doc2_uri = to_file_uri(&ws.join("doc2.org"));
 
     let prep = client.send_request(
         "textDocument/prepareRename",
@@ -307,7 +320,7 @@ fn test_rename_custom_id_and_file_links() {
 #[test]
 fn test_rename_id_property_and_roam_links() {
     let temp = TempDir::new().expect("create temp dir");
-    let ws = temp.path().canonicalize().expect("canonicalize ws");
+    let ws = normalize_workspace_path(temp.path());
 
     let doc1 = "* Node\n:PROPERTIES:\n:ID:       aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n:END:\n";
     let doc2 = "Link: [[id:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee][Title]]\nBare: [[id:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]\n";
@@ -315,8 +328,8 @@ fn test_rename_id_property_and_roam_links() {
     fs::write(ws.join("doc2.org"), doc2).expect("write doc2");
 
     let mut client = init_client(&ws);
-    let doc1_uri = format!("file://{}", ws.join("doc1.org").display());
-    let doc2_uri = format!("file://{}", ws.join("doc2.org").display());
+    let doc1_uri = to_file_uri(&ws.join("doc1.org"));
+    let doc2_uri = to_file_uri(&ws.join("doc2.org"));
 
     let prep = client.send_request(
         "textDocument/prepareRename",
@@ -369,7 +382,7 @@ fn test_semantic_tokens_full_with_protected_regions() {
     fs::write(ws.join("doc.org"), doc).expect("write doc");
 
     let mut client = init_client(ws);
-    let doc_uri = format!("file://{}", ws.join("doc.org").display());
+    let doc_uri = to_file_uri(&ws.join("doc.org"));
 
     let resp = client.send_request(
         "textDocument/semanticTokens/full",

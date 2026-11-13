@@ -60,4 +60,4 @@ roam_type = "concept"
 filetags = ["zettel", "permanent"]
 ```
 
-See the [User Manual Quickstart](../user/quickstart.md) and the [Glossary](../glossary.md) for foundational concepts.
+See [Workspace & Directory Structure](../user/directory-structure.md), the [Configuration Guide](../user/configuration.md), and the [Glossary](../glossary.md) for foundational concepts.

@@ -23,7 +23,7 @@ This documentation site is organized into three role-specific manuals, a goal-or
 
 | Manual or Section                         | Target Audience                 | What You Will Find                                                                                              |
 | ----------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| [User Manual](user/quickstart.md)         | End users & power users         | Five-minute quickstart, formatting, querying, agendas, task mutations, Unix piping, JSON schemas, and CLI args. |
+| [User Manual](user/quickstart.md)         | End users & power users         | Quickstart, vault directory layout, `.org-tools.toml` configuration, formatting, querying, mutations, and schemas. |
 | [Cookbook](cookbook/index.md)             | Task, knowledge & CI builders   | Step-by-step recipes for Getting Things Done (GTD), Zettelkasten notes, Model Context Protocol (MCP), and CI.   |
 | [Operator Manual](operations/index.md)    | Systems operators & release eng | Multi-OS installation, container & MCP sandboxing, GoReleaser v2 runbooks, and Prometheus metrics.              |
 | [Developer Manual](developer/index.md)    | Contributors & Rust integrators | Workspace crate map, 12-section `arc42` architecture, Red-to-Green Test-Driven Development (TDD), and ADRs.     |
@@ -47,7 +47,8 @@ This documentation site is organized into three role-specific manuals, a goal-or
 ## Quick Navigation by Goal
 
 - **Install `org` and run your first command**: Start with the [Five-Minute Quickstart](user/quickstart.md) or [Multi-Platform Installation](operations/installation.md).
+- **Organize vaults and configure `.org-tools.toml`**: Read [Workspace & Directory Structure](user/directory-structure.md) and the [Configuration Guide](user/configuration.md).
 - **Clean up tables, drawers, and tags**: Read [Formatting & Linting](user/formatting-and-linting.md).
 - **Search tasks and build daily agendas**: Read [Querying & Agenda Views](user/querying-and-agenda.md) and the [GTD Cookbook](cookbook/gtd.md).
 - **Connect an AI assistant via `org mcp`**: Follow the [AI Assistants & MCP Server Cookbook](cookbook/mcp-server.md).
-- **Look up flags, exit codes, and manpages**: Open the [CLI, Config & Rule Reference](user/reference.md) or run `man 1 org` and `man 5 org-tools.toml`.
+- **Look up flags, settings, exit codes, and manpages**: Open the [Configuration Reference](user/configuration-reference.md) and [CLI & Rule Reference](user/reference.md).

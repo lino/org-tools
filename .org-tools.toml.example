@@ -2,71 +2,96 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # org-tools configuration example.
-# Copy to .org-tools.toml to use.
-# Defaults match Emacs org-mode behavior.
+# Copy to .org-tools.toml at your workspace root (or ~/.config/org-tools/config.toml).
+# Defaults match standard Emacs Org-mode behavior when omitted.
 
 [format]
-# Remove trailing whitespace from all lines (default: true).
+# Remove trailing whitespace from non-protected lines (F001, default: true).
 trailing_whitespace = true
 
-# Collapse consecutive blank lines (default: false, matching Emacs).
+# Collapse consecutive blank lines (F002, default: false, matching Emacs).
 blank_lines = false
 max_consecutive_blank_lines = 1
 
-# Enforce blank lines before headings (default: false, matching Emacs).
+# Enforce blank lines before headings (F003, default: false, matching Emacs).
 heading_blank_lines = false
 heading_blank_lines_before = 1
 
-# Align table columns and normalize separators (default: true).
+# Align Org pipe table columns and separator rows (F004, default: true).
 table_format = true
 
-# Align property values within PROPERTIES drawers (default: true).
+# Align property values within :PROPERTIES: drawers (F005, default: true).
 property_drawer_align = true
 
 [lint]
-# Disable rules by name or ID. Examples:
-# disabled_rules = ["W001", "heading-level-gap"]
+# Disable rules by ID or kebab-case name (e.g., ["W001", "heading-level-gap"]).
 disabled_rules = []
+# Explicitly enable opt-in hygiene rules (e.g., ["W038", "W039", "I008"]).
+enable = []
+# Link & duplicate :ID: resolution boundary: "vault" (default), "roam-dir", "dir", or "file".
+id_scope = "vault"
+
+[lint.zettel]
+# Forbid active TODO keywords and checklists inside permanent notes (W038, default: false).
+forbid_tasks = false
+
+[lint.authoring]
+# Forbid #+DATE: and #+AUTHOR: boilerplate file headers (W039, default: false).
+forbid_ephemeral_headers = false
+# Flag table cells exceeding this character length when set (I008, e.g., 120).
+# max_table_cell_chars = 120
 
 [agenda]
-# Lead-time warning window in days for deadlines without explicit -Nd warning suffix (default: 14).
+# Lead-time warning window in days for DEADLINE: timestamps without an explicit -Nd suffix (default: 14).
 deadline_warning_days = 14
 
 [todo]
-# Fallback active (incomplete) and completed (done) TODO state keywords.
-active = ["TODO", "NEXT", "WAITING"]
+# Additive fallback #+TODO: sequences used when an .org file omits its own #+TODO: header.
+sequences = ["TODO(t) NEXT(n) WAITING(w) | DONE(d) CANCELLED(c)"]
+todo = ["TODO", "NEXT", "WAITING"]
 done = ["DONE", "CANCELLED"]
 
-# Additive TODO state sequences with pipe separator.
-sequences = ["TODO NEXT WAITING | DONE CANCELLED"]
-
 [roam]
-# Default target vault name among configured roam directories.
+# Default target vault name among [roam.directories] when --roam-dir is omitted.
 default_directory = "work"
-
-# Relative subdirectories for GTD, Zettelkasten, fleeting, and daily notes.
+# Relative subdirectories for GTD, Zettelkasten, fleeting, and daily journal notes.
 gtd_subdir = "gtd"
 zettel_subdir = "zettel"
 fleeting_subdir = "fleeting"
 daily_subdir = "daily"
-
-# Whether captures append an audit log to today's daily journal note.
+# Optional interactive capture editor override (falls back to $VISUAL, $EDITOR, then vi).
+# editor = "nvim"
+# Append a timestamped link under * Captured today in daily/YYYY-MM-DD.org on capture.
 log_to_daily = false
 
 [roam.directories]
-# Multi-directory org-roam v2 vault roots.
+# Named multi-vault org-roam v2 directories (supports ~/, $HOME/, and config-relative paths).
 work = "~/org/work"
-personal = "~/org/personal"
+private = "~/org/private"
 
 [capture.templates.inbox]
-# Quick task filed into GTD inbox.
-description = "Quick inbox task"
-target_file = "gtd/inbox.org"
-target_heading = "Tasks"
-template = "* TODO %?\n:PROPERTIES:\n:CREATED: %U\n:END:\n"
+description = "Quick GTD inbox task"
+keys = "i"
+kind = "entry"
+target = "gtd/inbox.org"
+target_heading = "* Inbox"
+properties = { CAPTURED_AT = "${timestamp_inactive}" }
+body = "${body}"
 
 [capture.templates.zettel]
-# Permanent Zettelkasten concept note.
-description = "Permanent concept note"
-target_file = "zettel/%<%Y%m%d%H%M%S>-${slug}.org"
-template = ":PROPERTIES:\n:ID: ${id}\n:TYPE: zettel\n:END:\n#+title: ${title}\n#+filetags: :zettel:\n\n* Core Concept\n\n%?\n"
+description = "Permanent Zettelkasten concept note"
+keys = "z"
+kind = "file"
+target = "zettel/${slug}.org"
+roam_type = "concept"
+body = "* Thesis\n${body}\n\n* Core Concept\n\n* Context & Significance\n\n* Related Concepts & Links\n\n* Open Questions & Folgezettel\n"
+
+[projects.payments-api]
+description = "Core payments REST service"
+forge = "github.com/acme/payments-api"
+
+[landscapes.billing-platform]
+description = "Billing and settlement services"
+projects = ["payments-api"]
+forges = ["github.com/acme/billing-*"]
+includes = ["platform-core"]

@@ -66,7 +66,7 @@ mutation      schemas/org-mutation-output.schema.json   Uniform MutationResult e
 ## Power-User & Scripting Options
 
 Export the entire schema catalog as JSON via `org schema --list --format json` and dump every schema file in one shell loop.
-See [Power-User & Scripting](power-user-and-scripting.md), [CLI, Config & Rule Reference](reference.md), and the [Glossary](../glossary.md) for details:
+See [Power-User & Scripting](power-user-and-scripting.md), [CLI & Rule Reference](reference.md), and the [Glossary](../glossary.md) for details:
 
 ```sh
 # Export every registered schema into ./exported-schemas/ using jq

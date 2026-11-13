@@ -19,9 +19,11 @@ const MAX_SEQUENCE_PARTICIPANTS: usize = 6;
 /// Required navigation targets in `zensical.toml` relative to `docs/`.
 #[rustfmt::skip]
 const REQUIRED_NAV_DOCS: &[&str] = &[
-    "index.md", "user/quickstart.md", "user/formatting-and-linting.md",
+    "index.md", "user/quickstart.md", "user/directory-structure.md",
+    "user/configuration.md", "user/formatting-and-linting.md",
     "user/querying-and-agenda.md", "user/updating-clocking-and-exporting.md",
-    "user/power-user-and-scripting.md", "user/schemas.md", "user/reference.md",
+    "user/power-user-and-scripting.md", "user/schemas.md",
+    "user/configuration-reference.md", "user/reference.md",
     "cookbook/index.md", "cookbook/gtd.md", "cookbook/zettelkasten.md",
     "cookbook/mcp-server.md", "cookbook/lsp-editor-setup.md",
     "cookbook/automation-and-ci.md", "operations/index.md", "operations/installation.md",
@@ -31,10 +33,11 @@ const REQUIRED_NAV_DOCS: &[&str] = &[
     "developer/decisions.md", "glossary.md",
 ];
 
-/// All 16 task, feature, cookbook, operator, and contributor guides requiring six-part scaffolding.
+/// All 18 task, feature, cookbook, operator, and contributor guides requiring six-part scaffolding.
 #[rustfmt::skip]
 const SCAFFOLDED_GUIDES: &[&str] = &[
-    "docs/user/quickstart.md", "docs/user/formatting-and-linting.md",
+    "docs/user/quickstart.md", "docs/user/directory-structure.md",
+    "docs/user/configuration.md", "docs/user/formatting-and-linting.md",
     "docs/user/querying-and-agenda.md", "docs/user/updating-clocking-and-exporting.md",
     "docs/user/power-user-and-scripting.md", "docs/user/schemas.md",
     "docs/cookbook/gtd.md", "docs/cookbook/zettelkasten.md",

@@ -74,7 +74,7 @@ $ echo $?
 ## Power-User & Scripting Options
 
 Emit machine-readable diagnostics with `--format json` (validated against `org schema diagnostic`) or pipe buffer text over `stdin`.
-See the [CLI, Config & Rule Reference](reference.md) and [JSON Schemas & Contracts](schemas.md) for every rule ID:
+See the [CLI & Rule Reference](reference.md), [Configuration Reference](configuration-reference.md), and [JSON Schemas & Contracts](schemas.md) for every rule ID:
 
 ```sh
 # Filter only error-severity diagnostics with jq

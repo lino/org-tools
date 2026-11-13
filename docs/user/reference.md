@@ -3,19 +3,19 @@ Copyright (C) 2026 org-tools contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
-# CLI, Configuration & Rule Reference
+# CLI & Rule Reference
 
 ## Overview
 
 **What you will learn:**
 
 - Every top-level `org` subcommand, global option, and exit code (`0..3`).
-- Every `.org-tools.toml` configuration section (`[format]`, `[lint]`, `[todo]`, `[agenda]`, `[roam]`, `[landscapes.<slug>]`).
-- Every auto-fixable format rule (`F001..F009`) and lint diagnostic rule (`E001..E010`, `W001..W037`, `I001..I004`).
+- Where to configure `.org-tools.toml` settings, capture templates, and environment variables.
+- Every auto-fixable format rule (`F001..F009`) and lint diagnostic rule (`E001..E010`, `W001..W039`, `I001..I008`).
 
-This page serves as the single-page reference for `org` flags, configuration keys, and rule identifiers.
-For offline terminal reference, consult the native Unix manual pages via `man 1 org` and `man 5 org-tools.toml`.
-See the [Glossary](../glossary.md) for definitions of all domain terms and acronyms.
+This page serves as the single-page reference for `org` flags, exit codes, and formatting or lint rule identifiers.
+For `.org-tools.toml` settings and environment variables, see the [Configuration Reference](configuration-reference.md) and [Configuration Guide](configuration.md).
+For offline terminal reference, run `man 1 org` and `man 5 org-tools.toml`.
 
 ## Top-Level Subcommands & Global Options
 
@@ -86,56 +86,13 @@ See the [Glossary](../glossary.md) for definitions of all domain terms and acron
 | `2`  | `EXIT_ERROR`          | Operational failure such as missing files, invalid arguments, or parse errors.       |
 | `3`  | `EXIT_REQUIRES_EMACS` | Table formula (`#+TBLFM:`) or advanced feature requires an Emacs Lisp runtime.       |
 
-## `.org-tools.toml` Configuration Keys
+## Configuration & Environment Reference
 
-```toml
-[format]
-trailing_whitespace = true       # F001: strip trailing spaces (default: true)
-blank_lines = false              # F002: collapse consecutive blank lines (default: false)
-max_consecutive_blank_lines = 1  # F002: maximum consecutive blank lines
-heading_blank_lines = false      # F003: require blank line before headings (default: false)
-heading_blank_lines_before = 1   # F003: blank lines required before headings
-table_format = true              # F004: align Org pipe tables (default: true)
-property_drawer_align = true     # F005: align property drawer values (default: true)
+All `.org-tools.toml` tables (`[format]`, `[lint]`, `[lint.zettel]`, `[lint.authoring]`, `[todo]`, `[agenda]`, `[roam]`, `[capture.templates.<name>]`, `[landscapes.<slug>]`) and environment variables now live on dedicated pages:
 
-[lint]
-disabled_rules = ["W001"]        # Disable rules by ID or name
-id_scope = "vault"               # Link resolution scope: vault, roam-dir, dir, or file
-
-[todo]
-sequences = ["TODO NEXT WAITING | DONE CANCELLED"]
-todo = ["TODO", "NEXT", "WAITING"]
-done = ["DONE", "CANCELLED"]
-
-[agenda]
-deadline_warning_days = 14       # Default lead-time warning window in days
-
-[roam]
-default_directory = "work"       # Default vault selector
-gtd_subdir = "gtd"               # GTD files relative subdirectory
-zettel_subdir = "zettel"         # Zettelkasten relative subdirectory
-fleeting_subdir = "fleeting"     # Fleeting notes relative subdirectory
-daily_subdir = "daily"           # Daily notes relative subdirectory
-log_to_daily = false             # Whether captures log to today's daily note
-
-[roam.directories]
-work = "vaults/work"             # Named vault directory mappings
-private = "vaults/private"
-
-[capture.templates.default]
-description = "Quick inbox task entry"
-keys = "i"
-kind = "entry"
-target = "gtd/inbox.org"
-target_heading = "* Inbox"
-todo_header = "TODO"
-filetags = ["inbox"]
-
-[landscapes.billing-platform]
-projects = ["payments-api", "ledger-worker"]
-forges = ["github:org/*"]
-includes = ["platform-core"]
-```
+- [Workspace & Directory Structure](directory-structure.md): Opinionated multi-vault GTD, fleeting-note, and Zettelkasten directory layout.
+- [Configuration Guide](configuration.md): Why to configure `org-tools` and how global, workspace, and per-vault layers merge.
+- [Configuration Reference](configuration-reference.md): Exhaustive tables of every TOML key, built-in template, `${...}` placeholder, and environment variable.
 
 ??? info "Deep Dive: Multi-Vault Scoping and Landscape Architecture"
 

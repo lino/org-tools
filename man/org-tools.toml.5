@@ -1,42 +1,70 @@
 .\" Copyright (C) 2026 org-tools contributors
 .\" SPDX-License-Identifier: GPL-3.0-or-later
-.TH ORG-TOOLS.TOML 5 "2026-11-08" "org-tools" "File Formats Manual"
+.TH ORG-TOOLS.TOML 5 "2026-11-13" "org-tools" "File Formats Manual"
 .SH NAME
 org-tools.toml \- configuration file for the org command-line suite
 .SH SYNOPSIS
 .I .org-tools.toml
 .br
 .I $XDG_CONFIG_HOME/org-tools/config.toml
+.br
+.I ~/.config/org-tools/config.toml
 .SH DESCRIPTION
 The
 .B .org-tools.toml
-file configures formatting rules, lint diagnostics, agenda warning windows, workflow keywords, roam directories, and capture templates for
+file configures formatting rules, lint diagnostics, Zettelkasten and authoring hygiene checks, agenda warning windows, workflow keywords, multi-vault
+.B org-roam
+directories, capture templates, and monorepo landscapes for
 .BR org (1).
 Configuration files use TOML syntax.
 All settings are optional and fall back to Emacs Org-mode compatible defaults when omitted.
 .SH CONFIGURATION HIERARCHY
 .BR org (1)
-resolves configuration settings in the following precedence order:
+resolves configuration settings from highest to lowest precedence:
 .IP 1. 4
 Explicit file path passed via the
 .B \-\-config
-command-line flag.
+command-line flag (skips global and ancestor discovery).
 .IP 2. 4
-File path specified in the
-.B ORG_TOOLS_CONFIG
-environment variable.
+Runtime environment variables such as
+.B ORG_ROAM_DIRECTORIES
+and
+.BR ORG_TAG_COLUMN .
 .IP 3. 4
-Nearest
-.I .org-tools.toml
-file discovered in the current working directory or any parent directory.
+Per-vault
+.I <roam_dir>/.org-tools.toml
+file when operating on a specific vault.
 .IP 4. 4
-User configuration file at
-.IR $XDG_CONFIG_HOME/org-tools/config.toml .
+Ancestor
+.I .org-tools.toml
+files discovered from the filesystem root down to the current working directory (plus
+.I kb.toml
+files up to the nearest
+.I .git
+root for landscape scope definitions).
 .IP 5. 4
+Global user configuration file specified by
+.BR ORG_TOOLS_CONFIG ,
+or
+.I $XDG_CONFIG_HOME/org-tools/config.toml
+(falling back to
+.IR ~/.config/org-tools/config.toml ).
+.IP 6. 4
 Built-in Emacs Org-mode compatible default values.
+.PP
+Path values expand
+.IR ~/ ,
+.IR $HOME/ ,
+and
+.I ${HOME}/
+using
+.B HOME
+(or
+.B USERPROFILE
+on Windows), while relative paths resolve against the directory of the configuration file that declared them.
 .SH SECTIONS
 .SS [format]
-Controls auto-fixable formatting rules (`F001` through `F008`):
+Controls auto-fixable formatting rules (`F001` through `F005`):
 .TP
 .B trailing_whitespace \fR(boolean, default: \fBtrue\fR)
 Remove trailing spaces and tabs from non-protected lines (`F001`).
@@ -58,102 +86,175 @@ Align Org pipe table columns and normalize separator rows (`F004`).
 .TP
 .B property_drawer_align \fR(boolean, default: \fBtrue\fR)
 Align property values inside `:PROPERTIES:` drawers (`F005`).
-.SS [lint]
-Controls structural and stylistic lint rules (`E001` through `I007`):
+.SS [lint], [lint.zettel], and [lint.authoring]
+Controls structural, stylistic, and opt-in hygiene lint rules (`E001` through `I008`):
 .TP
 .B disabled_rules \fR(array of strings, default: \fB[]\fR)
-Rule identifiers or kebab-case names to skip during `org fmt check` (for example, `["W001", "heading-level-gap"]`).
+Rule identifiers or kebab-case names to skip during `org fmt check` and `org lsp` (for example, `["W001", "heading-level-gap"]`).
 .TP
-.B id_scope \fR(string, default: \fB"workspace"\fR)
-Resolution boundary for `:ID:` uniqueness checks and cross-file link validation (`"file"`, `"workspace"`, or `"vault"`).
-.SS [landscapes.<slug>]
-Defines composable project clusters, member repositories, and forge globs:
+.B enable \fR(array of strings, default: \fB[]\fR, alias: \fBenabled_rules\fR)
+Opt-in rule identifiers or names to activate (`"W038"`, `"W039"`, `"I008"`).
 .TP
-.B description \fR(string, optional)
-Human-readable summary of the landscape scope.
+.B id_scope \fR(string, default: \fB"vault"\fR)
+Resolution boundary for duplicate `:ID:` checks (`E002`), `org-edna` `ids(...)` (`W036`), and cross-file links (`W037`): `"vault"`, `"roam-dir"`, `"dir"`, or `"file"`.
 .TP
-.B projects \fR(array of strings, default: \fB[]\fR)
-Member project slugs belonging to this landscape.
+.B [lint.zettel] forbid_tasks \fR(boolean, default: \fBfalse\fR)
+Enable `W038` (`zettel-task-hygiene`) forbidding active TODO keywords and checklists inside concept notes.
 .TP
-.B forges \fR(array of strings, default: \fB[]\fR)
-Repository forge path or glob patterns belonging to this landscape (alias: `forge_prefixes`).
+.B [lint.authoring] forbid_ephemeral_headers \fR(boolean, default: \fBfalse\fR)
+Enable `W039` (`ephemeral-file-headers`) flagging `#+DATE:` and `#+AUTHOR:` file headers.
 .TP
-.B includes \fR(array of strings, default: \fB[]\fR)
-Slugs of child landscapes recursively included by this landscape.
+.B [lint.authoring] max_table_cell_chars \fR(integer, optional)
+Enable `I008` (`oversized-table-cell`) when any non-separator table cell exceeds this character threshold (for example, `120`).
 .SS [agenda]
 Controls daily and weekly agenda timeline projection:
 .TP
 .B deadline_warning_days \fR(integer, default: \fB14\fR)
 Lead-time warning window in days for `DEADLINE:` timestamps without an explicit `-Nd` warning suffix.
 .SS [todo]
-Defines workspace-wide TODO state sequences when files omit `#+TODO:` keywords:
+Defines fallback workspace-wide TODO state sequences when files omit `#+TODO:`, `#+SEQ_TODO:`, `#+TYP_TODO:`, or `#+SETUPFILE:`:
 .TP
-.B active \fR(array of strings, default: \fB["TODO", "NEXT", "WAITING"]\fR)
-Incomplete workflow keywords representing active tasks.
+.B sequences \fR(array of strings, default: \fB[]\fR)
+Additive Org workflow sequence specifications using `|` to separate active and completed states (for example, `["TODO(t) NEXT(n) WAITING(w) | DONE(d) CANCELLED(c)"]`).
 .TP
-.B done \fR(array of strings, default: \fB["DONE", "CANCELLED"]\fR)
-Terminal workflow keywords representing completed tasks.
-.SS [roam]
-Configures `org-roam` v2 note discovery and daily note paths:
+.B keywords \fR(array of strings, default: \fB[]\fR)
+Optional token list joined and parsed as a single sequence when `sequences` is empty.
 .TP
-.B directory \fR(string, default: \fB"."\fR)
-Root directory scanned for `org-roam` v2 nodes and `:ID:` drawers.
+.B todo \fR(array of strings, default: \fB[]\fR)
+Explicit active ("not done") workflow keywords used when `sequences` and `keywords` are empty.
 .TP
-.B dailies_directory \fR(string, default: \fB"daily"\fR)
-Subdirectory relative to `directory` storing date-stamped daily notes.
+.B done \fR(array of strings, default: \fB[]\fR)
+Explicit terminal ("done") workflow keywords paired with `todo`.
+.SS [roam] and [roam.directories]
+Configures multi-vault `org-roam` v2 directories, default subdirectories, capture editor, and daily logging:
+.TP
+.B [roam.directories] \fR(table or array of strings, default: \fB{}\fR)
+Named vault map (`work = "~/org/work"`, `private = "~/org/private"`) or array (`directories = ["./work", "./private"]`). Overridable at runtime via `ORG_ROAM_DIRECTORIES`.
+.TP
+.B default_directory \fR(string, optional)
+Default vault name or path used when `--roam-dir` is omitted.
+.TP
+.B gtd_subdir \fR(string, default: \fB"gtd"\fR)
+Vault-relative subdirectory storing base GTD files (`inbox.org`, `gtd.org`, `projects.org`, `habits.org`, `calendar.org`) and `projects/`.
+.TP
+.B zettel_subdir \fR(string, default: \fB"zettel"\fR)
+Vault-relative subdirectory storing permanent Zettelkasten concept notes.
+.TP
+.B fleeting_subdir \fR(string, default: \fB"fleeting"\fR)
+Vault-relative subdirectory storing Luhmann fleeting thought notes.
+.TP
+.B daily_subdir \fR(string, default: \fB"daily"\fR)
+Vault-relative subdirectory storing `YYYY-MM-DD.org` daily journal notes.
+.TP
+.B editor \fR(string, optional)
+Editor command spawned for interactive captures (overrides `$VISUAL` and `$EDITOR`).
+.TP
+.B log_to_daily \fR(boolean, default: \fBfalse\fR)
+Append a timestamped link under `* Captured today` in `daily/YYYY-MM-DD.org` during captures and transformations.
 .SS [capture.templates.<name>]
-Defines named note and task capture templates:
+Defines custom capture templates or overrides built-in templates (`zettel`, `concept`, `technical`, `howto`, `person`, `place`, `project`, `fleeting`, `daily`, `inbox`):
 .TP
-.B description \fR(string)
-Human-readable summary displayed when listing capture templates.
+.B description \fR(string, optional)
+Human-readable summary displayed by `org roam capture --list-templates`.
 .TP
-.B target_file \fR(string)
-Destination `.org` file path where captured entries are appended or filed.
+.B keys \fR(string, optional)
+Short key selector usable with `org roam capture -t <key>`.
+.TP
+.B kind \fR(string, default: \fB"file"\fR)
+Target granularity: `"file"` (level-0 `org-roam` file node) or `"entry"` (heading entry).
+.TP
+.B target \fR(string, default: \fB"<zettel_subdir>/${slug}.org"\fR)
+Vault-relative destination path supporting `${...}` variable interpolation.
 .TP
 .B target_heading \fR(string, optional)
-Target heading title under which new entries are inserted.
+Parent heading title under which new entries are filed when `kind = "entry"` (for example, `"* Inbox"`).
 .TP
-.B template \fR(string)
-Org heading and body template expanded during capture.
+.B roam_type \fR(string, optional)
+Sets `:TYPE:` inside the node's `:PROPERTIES:` drawer.
+.TP
+.B properties \fR(table of strings, default: \fB{}\fR)
+Additional `:PROPERTIES:` key-value pairs supporting `${...}` interpolation.
+.TP
+.B filetags \fR(array of strings, default: \fB[]\fR)
+Filetags (when `kind = "file"`) or heading tags (when `kind = "entry"`).
+.TP
+.B todo_header \fR(string, optional)
+Optional `#+TODO:` header line emitted when creating a new file.
+.TP
+.B head \fR(string, optional)
+Optional extra preamble lines emitted when creating a new file.
+.TP
+.B body \fR(string, optional)
+Inline Org body template supporting `${id}`, `${title}`, `${slug}`, `${date}`, `${timestamp}`, `${timestamp_inactive}`, `${timestamp_active}`, `${roam_dir}`, `${body}`, `${medium}`, `${location}`, `${parent}`, and custom `--var` placeholders.
+.TP
+.B body_file \fR(string, optional)
+Path to an external `.org` body scaffold file used when `body` is omitted.
+.TP
+.B edit \fR(boolean, optional)
+Default interactive editor launch behavior when `--edit` and `--no-edit` are omitted.
+.SS [landscapes.<slug>] and [projects.<slug>]
+Defines composable monorepo project clusters and forge patterns (also read from `kb.toml`):
+.TP
+.B [landscapes.<slug>] description \fR(string, optional)
+Human-readable summary of the landscape scope.
+.TP
+.B [landscapes.<slug>] projects \fR(array of strings, default: \fB[]\fR)
+Member project slugs belonging directly to `<slug>`.
+.TP
+.B [landscapes.<slug>] forges \fR(array of strings, default: \fB[]\fR)
+Repository forge path or glob patterns belonging to `<slug>` (alias: `forge_prefixes`).
+.TP
+.B [landscapes.<slug>] includes \fR(array of strings, default: \fB[]\fR)
+Slugs of child landscapes transitively included with cycle protection.
+.TP
+.B [projects.<slug>] description \fR(string, optional)
+Human-readable summary of an individual project.
+.TP
+.B [projects.<slug>] forge \fR(string, optional)
+Canonical repository forge path for `<slug>`.
 .SH FILES
 .TP
 .I .org-tools.toml
-Project configuration file at the workspace root.
+Project or vault configuration file.
 .TP
 .I $XDG_CONFIG_HOME/org-tools/config.toml
-User-global fallback configuration file.
+User-global fallback configuration file (`~/.config/org-tools/config.toml` when unset).
 .SH EXAMPLES
-Configure opinionated formatting, deadline warnings, and disabled lint rules:
+Configure opinionated formatting, Zettelkasten hygiene, multi-vault directories, and an inbox template:
 .PP
 .nf
     [format]
-    trailing_whitespace = true
     blank_lines = true
-    max_consecutive_blank_lines = 1
     heading_blank_lines = true
-    heading_blank_lines_before = 1
-    table_format = true
-    property_drawer_align = true
 
     [lint]
-    disabled_rules = ["W001", "I003"]
+    enable = ["W038", "W039"]
+    id_scope = "vault"
+
+    [lint.zettel]
+    forbid_tasks = true
 
     [agenda]
-    deadline_warning_days = 7
+    deadline_warning_days = 10
 
     [todo]
-    active = ["TODO", "NEXT", "WAITING"]
-    done = ["DONE", "CANCELLED"]
+    sequences = ["TODO NEXT WAITING | DONE CANCELLED"]
 
     [roam]
-    directory = "notes"
-    dailies_directory = "daily"
+    default_directory = "work"
+    log_to_daily = true
+
+    [roam.directories]
+    work = "~/org/work"
+    private = "~/org/private"
 
     [capture.templates.inbox]
     description = "Quick inbox task"
-    target_file = "inbox.org"
-    target_heading = "Tasks"
-    template = "* TODO %?\n:PROPERTIES:\n:CREATED: %U\n:END:\n"
+    keys = "i"
+    kind = "entry"
+    target = "gtd/inbox.org"
+    target_heading = "* Inbox"
+    body = "${body}"
 .fi
 .SH SEE ALSO
 .B org(1)

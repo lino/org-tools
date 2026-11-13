@@ -11,12 +11,15 @@ nav = [
   { "Overview" = "index.md" },
   { "User Manual" = [
     { "Five-Minute Quickstart" = "user/quickstart.md" },
+    { "Workspace & Directory Structure" = "user/directory-structure.md" },
+    { "Configuration Guide" = "user/configuration.md" },
     { "Formatting & Linting" = "user/formatting-and-linting.md" },
     { "Querying & Agenda Views" = "user/querying-and-agenda.md" },
     { "Updating, Clocking & Exporting" = "user/updating-clocking-and-exporting.md" },
     { "Power-User & Scripting" = "user/power-user-and-scripting.md" },
     { "JSON Schemas & Contracts" = "user/schemas.md" },
-    { "CLI, Config & Rule Reference" = "user/reference.md" },
+    { "Configuration Reference" = "user/configuration-reference.md" },
+    { "CLI & Rule Reference" = "user/reference.md" },
   ] },
   { "Cookbook" = [
     { "Cookbook Overview" = "cookbook/index.md" },

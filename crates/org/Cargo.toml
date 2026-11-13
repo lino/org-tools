@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 description = "Unified CLI for org-mode: lint, format, query, clock, export"
 license.workspace = true
+authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true

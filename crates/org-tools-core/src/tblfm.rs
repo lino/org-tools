@@ -850,8 +850,8 @@ fn resolve_row(
             }
             let sep_idx = table.separators[n - 1];
             // Find first data row after this separator.
-            for i in (sep_idx + 1)..table.rows.len() {
-                if matches!(table.rows[i], EvalRow::Data(_)) {
+            for (i, row) in table.rows.iter().enumerate().skip(sep_idx + 1) {
+                if matches!(row, EvalRow::Data(_)) {
                     return Ok(i);
                 }
             }
@@ -1020,11 +1020,12 @@ fn collect_range_values(range: &RangeRef, ctx: &EvalContext<'_>) -> Result<Vec<f
     let c_hi = start_col.max(end_col);
 
     let mut values = Vec::new();
-    for r in r_lo..=r_hi {
-        if let EvalRow::Data(cells) = &ctx.table.rows[r] {
-            for c in c_lo..=c_hi {
-                if c < cells.len() {
-                    if let Some(n) = cells[c].as_number() {
+    for row in &ctx.table.rows[r_lo..=r_hi] {
+        if let EvalRow::Data(cells) = row {
+            let end = (c_hi + 1).min(cells.len());
+            if c_lo < end {
+                for cell in &cells[c_lo..end] {
+                    if let Some(n) = cell.as_number() {
                         values.push(n);
                     }
                 }

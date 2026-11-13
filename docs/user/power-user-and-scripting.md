@@ -110,15 +110,15 @@ org query search 'todo:TODO priority:A not property:EFFORT' --format locator ~/o
 
 ??? info "Deep Dive: Environment Variable & Exit-Code Reference"
 
-| Variable or Code       | Default / Value | Behavior                                                                                  |
-| ---------------------- | --------------- | ----------------------------------------------------------------------------------------- |
-| `ORG_TOOLS_CONFIG`     | *(ancestor)*    | Explicit path to `.org-tools.toml` configuration file.                                    |
-| `ORG_TOOLS_WORKSPACE`  | `cwd`           | Default workspace root for `id:` resolution and MCP confinement.                          |
-| `ORG_TOOLS_CACHE_PATH` | `.cache/...`    | Override path for the SQLite Write-Ahead Logging `WorkspaceCache` database.               |
-| `ORG_ID_NAMESPACE`     | DNS UUID        | Namespace UUID used by `org update add-id --deterministic` (`UUIDv5`).                    |
-| `ORG_TAG_COLUMN`       | `77`            | Target right-margin column for `F007` heading tag alignment.                              |
-| `NO_COLOR` / `TERM`    | unset / `xterm` | Disables ANSI color escapes when `NO_COLOR` is non-empty or `TERM=dumb`.                  |
-| Exit codes `0..3`      | `0, 1, 2, 3`    | `0` = OK, `1` = issues/no match, `2` = operational error, `3` = requires Emacs Lisp/Calc. |
+    | Variable or Code       | Default / Value | Behavior                                                                                  |
+    | ---------------------- | --------------- | ----------------------------------------------------------------------------------------- |
+    | `ORG_TOOLS_CONFIG`     | *(ancestor)*    | Explicit path to `.org-tools.toml` configuration file.                                    |
+    | `ORG_TOOLS_WORKSPACE`  | `cwd`           | Default workspace root for `id:` resolution and MCP confinement.                          |
+    | `ORG_TOOLS_CACHE_PATH` | `.cache/...`    | Override path for the SQLite Write-Ahead Logging `WorkspaceCache` database.               |
+    | `ORG_ID_NAMESPACE`     | DNS UUID        | Namespace UUID used by `org update add-id --deterministic` (`UUIDv5`).                    |
+    | `ORG_TAG_COLUMN`       | `77`            | Target right-margin column for `F007` heading tag alignment.                              |
+    | `NO_COLOR` / `TERM`    | unset / `xterm` | Disables ANSI color escapes when `NO_COLOR` is non-empty or `TERM=dumb`.                  |
+    | Exit codes `0..3`      | `0, 1, 2, 3`    | `0` = OK, `1` = issues/no match, `2` = operational error, `3` = requires Emacs Lisp/Calc. |
 
 ## Troubleshooting
 

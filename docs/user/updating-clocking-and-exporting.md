@@ -100,10 +100,11 @@ org archive --dry-run --format json ~/org/
 ```
 
 ??? info "Deep Dive: Repeaters, Habit Logging & Emacs Calc Fallback"
-When `org update set-state DONE` transitions an entry with a repeater (`+1w`, `++1m`, `.+1d`), it resets the state to `TODO`.
-It also advances the planning timestamp, updates `:LAST_REPEAT:`, and appends a `:LOGBOOK:` state note.
-Pass `--no-repeat` to close a repeating task permanently.
-If `org update calc` encounters an Emacs Lisp formula (`'(...)`), it leaves the file untouched and exits with code `3` (`EXIT_REQUIRES_EMACS`).
+
+    When `org update set-state DONE` transitions an entry with a repeater (`+1w`, `++1m`, `.+1d`), it resets the state to `TODO`.
+    It also advances the planning timestamp, updates `:LAST_REPEAT:`, and appends a `:LOGBOOK:` state note.
+    Pass `--no-repeat` to close a repeating task permanently.
+    If `org update calc` encounters an Emacs Lisp formula (`'(...)`), it leaves the file untouched and exits with code `3` (`EXIT_REQUIRES_EMACS`).
 
 ## Troubleshooting
 

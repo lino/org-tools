@@ -1,6 +1,6 @@
 // Copyright (C) 2026 org-tools contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// fritz: allow-file-length=530 reason="Comprehensive Zensical documentation craft and LSP/completion guide contract tests"
+// fritz: allow-file-length=545 reason="Comprehensive Zensical documentation craft, drawer indentation, and LSP/completion contract tests"
 
 //! Automated documentation craft, Zensical navigation, `arc42`, and readability verification suite (`ORGFMT-WP-30`).
 
@@ -323,6 +323,27 @@ fn extract_mermaid_blocks(content: &str) -> Vec<String> {
     blocks
 }
 
+/// Asserts every `???` or `!!!` drawer has a 4-space indented body and zero escaped `\-` bullets.
+fn assert_admonition_drawers(rel_path: &str, content: &str) {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut active_fence = None;
+    for (idx, &raw) in lines.iter().enumerate() {
+        let trimmed = raw.trim();
+        let line_no = idx + 1;
+        assert!(!trimmed.starts_with("````"), "{rel_path}:{line_no} fence");
+        assert!(!trimmed.starts_with("\\- "), "{rel_path}:{line_no} escaped");
+        if !update_fence_state(trimmed, &mut active_fence)
+            && (raw.starts_with("??? ") || raw.starts_with("!!!"))
+        {
+            let body = lines[line_no..].iter().find(|l| !l.trim().is_empty());
+            assert!(
+                body.is_some_and(|l| l.starts_with("    ")),
+                "{rel_path}:{line_no} drawer `{trimmed}` requires 4-space indent"
+            );
+        }
+    }
+}
+
 // endregion
 
 // region Behavioural Test Slices
@@ -376,12 +397,12 @@ fn lsp_cookbook_metrics_runbook_and_glossary_meet_contract() {
         assert!(cookbook.contains(editor), "LSP cookbook missing `{editor}`");
     }
     let metrics = read_repo_file("docs/operations/metrics-and-troubleshooting.md");
-    for token in [
-        "orgfmt_lsp_requests_total",
-        "orgfmt_lsp_request_duration_seconds",
-        "orgfmt_lsp_diagnostics_published_total",
-        "ORG_LSP_TELEMETRY_DIR",
-    ] {
+    #[rustfmt::skip]
+    let metric_tokens = [
+        "orgfmt_lsp_requests_total", "orgfmt_lsp_request_duration_seconds",
+        "orgfmt_lsp_diagnostics_published_total", "ORG_LSP_TELEMETRY_DIR",
+    ];
+    for token in metric_tokens {
         assert!(metrics.contains(token), "metrics runbook missing `{token}`");
     }
     let glossary = read_repo_file("docs/glossary.md");
@@ -397,38 +418,28 @@ fn lsp_cookbook_metrics_runbook_and_glossary_meet_contract() {
 #[test]
 fn shell_completion_docs_cover_bash_zsh_fish_and_dynamic_domains() {
     let power_user = read_repo_file("docs/user/power-user-and-scripting.md");
-    for token in [
-        "eval \"$(org --completions zsh)\"",
-        "org --completions fish | source",
-        "eval \"$(org --completions bash)\"",
-        "roam-node",
-        "todo-state",
-        "date-spec",
-    ] {
-        assert!(
-            power_user.contains(token),
-            "power-user-and-scripting.md missing `{token}`"
-        );
+    #[rustfmt::skip]
+    let pu_tokens = [
+        "eval \"$(org --completions zsh)\"", "org --completions fish | source",
+        "eval \"$(org --completions bash)\"", "roam-node", "todo-state", "date-spec",
+    ];
+    for token in pu_tokens {
+        assert!(power_user.contains(token), "missing `{token}`");
     }
-
     let install = read_repo_file("docs/operations/installation.md");
-    for token in [
-        "eval \"$(org --completions zsh)\"",
-        "org --completions fish | source",
+    #[rustfmt::skip]
+    let inst_tokens = [
+        "eval \"$(org --completions zsh)\"", "org --completions fish | source",
         "eval \"$(org --completions bash)\"",
-    ] {
+    ];
+    for token in inst_tokens {
         assert!(install.contains(token), "installation.md missing `{token}`");
     }
-
-    let reference = read_repo_file("docs/user/reference.md");
-    assert!(reference.contains("org complete"));
-
+    assert!(read_repo_file("docs/user/reference.md").contains("org complete"));
     let usage_org = read_repo_file("docs/user/usage.org");
     assert!(usage_org.contains("eval \"$(org --completions zsh)\""));
     assert!(usage_org.contains("org --completions fish | source"));
-
-    let readme = read_repo_file("README.org");
-    assert!(readme.contains("eval \"$(org --completions zsh)\""));
+    assert!(read_repo_file("README.org").contains("eval \"$(org --completions zsh)\""));
 }
 
 /// Verifies `docs/developer/architecture.md` and `docs/technical/architecture.org` contain 12 `arc42` sections and 4 Mermaid views.
@@ -487,8 +498,14 @@ fn markdown_docs_obey_spdx_headings_sentence_and_paragraph_bounds_and_zero_lingo
             "{rel} missing SPDX header"
         );
         assert_no_skipped_headings(&rel, &content);
+        assert_admonition_drawers(&rel, &content);
         assert_prose_readability_bounds(&rel, &content);
     }
+    let index_md = read_repo_file("docs/index.md");
+    assert!(index_md.contains("??? info \"How It Works\""));
+    assert!(!index_md
+        .to_ascii_lowercase()
+        .contains("executable topology"));
     assert!(
         md_files.len() >= REQUIRED_NAV_DOCS.len(),
         "expected >= {} Markdown docs, found {}",

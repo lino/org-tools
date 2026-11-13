@@ -129,9 +129,10 @@ cargo run -- schema --list
 ```
 
 ??? info "Deep Dive: Rule ID Prefixes, JetBrains Regions, and Schema Sync"
-\- **Rule ID Prefixes**: Use `F` for auto-fixes, `E` for errors, `W` for warnings, and `I` for info suggestions.
-\- **JetBrains Regions**: Wrap files with more than three logical sections in `// region <Name>` comments and update `.regions.md`.
-\- **Synchronized Contracts**: Update `--completions`, `schemas/*.schema.json`, `man/org.1`, `man/org-tools.toml.5`, and Zensical manuals whenever CLI contracts change.
+
+    - **Rule ID Prefixes**: Use `F` for auto-fixes, `E` for errors, `W` for warnings, and `I` for info suggestions.
+    - **JetBrains Regions**: Wrap files with more than three logical sections in `// region <Name>` comments and update `.regions.md`.
+    - **Synchronized Contracts**: Update `--completions`, `schemas/*.schema.json`, `man/org.1`, `man/org-tools.toml.5`, and Zensical manuals whenever CLI contracts change.
 
 ## Troubleshooting
 

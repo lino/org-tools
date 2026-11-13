@@ -71,10 +71,11 @@ See the [Glossary](../glossary.md) for definitions of all domain terms and acron
 | `--completions <SHELL>`            | Generate dynamic shell completions (`bash`, `zsh`, `fish`) wired to `org complete`.                                                                                          |
 
 ??? info "Deep Dive: The 16 Built-In MCP Tools"
-The `org mcp` server exposes 16 tools covering the complete Org lifecycle.
-Read tools include `org_roam_node`, `org_roam_backlinks`, `org_roam_search`, `org_query_next`, `org_query_blocked`, `org_query_agenda`, `org_show`, and `org_fleeting_list`.
-Write tools include `org_roam_capture`, `org_fleeting_transform`, `org_update_state`, `org_update_planning`, `org_clock_in`, `org_clock_out`, `org_refile`, and `org_fmt_file`.
-All 16 tools respect workspace boundaries and return telemetry metadata without corrupting drawer structures.
+
+    The `org mcp` server exposes 16 tools covering the complete Org lifecycle.
+    Read tools include `org_roam_node`, `org_roam_backlinks`, `org_roam_search`, `org_query_next`, `org_query_blocked`, `org_query_agenda`, `org_show`, and `org_fleeting_list`.
+    Write tools include `org_roam_capture`, `org_fleeting_transform`, `org_update_state`, `org_update_planning`, `org_clock_in`, `org_clock_out`, `org_refile`, and `org_fmt_file`.
+    All 16 tools respect workspace boundaries and return telemetry metadata without corrupting drawer structures.
 
 ## Exit Codes (`0..3`)
 
@@ -137,10 +138,11 @@ includes = ["platform-core"]
 ```
 
 ??? info "Deep Dive: Multi-Vault Scoping and Landscape Architecture"
-`[roam.directories]` binds named vault slugs to distinct file paths.
-This lets commands like `org next --roam-dir work` scope searches without mixing private tasks.
-The `[lint] id_scope` setting controls cross-file `[[id:...]]` (`W037`) and `org-edna` `ids(...)` (`W036`) link resolution scope.
-`[landscapes.<slug>]` partitions large corporate monorepos into scoped engineering landscapes.
+
+    `[roam.directories]` binds named vault slugs to distinct file paths.
+    This lets commands like `org next --roam-dir work` scope searches without mixing private tasks.
+    The `[lint] id_scope` setting controls cross-file `[[id:...]]` (`W037`) and `org-edna` `ids(...)` (`W036`) link resolution scope.
+    `[landscapes.<slug>]` partitions large corporate monorepos into scoped engineering landscapes.
 
 ## Format Rules (`F001..F009`)
 

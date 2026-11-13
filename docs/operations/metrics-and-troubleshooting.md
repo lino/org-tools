@@ -120,10 +120,11 @@ jq 'select(.event == "release.check.failed")' ./release-telemetry/release-events
 ```
 
 ??? info "Deep Dive: Structured Event Schema & WorkspaceCache Telemetry"
-Every line in `ORGFMT_RELEASE_EVENTS_FILE` is a JSON object with `timestamp`, `event`, and `trace_id`.
-Each event records `status`, `verified_count`, `failed_count`, `duration_seconds`, and `message`.
-Every mutating CLI subcommand attaches a `telemetry` object to its JSON output.
-This envelope reports `duration_us`, `files_scanned`, `cache_hits`, and `cache_misses`.
+
+    Every line in `ORGFMT_RELEASE_EVENTS_FILE` is a JSON object with `timestamp`, `event`, and `trace_id`.
+    Each event records `status`, `verified_count`, `failed_count`, `duration_seconds`, and `message`.
+    Every mutating CLI subcommand attaches a `telemetry` object to its JSON output.
+    This envelope reports `duration_us`, `files_scanned`, `cache_hits`, and `cache_misses`.
 
 ## Troubleshooting
 

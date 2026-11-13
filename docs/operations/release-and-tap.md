@@ -92,36 +92,35 @@ bash scripts/verify-release-packages.sh \
 ```
 
 ??? info "Deep Dive: Pipeline Architecture, Manpage Packaging & Tap Bootstrap"
-Pushing a `v*` tag triggers `.github/workflows/release.yml`, which executes `validate` first and then runs `release-packages`, `publish-crates`, and `publish-container` (`ghcr.io/lino/org-tools`) in parallel.
 
-````
-```mermaid
-flowchart TD
-    Trigger["Trigger: git tag v* or workflow_dispatch"] --> Validate["Job: validate (fmt, clippy, test, org fmt check)"]
-    Validate --> ReleasePkg["Job: release-packages (6 Rust targets + GoReleaser v2)"]
-    Validate --> PublishCrates["Job: publish-crates (optional CARGO_REGISTRY_TOKEN gate)"]
-    Validate --> PublishContainer["Job: publish-container (GHCR linux/amd64 + linux/arm64)"]
-    ReleasePkg --> Verify["scripts/verify-release-packages.sh (SHA-256, .deb/.rpm, Cask, manpages)"]
-    Verify --> Assets["GitHub Release + lino/homebrew-tap + release-telemetry"]
-```
+    Pushing a `v*` tag triggers `.github/workflows/release.yml`, which executes `validate` first and then runs `release-packages`, `publish-crates`, and `publish-container` (`ghcr.io/lino/org-tools`) in parallel.
 
-`.goreleaser.yaml` packages `man/org.1` and `man/org-tools.toml.5` across all distribution channels:
+    ```mermaid
+    flowchart TD
+        Trigger["Trigger: git tag v* or workflow_dispatch"] --> Validate["Job: validate (fmt, clippy, test, org fmt check)"]
+        Validate --> ReleasePkg["Job: release-packages (6 Rust targets + GoReleaser v2)"]
+        Validate --> PublishCrates["Job: publish-crates (optional CARGO_REGISTRY_TOKEN gate)"]
+        Validate --> PublishContainer["Job: publish-container (GHCR linux/amd64 + linux/arm64)"]
+        ReleasePkg --> Verify["scripts/verify-release-packages.sh (SHA-256, .deb/.rpm, Cask, manpages)"]
+        Verify --> Assets["GitHub Release + lino/homebrew-tap + release-telemetry"]
+    ```
 
-- **Release Archives (`archives[].files`)**: Bundles `man/org.1` and `man/org-tools.toml.5` alongside `completions/`.
-- **Linux Packages (`nfpms[].contents`)**: Installs `/usr/share/man/man1/org.1` and `/usr/share/man/man5/org-tools.toml.5`.
-- **Homebrew Cask (`homebrew_casks[].manpages`)**: Installs `man/org.1` (`man 1 org`) and `man/org-tools.toml.5` (`man 5 org-tools.toml`).
+    `.goreleaser.yaml` packages `man/org.1` and `man/org-tools.toml.5` across all distribution channels:
 
-If `lino/homebrew-tap` does not exist yet, bootstrap it once with GitHub CLI (`CLI`):
+    - **Release Archives (`archives[].files`)**: Bundles `man/org.1` and `man/org-tools.toml.5` alongside `completions/`.
+    - **Linux Packages (`nfpms[].contents`)**: Installs `/usr/share/man/man1/org.1` and `/usr/share/man/man5/org-tools.toml.5`.
+    - **Homebrew Cask (`homebrew_casks[].manpages`)**: Installs `man/org.1` (`man 1 org`) and `man/org-tools.toml.5` (`man 5 org-tools.toml`).
 
-```sh
-gh repo create lino/homebrew-tap --public \
-  --description "Homebrew tap for org-tools and companion CLI utilities" --clone
-cd homebrew-tap && mkdir -p Casks
-printf "# lino/homebrew-tap\n\nInstall \`org-tools\`:\n\n\`\`\`sh\nbrew install --cask lino/tap/org-tools\n\`\`\`\n" > README.md
-git add README.md && git commit -m "chore: initialize homebrew-tap repository"
-git branch -M main && git push -u origin main
-```
-````
+    If `lino/homebrew-tap` does not exist yet, bootstrap it once with GitHub CLI (`CLI`):
+
+    ```sh
+    gh repo create lino/homebrew-tap --public \
+      --description "Homebrew tap for org-tools and companion CLI utilities" --clone
+    cd homebrew-tap && mkdir -p Casks
+    printf "# lino/homebrew-tap\n\nInstall \`org-tools\`:\n\n\`\`\`sh\nbrew install --cask lino/tap/org-tools\n\`\`\`\n" > README.md
+    git add README.md && git commit -m "chore: initialize homebrew-tap repository"
+    git branch -M main && git push -u origin main
+    ```
 
 ## Troubleshooting
 

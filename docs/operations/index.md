@@ -29,10 +29,11 @@ Every deployment mode executes the same pure-Rust `org` binary against local `.o
 | GitHub Actions & CI Runners | Pull request & release pipelines  | Executes `org fmt`, `org query`, and `scripts/verify-release-packages.sh` with Prometheus telemetry.  |
 
 ??? info "Deep Dive: Rootless Container Isolation and SQLite WAL Safety"
-The official container image contains no shell utilities or package managers.
-Executing with `--network none` and `--cap-drop=ALL` prevents network access and privilege escalation.
-When mounting workspaces read-only, pass `--no-cache` to avoid Write-Ahead Logging failures.
-The binary parses files directly from memory without creating disk lock files.
+
+    The official container image contains no shell utilities or package managers.
+    Executing with `--network none` and `--cap-drop=ALL` prevents network access and privilege escalation.
+    When mounting workspaces read-only, pass `--no-cache` to avoid Write-Ahead Logging failures.
+    The binary parses files directly from memory without creating disk lock files.
 
 ## Operator Runbooks
 

@@ -149,15 +149,14 @@ org schema --list --format json
 ```
 
 ??? info "Deep Dive: Package Contents & Quarantine Removal"
-Every release archive, `.deb`, `.rpm`, and Homebrew Cask bundles `org`, `LICENSE`, and `README.org`. Each package also includes shell completions (`completions/`) and Unix `roff` manpages (`man/org.1`, `man/org-tools.toml.5`).
 
-````
-On macOS, the Homebrew Cask post-install hook runs `xattr -dr com.apple.quarantine` automatically. If you download a `.tar.gz` archive in a web browser, clear the attribute manually before first execution:
+    Every release archive, `.deb`, `.rpm`, and Homebrew Cask bundles `org`, `LICENSE`, and `README.org`. Each package also includes shell completions (`completions/`) and Unix `roff` manpages (`man/org.1`, `man/org-tools.toml.5`).
 
-```sh
-xattr -dr com.apple.quarantine "$INSTALL_BIN_DIR/org"
-```
-````
+    On macOS, the Homebrew Cask post-install hook runs `xattr -dr com.apple.quarantine` automatically. If you download a `.tar.gz` archive in a web browser, clear the attribute manually before first execution:
+
+    ```sh
+    xattr -dr com.apple.quarantine "$INSTALL_BIN_DIR/org"
+    ```
 
 ## Troubleshooting
 

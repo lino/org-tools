@@ -92,8 +92,9 @@ man 5 org-tools.toml
 ```
 
 ??? info "Deep Dive: Workspace Configuration Discovery"
-`org` looks for `.org-tools.toml` in the current directory and walks upward to the filesystem root.
-You can override the configuration path at any time with `--config <PATH>` or `ORG_TOOLS_CONFIG`.
+
+    `org` looks for `.org-tools.toml` in the current directory and walks upward to the filesystem root.
+    You can override the configuration path at any time with `--config <PATH>` or `ORG_TOOLS_CONFIG`.
 
 ## Troubleshooting
 

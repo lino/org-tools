@@ -97,8 +97,9 @@ git diff --exit-code
 ```
 
 ??? info "Deep Dive: Zero-Emacs Container Caching in CI"
-When running `org` across thousands of `.org` files in GitHub Actions, cache the `.cache/org-cache.db` directory with `actions/cache@v4`.
-`WorkspaceCache` verifies `(mtime_ns, byte_len, sha256)` on startup and only reparses files changed in the latest commit.
+
+    When running `org` across thousands of `.org` files in GitHub Actions, cache the `.cache/org-cache.db` directory with `actions/cache@v4`.
+    `WorkspaceCache` verifies `(mtime_ns, byte_len, sha256)` on startup and only reparses files changed in the latest commit.
 
 ## Troubleshooting
 

@@ -116,29 +116,30 @@ docker run -i --rm --network none --cap-drop=ALL \
 ```
 
 ??? info "Deep Dive: Exposed MCP Tool Catalog and Vault Confinement"
-The built-in MCP server exposes 16 tools covering the complete Org lifecycle.
-Each tool operates within configured `--workspace` paths and validates file extensions.
-Pass `roam_dir` arguments to confine operations to a designated vault.
-Tools return structured envelopes with execution telemetry and zero drawer formatting drift.
 
-| MCP Tool Name            | Mode  | Description                                            |
-| ------------------------ | ----- | ------------------------------------------------------ |
-| `org_roam_node`          | Read  | Resolve an `org-roam` node by ID, title, or alias.     |
-| `org_roam_backlinks`     | Read  | List incoming backlinks pointing to a target node.     |
-| `org_roam_search`        | Read  | Run queries or full-text searches across the vault.    |
-| `org_roam_capture`       | Write | Capture a note or task using a built-in template.      |
-| `org_fleeting_list`      | Read  | List pending or refined fleeting notes across vaults.  |
-| `org_fleeting_transform` | Write | Reform a fleeting note into a concept note or task.    |
-| `org_query_next`         | Read  | List actionable next actions filtered by context.      |
-| `org_query_blocked`      | Read  | List tasks blocked by unresolved dependencies.         |
-| `org_query_agenda`       | Read  | Project a multi-day agenda timeline with habit graphs. |
-| `org_show`               | Read  | Extract a bounded subtree or file node by locator.     |
-| `org_update_state`       | Write | Transition a TODO state and trigger cascades.          |
-| `org_update_planning`    | Write | Set, shift, or clear planning timestamps.              |
-| `org_clock_in`           | Write | Start a running clock inside an entry logbook.         |
-| `org_clock_out`          | Write | Stop an active clock and record the duration.          |
-| `org_refile`             | Write | Move an entry subtree to a new target outline.         |
-| `org_fmt_file`           | Write | Format an Org file in place and refresh cache.         |
+    The built-in MCP server exposes 16 tools covering the complete Org lifecycle.
+    Each tool operates within configured `--workspace` paths and validates file extensions.
+    Pass `roam_dir` arguments to confine operations to a designated vault.
+    Tools return structured envelopes with execution telemetry and zero drawer formatting drift.
+
+    | MCP Tool Name            | Mode  | Description                                            |
+    | ------------------------ | ----- | ------------------------------------------------------ |
+    | `org_roam_node`          | Read  | Resolve an `org-roam` node by ID, title, or alias.     |
+    | `org_roam_backlinks`     | Read  | List incoming backlinks pointing to a target node.     |
+    | `org_roam_search`        | Read  | Run queries or full-text searches across the vault.    |
+    | `org_roam_capture`       | Write | Capture a note or task using a built-in template.      |
+    | `org_fleeting_list`      | Read  | List pending or refined fleeting notes across vaults.  |
+    | `org_fleeting_transform` | Write | Reform a fleeting note into a concept note or task.    |
+    | `org_query_next`         | Read  | List actionable next actions filtered by context.      |
+    | `org_query_blocked`      | Read  | List tasks blocked by unresolved dependencies.         |
+    | `org_query_agenda`       | Read  | Project a multi-day agenda timeline with habit graphs. |
+    | `org_show`               | Read  | Extract a bounded subtree or file node by locator.     |
+    | `org_update_state`       | Write | Transition a TODO state and trigger cascades.          |
+    | `org_update_planning`    | Write | Set, shift, or clear planning timestamps.              |
+    | `org_clock_in`           | Write | Start a running clock inside an entry logbook.         |
+    | `org_clock_out`          | Write | Stop an active clock and record the duration.          |
+    | `org_refile`             | Write | Move an entry subtree to a new target outline.         |
+    | `org_fmt_file`           | Write | Format an Org file in place and refresh cache.         |
 
 ## Troubleshooting
 

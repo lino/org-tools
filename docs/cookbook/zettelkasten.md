@@ -93,10 +93,11 @@ org roam graph --format json --roam-dir work | jq '.nodes | length'
 ```
 
 ??? info "Deep Dive: Level-0 Drawers, Folgezettel Linking, and Graph Integrity"
-`OrgDocument` treats files as nodes when line 1 begins with a `:PROPERTIES:` drawer holding `:ID:`.
-The `--parent` flag records `:PARENT_ZETTEL:` properties and inserts a Folgezettel link.
-`org fmt check` enforces rules `E009` (`duplicate-id`) and `W037` (`broken-id-link`).
-These checks keep cross-vault knowledge graphs completely consistent over time.
+
+    `OrgDocument` treats files as nodes when line 1 begins with a `:PROPERTIES:` drawer holding `:ID:`.
+    The `--parent` flag records `:PARENT_ZETTEL:` properties and inserts a Folgezettel link.
+    `org fmt check` enforces rules `E009` (`duplicate-id`) and `W037` (`broken-id-link`).
+    These checks keep cross-vault knowledge graphs completely consistent over time.
 
 ## Troubleshooting
 

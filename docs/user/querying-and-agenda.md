@@ -82,8 +82,9 @@ org cache status ~/org/
 ```
 
 ??? info "Deep Dive: Query Predicate Reference & Tag Inheritance"
-Child headings automatically inherit tags from parent headings and `#+FILETAGS:` directives during queries.
-Supported predicates include `todo`, `done`, `tags`, `heading`, `body`, `property:K=V`, `priority`, `level`, `scheduled`, `deadline`, `closed`, `clocked`, `blocked`, `actionable`, and `waiting`.
+
+    Child headings automatically inherit tags from parent headings and `#+FILETAGS:` directives during queries.
+    Supported predicates include `todo`, `done`, `tags`, `heading`, `body`, `property:K=V`, `priority`, `level`, `scheduled`, `deadline`, `closed`, `clocked`, `blocked`, `actionable`, and `waiting`.
 
 ## Troubleshooting
 

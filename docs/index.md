@@ -38,10 +38,11 @@ This documentation site is organized into three role-specific manuals, a goal-or
 - **Safe Mutations (`org update`, `org refile`, `org clock`, `org archive`)**: Transition TODO states, mint deterministic UUIDv5 IDs, and track effort clocks.
 - **Built-In MCP & LSP Servers (`org mcp`, `org lsp`)**: Expose 16 confined MCP tools and a Language Server Protocol server over `stdio`.
 
-??? info "Deep Dive: Single Pure-Rust Executable Topology"
-`org` combines formatting, querying, knowledge graphs, and editor protocols into a single native binary.
-The tool requires zero external database servers, background processes, or runtime interpreters.
-All operations run against local `.org` files and an incremental SQLite cache located at `.cache/org-cache.db`.
+??? info "How It Works"
+
+    `org` combines formatting, querying, knowledge graphs, and editor protocols into a single native binary.
+    The tool requires zero external database servers, background processes, or runtime interpreters.
+    All operations run against local `.org` files and an incremental SQLite cache located at `.cache/org-cache.db`.
 
 ## Quick Navigation by Goal
 

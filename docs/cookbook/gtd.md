@@ -93,10 +93,11 @@ org next --roam-dir work --pick --format locator
 ```
 
 ??? info "Deep Dive: Multi-Vault Isolation, Custom TODO States, and Stuck Projects"
-`[roam.directories]` separates distinct life domains such as work and private life.
-This separation prevents professional tasks from cluttering personal contexts during focused queries.
-Files can define additive custom `#+TODO:`, `#+SEQ_TODO:`, or `#+TYP_TODO:` states.
-`org query stuck` identifies project outlines lacking any active `NEXT` or `WAITING` children.
+
+    `[roam.directories]` separates distinct life domains such as work and private life.
+    This separation prevents professional tasks from cluttering personal contexts during focused queries.
+    Files can define additive custom `#+TODO:`, `#+SEQ_TODO:`, or `#+TYP_TODO:` states.
+    `org query stuck` identifies project outlines lacking any active `NEXT` or `WAITING` children.
 
 ## Troubleshooting
 

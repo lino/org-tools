@@ -99,17 +99,17 @@ Pass `--no-cache` to bypass `.cache/org-cache.db` when working on immutable moun
 
 ??? info "Deep Dive: Supported LSP Capabilities"
 
-| Capability      | LSP Method                         | Description                                         |
-| --------------- | ---------------------------------- | --------------------------------------------------- |
-| Diagnostics     | `textDocument/publishDiagnostics`  | Real-time `F*`, `E*`, `W*`, and `I*` diagnostics.   |
-| Formatting      | `textDocument/formatting`          | In-place file formatting matching `org fmt format`. |
-| Code Actions    | `textDocument/codeAction`          | Quick-fixes for auto-fixable rules and missing IDs. |
-| Completion      | `textDocument/completion`          | Targets for `[[id:...]]` and `[[roam:...]]` links.  |
-| Hover           | `textDocument/hover`               | Heading preview and metadata summary for links.     |
-| Definition      | `textDocument/definition`          | Jump to target heading or `org-roam` file node.     |
-| References      | `textDocument/references`          | List all incoming backlinks across the vault.       |
-| Rename          | `textDocument/rename`              | Workspace-wide heading title and custom ID rename.  |
-| Semantic Tokens | `textDocument/semanticTokens/full` | Highlighting for drawers, tags, and timestamps.     |
+    | Capability      | LSP Method                         | Description                                         |
+    | --------------- | ---------------------------------- | --------------------------------------------------- |
+    | Diagnostics     | `textDocument/publishDiagnostics`  | Real-time `F*`, `E*`, `W*`, and `I*` diagnostics.   |
+    | Formatting      | `textDocument/formatting`          | In-place file formatting matching `org fmt format`. |
+    | Code Actions    | `textDocument/codeAction`          | Quick-fixes for auto-fixable rules and missing IDs. |
+    | Completion      | `textDocument/completion`          | Targets for `[[id:...]]` and `[[roam:...]]` links.  |
+    | Hover           | `textDocument/hover`               | Heading preview and metadata summary for links.     |
+    | Definition      | `textDocument/definition`          | Jump to target heading or `org-roam` file node.     |
+    | References      | `textDocument/references`          | List all incoming backlinks across the vault.       |
+    | Rename          | `textDocument/rename`              | Workspace-wide heading title and custom ID rename.  |
+    | Semantic Tokens | `textDocument/semanticTokens/full` | Highlighting for drawers, tags, and timestamps.     |
 
 ## Troubleshooting
 

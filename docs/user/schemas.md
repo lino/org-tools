@@ -79,22 +79,22 @@ org schema --list --format json \
 
 ??? info "Deep Dive: Registered Schema Catalog"
 
-| Canonical Name | Accepted Aliases      | Repository Schema File                        | Matching Command Output                     |
-| -------------- | --------------------- | --------------------------------------------- | ------------------------------------------- |
-| `diagnostic`   | `fmt`, `diagnostics`  | `schemas/org-fmt-output.schema.json`          | `org fmt check --format json`               |
-| `query`        | `entry`, `entries`    | `schemas/org-query-output.schema.json`        | `org query search\|next\|inbox\|waiting`    |
-| `agenda`       | `org-agenda-output`   | `schemas/org-agenda-output.schema.json`       | `org query agenda --format json`            |
-| `columns`      | `org-columns-output`  | `schemas/org-columns-output.schema.json`      | `org query columns --format json`           |
-| `show`         | `org-show-output`     | `schemas/org-show-output.schema.json`         | `org show --format json`                    |
-| `blocked`      | `org-blocked-output`  | `schemas/org-blocked-output.schema.json`      | `org query blocked --format json`           |
-| `stuck`        | `org-stuck-output`    | `schemas/org-stuck-output.schema.json`        | `org query stuck --format json`             |
-| `deps`         | `dependencies`        | `schemas/org-deps-output.schema.json`         | `org query deps --format json`              |
-| `clock-report` | `clock_report`        | `schemas/org-clock-report-output.schema.json` | `org clock report --format json`            |
-| `clock-status` | `clock_status`        | `schemas/org-clock-status-output.schema.json` | `org clock status --format json`            |
-| `mutation`     | `update`, `archive`   | `schemas/org-mutation-output.schema.json`     | `org update *`, `org refile`, `org archive` |
-| `jscalendar`   | `jscal`               | `schemas/org-jscalendar-output.schema.json`   | `org export jscal`                          |
-| `roam`         | `org-roam-output`     | `schemas/org-roam-output.schema.json`         | `org roam node\|backlinks\|links\|graph`    |
-| `fleeting`     | `org-fleeting-output` | `schemas/org-fleeting-output.schema.json`     | `org roam fleeting\|capture --format json`  |
+    | Canonical Name | Accepted Aliases      | Repository Schema File                        | Matching Command Output                     |
+    | -------------- | --------------------- | --------------------------------------------- | ------------------------------------------- |
+    | `diagnostic`   | `fmt`, `diagnostics`  | `schemas/org-fmt-output.schema.json`          | `org fmt check --format json`               |
+    | `query`        | `entry`, `entries`    | `schemas/org-query-output.schema.json`        | `org query search\|next\|inbox\|waiting`    |
+    | `agenda`       | `org-agenda-output`   | `schemas/org-agenda-output.schema.json`       | `org query agenda --format json`            |
+    | `columns`      | `org-columns-output`  | `schemas/org-columns-output.schema.json`      | `org query columns --format json`           |
+    | `show`         | `org-show-output`     | `schemas/org-show-output.schema.json`         | `org show --format json`                    |
+    | `blocked`      | `org-blocked-output`  | `schemas/org-blocked-output.schema.json`      | `org query blocked --format json`           |
+    | `stuck`        | `org-stuck-output`    | `schemas/org-stuck-output.schema.json`        | `org query stuck --format json`             |
+    | `deps`         | `dependencies`        | `schemas/org-deps-output.schema.json`         | `org query deps --format json`              |
+    | `clock-report` | `clock_report`        | `schemas/org-clock-report-output.schema.json` | `org clock report --format json`            |
+    | `clock-status` | `clock_status`        | `schemas/org-clock-status-output.schema.json` | `org clock status --format json`            |
+    | `mutation`     | `update`, `archive`   | `schemas/org-mutation-output.schema.json`     | `org update *`, `org refile`, `org archive` |
+    | `jscalendar`   | `jscal`               | `schemas/org-jscalendar-output.schema.json`   | `org export jscal`                          |
+    | `roam`         | `org-roam-output`     | `schemas/org-roam-output.schema.json`         | `org roam node\|backlinks\|links\|graph`    |
+    | `fleeting`     | `org-fleeting-output` | `schemas/org-fleeting-output.schema.json`     | `org roam fleeting\|capture --format json`  |
 
 ## Troubleshooting
 

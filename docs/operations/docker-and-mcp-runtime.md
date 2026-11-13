@@ -106,13 +106,12 @@ docker run -i --rm --network none --cap-drop=ALL \
 ```
 
 ??? info "Deep Dive: Path Confinement & SQLite WAL Cache Mechanics"
-`org mcp` and `org lsp` resolve startup workspaces from `--workspace`, `ORG_TOOLS_WORKSPACE`, or ancestor project markers.
-Both servers enforce identical boundary checks and symlink escape protection via `resolve_startup_workspace`.
-Target files must stay inside the configured workspace, and external symlinks return immediate JSON-RPC errors.
 
-```
-When caching is enabled, `WorkspaceCache` opens `.cache/org-cache.db` in SQLite Write-Ahead Logging (`WAL`) mode alongside `.cache/org-cache.db-wal` and `.cache/org-cache.db-shm`. Ensure the container user (`-u "$(id -u):$(id -g)"`) has write access to `.cache/`, or pass `--no-cache` for immutable volumes.
-```
+    `org mcp` and `org lsp` resolve startup workspaces from `--workspace`, `ORG_TOOLS_WORKSPACE`, or ancestor project markers.
+    Both servers enforce identical boundary checks and symlink escape protection via `resolve_startup_workspace`.
+    Target files must stay inside the configured workspace, and external symlinks return immediate JSON-RPC errors.
+
+    When caching is enabled, `WorkspaceCache` opens `.cache/org-cache.db` in SQLite Write-Ahead Logging (`WAL`) mode alongside `.cache/org-cache.db-wal` and `.cache/org-cache.db-shm`. Ensure the container user (`-u "$(id -u):$(id -g)"`) has write access to `.cache/`, or pass `--no-cache` for immutable volumes.
 
 ## Troubleshooting
 

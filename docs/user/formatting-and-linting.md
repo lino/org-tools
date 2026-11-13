@@ -85,9 +85,10 @@ cat draft.org | org fmt format > formatted.org
 ```
 
 ??? info "Deep Dive: Two-Phase Pipeline & Protected Literal Regions"
-`Runner` executes all enabled `FormatRule` passes first, sorts non-overlapping byte-span `Fix` values, and applies them in one pass.
-`LintRule` passes then inspect the formatted buffer so cosmetic spacing never causes false lint warnings.
-Every format rule checks `regions::is_protected` to skip lines inside `#+BEGIN_*` and `#+END_*` literal blocks.
+
+    `Runner` executes all enabled `FormatRule` passes first, sorts non-overlapping byte-span `Fix` values, and applies them in one pass.
+    `LintRule` passes then inspect the formatted buffer so cosmetic spacing never causes false lint warnings.
+    Every format rule checks `regions::is_protected` to skip lines inside `#+BEGIN_*` and `#+END_*` literal blocks.
 
 ## Troubleshooting
 

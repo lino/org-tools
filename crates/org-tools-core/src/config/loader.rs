@@ -7,30 +7,48 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::capture::CaptureTemplateLayer;
+use crate::files::join_slash_rel;
 
 use super::{ConfigError, RoamDirectoriesSpec, ORG_TOOLS_CONFIG_ENV_VAR};
 
-/// Expands `~/`, `$HOME/`, and `${HOME}/` prefixes and resolves relative paths against `base_dir`.
-pub fn expand_config_path(raw: &str, base_dir: &Path) -> PathBuf {
+/// Resolves the current user's home directory from `$HOME` or Windows `$USERPROFILE`.
+fn resolve_home_dir() -> Option<String> {
+    std::env::var("HOME")
+        .ok()
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var("USERPROFILE").ok().filter(|h| !h.is_empty()))
+}
+
+/// Expands `~/`, `$HOME/`, and `${HOME}/` prefixes using an explicit `home` directory and `base_dir`.
+fn expand_config_path_with_home(raw: &str, base_dir: &Path, home: Option<&str>) -> PathBuf {
     let trimmed = raw.trim();
-    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty());
-    let expanded = if trimmed == "~" {
-        home.unwrap_or_else(|| trimmed.to_string())
-    } else if let Some(rest) = trimmed
+    if trimmed == "~" {
+        return home.map_or_else(|| PathBuf::from(trimmed), PathBuf::from);
+    }
+    if let Some(rest) = trimmed
         .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix(r"~\"))
         .or_else(|| trimmed.strip_prefix("$HOME/"))
         .or_else(|| trimmed.strip_prefix("${HOME}/"))
     {
-        home.map_or_else(|| trimmed.to_string(), |h| format!("{h}/{rest}"))
-    } else {
-        trimmed.to_string()
-    };
-    let path = PathBuf::from(&expanded);
-    if path.is_absolute() || expanded.starts_with('~') {
+        if let Some(h) = home {
+            return join_slash_rel(Path::new(h), rest);
+        }
+        return PathBuf::from(trimmed);
+    }
+    let path = PathBuf::from(trimmed);
+    if path.is_absolute() || trimmed.starts_with('~') {
         path
     } else {
-        base_dir.join(expanded.strip_prefix("./").unwrap_or(&expanded))
+        let rel = trimmed.strip_prefix("./").unwrap_or(trimmed);
+        join_slash_rel(base_dir, rel)
     }
+}
+
+/// Expands `~/`, `$HOME/`, and `${HOME}/` prefixes and resolves relative paths against `base_dir`.
+pub fn expand_config_path(raw: &str, base_dir: &Path) -> PathBuf {
+    let home = resolve_home_dir();
+    expand_config_path_with_home(raw, base_dir, home.as_deref())
 }
 
 /// Derives a canonical vault name from `path`'s final path component.
@@ -156,9 +174,7 @@ pub fn discover_global_config_path() -> Option<PathBuf> {
         .filter(|v| !v.is_empty())
         .map(|xdg| PathBuf::from(xdg).join("org-tools/config.toml"))
         .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .map(|h| PathBuf::from(h).join(".config/org-tools/config.toml"))
+            resolve_home_dir().map(|h| PathBuf::from(h).join(".config/org-tools/config.toml"))
         })?;
     candidate.is_file().then_some(candidate)
 }
@@ -196,4 +212,23 @@ pub(super) fn collect_config_chain(
         files.push((path, layer));
     }
     files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies `~/` and `$HOME/` expansion across Unix and Windows home directory formats.
+    #[test]
+    fn expands_tilde_and_home_with_windows_userprofile_paths() {
+        let base = Path::new("/tmp/ws");
+        let win_priv = expand_config_path_with_home("~/org/private", base, Some(r"C:\Users\alice"));
+        assert!(win_priv.ends_with("org/private"));
+        assert!(!win_priv.starts_with("~"));
+
+        let win_env =
+            expand_config_path_with_home("$HOME/org/home_vault", base, Some(r"C:\Users\alice"));
+        assert!(win_env.ends_with("org/home_vault"));
+        assert!(!win_env.to_string_lossy().contains("$HOME"));
+    }
 }
